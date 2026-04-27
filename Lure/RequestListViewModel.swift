@@ -1,0 +1,271 @@
+import Foundation
+import Observation
+
+@Observable
+final class RequestListViewModel {
+    private(set) var requests: [SeerrMediaRequest] = []
+    private var enrichments: [RequestEnrichmentResult] = []
+    private(set) var requestCount: SeerrRequestCount?
+    private(set) var totalCount: Int = 0
+    private(set) var isLoading: Bool = false
+    private(set) var error: String?
+    private(set) var actionSuccessMessage: String?
+
+    var selectedFilter: RequestFilter = .all
+    var selectedMediaType: RequestMediaType = .all
+    var sortOrder: RequestSortOrder = .dateDesc
+
+    private let apiClient: SeerrAPIClient
+    private var currentSkip: Int = 0
+    private let pageSize: Int = 20
+    private var hasLoadedRequests = false
+
+    init(apiClient: SeerrAPIClient) {
+        self.apiClient = apiClient
+    }
+
+    var sortedRequests: [SeerrMediaRequest] {
+        switch sortOrder {
+        case .dateDesc: requests.sorted { $0.id > $1.id }
+        case .dateAsc:  requests.sorted { $0.id < $1.id }
+        case .title:
+            requests.sorted {
+                resolvedTitle(for: $0).localizedCaseInsensitiveCompare(resolvedTitle(for: $1)) == .orderedAscending
+            }
+        }
+    }
+
+    var hasMore: Bool {
+        currentSkip + pageSize < totalCount
+    }
+
+    func loadRequests() async {
+        isLoading = true
+        error = nil
+        currentSkip = 0
+        enrichments = []
+
+        do {
+            async let requestsLoad = apiClient.getRequests(
+                take: pageSize,
+                skip: 0,
+                filter: selectedFilter.apiValue,
+                mediaType: selectedMediaType.apiValue
+            )
+            async let countLoad = apiClient.getRequestCount()
+
+            let (response, count) = try await (requestsLoad, countLoad)
+            requests = response.results
+            totalCount = response.pageInfo.results ?? 0
+            requestCount = count
+            await enrichMissingTitles(for: response.results)
+            hasLoadedRequests = true
+        } catch {
+            self.error = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
+    func loadRequestsIfNeeded() async {
+        guard !hasLoadedRequests else { return }
+        await loadRequests()
+    }
+
+    func loadMore() async {
+        let nextSkip = currentSkip + pageSize
+        do {
+            let response = try await apiClient.getRequests(
+                take: pageSize,
+                skip: nextSkip,
+                filter: selectedFilter.apiValue,
+                mediaType: selectedMediaType.apiValue
+            )
+            requests.append(contentsOf: response.results)
+            currentSkip = nextSkip
+            await enrichMissingTitles(for: response.results)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func resolvedTitle(for request: SeerrMediaRequest) -> String {
+        enrichment(for: request.id)?.title ?? request.displayTitle
+    }
+
+    func resolvedPosterURL(for request: SeerrMediaRequest) -> URL? {
+        request.media?.posterURL ?? enrichment(for: request.id)?.posterURL
+    }
+
+    func approveRequest(_ request: SeerrMediaRequest) async {
+        do {
+            _ = try await apiClient.approveRequest(id: request.id)
+            actionSuccessMessage = "Approved \(request.displayTitle)"
+            await loadRequests()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func declineRequest(_ request: SeerrMediaRequest) async {
+        do {
+            _ = try await apiClient.declineRequest(id: request.id)
+            actionSuccessMessage = "Declined \(request.displayTitle)"
+            await loadRequests()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func deleteRequest(_ request: SeerrMediaRequest) async {
+        do {
+            try await apiClient.deleteRequest(id: request.id)
+            requests.removeAll { $0.id == request.id }
+            if totalCount > 0 { totalCount -= 1 }
+            actionSuccessMessage = "Deleted \(request.displayTitle)"
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func retryRequest(_ request: SeerrMediaRequest) async {
+        do {
+            _ = try await apiClient.retryRequest(id: request.id)
+            actionSuccessMessage = "Retrying \(request.displayTitle)"
+            await loadRequests()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func clearActionMessage() { actionSuccessMessage = nil }
+    func clearError() { error = nil }
+
+    private func enrichMissingTitles(for requests: [SeerrMediaRequest]) async {
+        let missingRequests = requests.filter { request in
+            let existing = enrichment(for: request.id)
+            let needsTitle = request.displayTitle == "Unknown" && existing?.title == nil
+            let needsPoster = request.media?.posterURL == nil && existing?.posterURL == nil
+            return (needsTitle || needsPoster) &&
+                request.media?.tmdbId != nil &&
+                request.type != nil
+        }
+
+        guard !missingRequests.isEmpty else { return }
+
+        let apiClient = self.apiClient
+
+        await withTaskGroup(of: RequestEnrichmentResult?.self) { group in
+            for request in missingRequests {
+                guard let tmdbId = request.media?.tmdbId, let type = request.type else { continue }
+
+                group.addTask {
+                    do {
+                        switch type {
+                        case "movie":
+                            let detail = try await apiClient.getMovieDetail(tmdbId: tmdbId)
+                            return RequestEnrichmentResult(
+                                requestID: request.id,
+                                title: detail.displayTitle,
+                                posterURL: detail.posterURL
+                            )
+                        case "tv":
+                            let detail = try await apiClient.getTVDetail(tmdbId: tmdbId)
+                            return RequestEnrichmentResult(
+                                requestID: request.id,
+                                title: detail.displayTitle,
+                                posterURL: detail.posterURL
+                            )
+                        default:
+                            return nil
+                        }
+                    } catch {
+                        return nil
+                    }
+                }
+            }
+
+            for await result in group {
+                guard let result else { continue }
+                if let index = enrichments.firstIndex(where: { $0.requestID == result.requestID }) {
+                    enrichments[index] = enrichments[index].merged(with: result)
+                } else {
+                    enrichments.append(result.normalized)
+                }
+            }
+        }
+    }
+
+    private func enrichment(for requestID: Int) -> RequestEnrichmentResult? {
+        enrichments.first(where: { $0.requestID == requestID })
+    }
+}
+
+private struct RequestEnrichmentResult {
+    let requestID: Int
+    let title: String?
+    let posterURL: URL?
+
+    var normalized: RequestEnrichmentResult {
+        RequestEnrichmentResult(
+            requestID: requestID,
+            title: title == "Unknown" ? nil : title,
+            posterURL: posterURL
+        )
+    }
+
+    func merged(with other: RequestEnrichmentResult) -> RequestEnrichmentResult {
+        let normalizedOther = other.normalized
+        return RequestEnrichmentResult(
+            requestID: requestID,
+            title: title ?? normalizedOther.title,
+            posterURL: posterURL ?? normalizedOther.posterURL
+        )
+    }
+}
+
+enum RequestFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case pending = "Pending"
+    case approved = "Approved"
+    case processing = "Processing"
+    case available = "Available"
+    case failed = "Failed"
+
+    var id: String { rawValue }
+
+    var apiValue: String {
+        switch self {
+        case .all:        "all"
+        case .pending:    "pending"
+        case .approved:   "approved"
+        case .processing: "processing"
+        case .available:  "available"
+        case .failed:     "failed"
+        }
+    }
+}
+
+enum RequestMediaType: String, CaseIterable, Identifiable {
+    case all = "All"
+    case movie = "Movies"
+    case tv = "TV"
+
+    var id: String { rawValue }
+
+    var apiValue: String {
+        switch self {
+        case .all:   "all"
+        case .movie: "movie"
+        case .tv:    "tv"
+        }
+    }
+}
+
+enum RequestSortOrder: String, CaseIterable, Identifiable {
+    case dateDesc = "Newest First"
+    case dateAsc  = "Oldest First"
+    case title    = "Title"
+
+    var id: String { rawValue }
+}
