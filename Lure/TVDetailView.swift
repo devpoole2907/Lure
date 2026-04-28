@@ -8,6 +8,7 @@ struct TVDetailView: View {
 
     @State private var vm: TVDetailViewModel
     @State private var showRequestSheet = false
+    @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
     @Environment(InAppNotificationCenter.self) private var notificationCenter
 
@@ -40,6 +41,27 @@ struct TVDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showReportSheet = true
+                    } label: {
+                        Label("Report an Issue", systemImage: "exclamationmark.triangle")
+                    }
+                } label: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
+        .sheet(isPresented: $showReportSheet) {
+            ReportIssueSheet(
+                mediaId: vm.show?.mediaInfo?.id,
+                mediaTitle: vm.show?.displayTitle ?? initialTitle,
+                apiClient: apiClient
+            )
+        }
         .errorAlert(item: Binding(
             get: { vm.error.map { ErrorAlertItem(title: "Error", message: $0) } },
             set: { _ in vm.error = nil }
@@ -150,6 +172,12 @@ struct TVDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 4) {
+                    if let cert = show.contentRatingText {
+                        Text(cert)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.5), lineWidth: 1))
+                    }
                     if let year = show.year { Text(year) }
                     if let seasons = show.numberOfSeasons {
                         Text("·")
@@ -187,7 +215,14 @@ struct TVDetailView: View {
         statsCard(show)
 
         if !show.requestableSeasons.isEmpty {
-            seasonsCard(show)
+            ForEach(show.requestableSeasons) { season in
+                let statusSeason = show.mediaInfo?.seasons?.first { $0.seasonNumber == season.seasonNumber }
+                seasonNavCard(show: show, season: season, statusSeason: statusSeason)
+            }
+        }
+
+        if let providers = show.usWatchProviders, !(providers.flatrate ?? []).isEmpty {
+            watchProvidersCard(providers)
         }
 
         if let genres = show.genres, !genres.isEmpty {
@@ -283,46 +318,84 @@ struct TVDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Seasons Card
+    // MARK: - Season Nav Card
 
-    private func seasonsCard(_ show: SeerrTVDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Seasons", icon: "tv")
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+    private func seasonNavCard(show: SeerrTVDetail, season: SeerrTVSeason, statusSeason: SeerrSeasonStatus?) -> some View {
+        let availableCount = statusSeason?.episodes?.filter { $0.status == 5 }.count ?? 0
+        let totalCount = season.episodeCount ?? 0
+        let allAvailable = totalCount > 0 && availableCount == totalCount
 
-            ForEach(Array(show.requestableSeasons.enumerated()), id: \.element.id) { index, season in
-                let unavailable = vm.isSeasonUnavailableForRequest(season.seasonNumber)
-
-                HStack(spacing: 10) {
-                    Image(systemName: unavailable ? "checkmark.circle.fill" : "circle")
-                        .font(.caption)
-                        .foregroundStyle(unavailable ? AnyShapeStyle(Color.green) : AnyShapeStyle(Color.secondary))
-                        .frame(width: 16, alignment: .center)
-
+        return NavigationLink {
+            TVSeasonDetailView(show: show, season: season, statusSeason: statusSeason)
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(season.name ?? "Season \(season.seasonNumber)")
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text(totalCount > 0 ? "\(availableCount) of \(totalCount) available" : "\(season.episodeCount ?? 0) episodes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-                    Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-                    if let count = season.episodeCount {
-                        Text("\(count) eps")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.3))
+                        .frame(width: 48, height: 4)
+                    if totalCount > 0 {
+                        Capsule()
+                            .fill(allAvailable ? Color.green : Color.purple)
+                            .frame(width: 48 * CGFloat(availableCount) / CGFloat(totalCount), height: 4)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
 
-                if index < show.requestableSeasons.count - 1 {
-                    Divider().padding(.leading, 42)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
-
-            Color.clear.frame(height: 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Watch Providers Card
+
+    private func watchProvidersCard(_ providers: SeerrWatchProviders) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("Streaming", icon: "play.tv")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(providers.flatrate ?? [], id: \.stableID) { provider in
+                        VStack(spacing: 4) {
+                            AsyncImage(url: provider.logoURL) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Text(provider.providerName ?? "")
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .frame(width: 60)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+            .horizontalSoftEdges()
+        }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 

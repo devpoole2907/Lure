@@ -7,6 +7,7 @@ final class DiscoverViewModel {
     private(set) var popularMovies: [SeerrMediaItem] = []
     private(set) var popularTV: [SeerrMediaItem] = []
     private(set) var upcomingMovies: [SeerrMediaItem] = []
+    private(set) var collections: [SeerrCollection] = []
     private(set) var isLoading: Bool = false
     private(set) var error: String?
 
@@ -24,8 +25,9 @@ final class DiscoverViewModel {
         async let moviesLoad = loadPopularMovies()
         async let tvLoad = loadPopularTV()
         async let upcomingLoad = loadUpcomingMovies()
+        async let collectionsLoad = loadCollections()
 
-        _ = await (trendingLoad, moviesLoad, tvLoad, upcomingLoad)
+        _ = await (trendingLoad, moviesLoad, tvLoad, upcomingLoad, collectionsLoad)
         isLoading = false
     }
 
@@ -66,6 +68,17 @@ final class DiscoverViewModel {
             upcomingMovies = response.results.map { $0.toMediaItem() }
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    private func loadCollections() async {
+        let result = await CollectionsViewModel.loadCollections(using: apiClient)
+        if result.isEmpty {
+            if error == nil {
+                error = "Could not load collections."
+            }
+        } else {
+            collections = result
         }
     }
 }

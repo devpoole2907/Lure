@@ -102,6 +102,21 @@ struct SeerrCreateRequestBody: Codable, Sendable {
     let userId: Int?               // Request on behalf of (admin only)
 }
 
+// MARK: - Issue Reporting
+
+struct SeerrCreateIssueBody: Codable, Sendable {
+    let issueType: Int      // 1=Video, 2=Audio, 3=Subtitle, 4=Other
+    let message: String
+    let mediaId: Int
+}
+
+struct SeerrIssueResponse: Codable, Sendable {
+    let id: Int?
+    let issueType: Int?
+    let status: Int?
+    let message: String?
+}
+
 // MARK: - Discover Slider Config
 
 struct SeerrDiscoverSlider: Codable, Identifiable, Sendable {

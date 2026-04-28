@@ -8,9 +8,11 @@ struct UserProfileView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(filter: #Predicate<LureServerProfile> { $0.isActive }) private var activeProfiles: [LureServerProfile]
-    
+
     @State private var viewModel: UserProfileViewModel?
     @State private var apnsWorkerURL: String = ""
+    @State private var cacheSize: String = ""
+    @State private var showCacheClearedAlert = false
 
     var body: some View {
         NavigationStack {
@@ -36,6 +38,14 @@ struct UserProfileView: View {
     @ViewBuilder
     private func profileContent(vm: UserProfileViewModel) -> some View {
         List {
+            if currentUser.isAdmin {
+                Section {
+                    AdminDashboardCard(requestCount: vm.requestCountSummary, apiClient: apiClient)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                        .listRowBackground(Color.clear)
+                }
+            }
+
             // Avatar and name
             Section {
                 HStack(spacing: 16) {
@@ -94,6 +104,16 @@ struct UserProfileView: View {
                     Spacer()
                     Text("\(currentUser.requestCount ?? 0)")
                         .foregroundStyle(.secondary)
+                }
+            }
+
+            if currentUser.isAdmin {
+                Section("Administration") {
+                    NavigationLink {
+                        AdminUserManagementView(apiClient: apiClient)
+                    } label: {
+                        Label("User Management", systemImage: "person.2.badge.gearshape")
+                    }
                 }
             }
 
@@ -159,6 +179,32 @@ struct UserProfileView: View {
                 }
             }
 
+            // Storage
+            Section("Storage") {
+                HStack {
+                    Label("Image Cache", systemImage: "photo.on.rectangle")
+                    Spacer()
+                    Text(cacheSize.isEmpty ? "Calculating..." : cacheSize)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button(role: .destructive) {
+                    Task {
+                        await LureImageCache.shared.clear()
+                        await refreshCacheSize()
+                        showCacheClearedAlert = true
+                    }
+                } label: {
+                    Label("Clear Image Cache", systemImage: "trash")
+                }
+            }
+            .onAppear { Task { await refreshCacheSize() } }
+            .alert("Cache Cleared", isPresented: $showCacheClearedAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("The image cache has been cleared.")
+            }
+
             // Logout
             Section {
                 Button(role: .destructive, action: onLogout) {
@@ -188,6 +234,12 @@ struct UserProfileView: View {
         }
     }
     
+    private func refreshCacheSize() async {
+        let bytes = await LureImageCache.shared.cacheSizeInBytes()
+        let formatted = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        await MainActor.run { cacheSize = formatted }
+    }
+
     private func saveWorkerURL() {
         if let profile = activeProfiles.first {
             let trimmed = apnsWorkerURL.trimmingCharacters(in: .whitespacesAndNewlines)

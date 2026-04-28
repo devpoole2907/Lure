@@ -57,17 +57,31 @@ struct RequestListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if vm.isLoading && vm.sortedRequests.isEmpty {
-            ProgressView("Loading requests...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if vm.sortedRequests.isEmpty {
-            ContentUnavailableView {
-                Label("No Requests", systemImage: "tray")
-            } description: {
-                Text("No requests match the current filter.")
+        List {
+            if currentUser?.isAdmin == true {
+                Section("Admin") {
+                    NavigationLink {
+                        AdminIssueListView(apiClient: apiClient)
+                    } label: {
+                        Label("Manage Issues", systemImage: "exclamationmark.bubble")
+                    }
+                }
             }
-        } else {
-            List {
+
+            if vm.isLoading && vm.sortedRequests.isEmpty {
+                Section {
+                    ProgressView("Loading requests...")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            } else if vm.sortedRequests.isEmpty {
+                Section {
+                    ContentUnavailableView {
+                        Label("No Requests", systemImage: "tray")
+                    } description: {
+                        Text("No requests match the current filter.")
+                    }
+                }
+            } else {
                 ForEach(vm.sortedRequests) { request in
                     requestRow(request)
                 }
@@ -77,8 +91,8 @@ struct RequestListView: View {
                         .task { await vm.loadMore() }
                 }
             }
-            .listStyle(.plain)
         }
+        .listStyle(.plain)
     }
 
     // MARK: - Row

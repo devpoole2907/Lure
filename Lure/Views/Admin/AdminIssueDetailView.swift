@@ -1,0 +1,178 @@
+import Observation
+import SwiftUI
+
+struct AdminIssueDetailView: View {
+    let apiClient: SeerrAPIClient
+    let onUpdate: (SeerrIssue) -> Void
+
+    @State private var viewModel: AdminIssueDetailViewModel
+    @State private var errorAlert: ErrorAlertItem?
+
+    init(issue: SeerrIssue, apiClient: SeerrAPIClient, onUpdate: @escaping (SeerrIssue) -> Void) {
+        self.apiClient = apiClient
+        self.onUpdate = onUpdate
+        self._viewModel = State(initialValue: AdminIssueDetailViewModel(issue: issue, apiClient: apiClient))
+    }
+
+    var body: some View {
+        @Bindable var viewModel = viewModel
+
+        List {
+            Section("Issue") {
+                HStack(alignment: .top, spacing: 12) {
+                    PosterImage(
+                        url: viewModel.issue.media?.posterURL,
+                        width: 56,
+                        height: 84,
+                        cornerRadius: LureDesign.CornerRadius.tinyPoster
+                    )
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(viewModel.issue.media?.displayTitle ?? "Unknown Media")
+                            .font(.headline)
+
+                        if let issueType = viewModel.issue.issueKind {
+                            Label(issueType.title, systemImage: issueType.symbolName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let status = viewModel.issue.issueStatus {
+                            Label(status.title, systemImage: status.symbolName)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(status == .resolved ? .green : .orange)
+                        }
+
+                        if let createdBy = viewModel.issue.createdBy {
+                            Text("Reported by \(createdBy.displayName)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let createdAt = viewModel.issue.createdAtRelativeText {
+                            Text("Opened \(createdAt)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let updatedAt = viewModel.issue.updatedAtRelativeText,
+                           updatedAt != viewModel.issue.createdAtRelativeText {
+                            Text("Updated \(updatedAt)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        if let tmdbId = viewModel.issue.media?.tmdbId,
+                           let mediaType = viewModel.issue.media?.mediaType {
+                            NavigationLink {
+                                if mediaType == "movie" {
+                                    MovieDetailView(
+                                        tmdbId: tmdbId,
+                                        apiClient: apiClient,
+                                        initialTitle: viewModel.issue.media?.displayTitle,
+                                        initialPosterURL: viewModel.issue.media?.posterURL
+                                    )
+                                } else {
+                                    TVDetailView(
+                                        tmdbId: tmdbId,
+                                        apiClient: apiClient,
+                                        initialTitle: viewModel.issue.media?.displayTitle,
+                                        initialPosterURL: viewModel.issue.media?.posterURL
+                                    )
+                                }
+                            } label: {
+                                Label("Open Media", systemImage: "arrow.up.forward.square")
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Comments") {
+                if viewModel.isLoadingComments && viewModel.comments.isEmpty {
+                    ProgressView("Loading comments...")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else if viewModel.comments.isEmpty {
+                    Text("No comments yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(viewModel.comments) { comment in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(comment.user?.displayName ?? "Unknown User")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                if let createdAt = comment.createdAtRelativeText {
+                                    Text(createdAt)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Text(comment.message)
+                                .font(.body)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Issue #\(viewModel.issue.id)")
+        .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    TextField("Reply to issue", text: $viewModel.replyMessage, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...4)
+
+                    Button {
+                        Task {
+                            if let updatedIssue = await viewModel.sendReply() {
+                                onUpdate(updatedIssue)
+                            }
+                        }
+                    } label: {
+                        if viewModel.isSendingReply {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                                .font(.headline)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.replyMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isSendingReply)
+                }
+
+                Button {
+                    Task {
+                        if let updatedIssue = await viewModel.toggleStatus() {
+                            onUpdate(updatedIssue)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        if viewModel.isUpdatingStatus {
+                            ProgressView()
+                        }
+                        Text(viewModel.toggleButtonTitle)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(viewModel.issue.issueStatus == .resolved ? .orange : .green)
+                .disabled(viewModel.isUpdatingStatus)
+            }
+            .padding()
+            .background(.ultraThinMaterial)
+        }
+        .task { await viewModel.loadComments() }
+        .errorAlert(item: $errorAlert)
+        .onChange(of: viewModel.errorMessage) { _, message in
+            guard let message else { return }
+            errorAlert = ErrorAlertItem(title: "Issue Action Failed", message: message)
+            viewModel.clearError()
+        }
+    }
+}

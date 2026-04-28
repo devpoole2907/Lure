@@ -1,10 +1,6 @@
 import SwiftUI
 import UIKit
 
-private enum PosterImageCache {
-    static let shared = NSCache<NSURL, UIImage>()
-}
-
 struct PosterImage: View {
     let url: URL?
     var width: CGFloat = 120
@@ -52,25 +48,20 @@ struct PosterImage: View {
             return
         }
 
-        if let image = PosterImageCache.shared.object(forKey: url as NSURL) {
-            cachedImage = image
-            isLoading = false
-            return
-        }
-
-        cachedImage = nil
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = UIImage(data: data) else { return }
-            PosterImageCache.shared.setObject(image, forKey: url as NSURL)
+            let data = try await LureImageCache.shared.imageData(for: url)
+            let uiImage = await Task.detached(priority: .userInitiated) {
+                UIImage(data: data)
+            }.value
+            guard let uiImage else { return }
             withAnimation(.easeInOut(duration: 0.2)) {
-                cachedImage = image
+                cachedImage = uiImage
             }
         } catch {
-            return
+            cachedImage = nil
         }
     }
 }

@@ -17,6 +17,10 @@ struct LureTabView: View {
                 SearchView(apiClient: apiClient)
             }
 
+            Tab("Library", systemImage: "checkmark.circle", value: LureTab.library) {
+                LibraryView(apiClient: apiClient)
+            }
+
             Tab("Requests", systemImage: "arrow.down.circle", value: LureTab.requests) {
                 RequestListView(apiClient: apiClient, currentUser: currentUser)
             }
@@ -34,5 +38,5 @@ struct LureTabView: View {
 }
 
 private enum LureTab: Hashable {
-    case discover, search, requests, profile
+    case discover, search, library, requests, profile
 }

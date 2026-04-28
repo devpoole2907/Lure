@@ -47,6 +47,26 @@ struct SeerrMovieDetail: Codable, Identifiable, Sendable {
         return URL(string: "https://www.youtube.com/watch?v=\(key)")
     }
 
+    /// US content certification (e.g. "PG-13", "R"). Falls back to first available region.
+    var certificationText: String? {
+        let dates = releases?.preferredReleaseDates ?? []
+        let typeOrder = [3, 2, 1, 4, 5, 6]
+        let sorted = dates.sorted { a, b in
+            let ai = typeOrder.firstIndex(of: a.type ?? 0) ?? 99
+            let bi = typeOrder.firstIndex(of: b.type ?? 0) ?? 99
+            return ai < bi
+        }
+        return sorted.compactMap { date -> String? in
+            guard let cert = date.certification, !cert.isEmpty else { return nil }
+            return cert
+        }.first
+    }
+
+    /// US watch providers (streaming). Falls back to first available region.
+    var usWatchProviders: SeerrWatchProviders? {
+        watchProviders?.first(where: { $0.iso_3166_1 == "US" }) ?? watchProviders?.first
+    }
+
     var releaseAvailabilityText: String? {
         if mediaInfo?.isAvailable == true {
             return "Available to Watch"
@@ -139,6 +159,17 @@ struct SeerrTVDetail: Codable, Identifiable, Sendable {
         guard let video = relatedVideos?.first(where: { $0.type == "Trailer" && $0.site == "YouTube" }),
               let key = video.key else { return nil }
         return URL(string: "https://www.youtube.com/watch?v=\(key)")
+    }
+
+    /// US content rating (e.g. "TV-MA", "TV-14"). Falls back to first available region.
+    var contentRatingText: String? {
+        contentRatings?.results?.first(where: { $0.iso_3166_1 == "US" })?.rating
+            ?? contentRatings?.results?.first?.rating
+    }
+
+    /// US watch providers (streaming). Falls back to first available region.
+    var usWatchProviders: SeerrWatchProviders? {
+        watchProviders?.first(where: { $0.iso_3166_1 == "US" }) ?? watchProviders?.first
     }
 
     /// Requestable seasons (non-specials, non-zero)
@@ -265,6 +296,16 @@ struct SeerrCollection: Codable, Identifiable, Sendable {
     let backdropPath: String?
     let overview: String?
     let parts: [SeerrMovieResult]?
+
+    var posterURL: URL? { ImageURL.poster(posterPath, size: .medium) }
+    var backdropURL: URL? { ImageURL.backdrop(backdropPath) }
+}
+
+struct SeerrCollectionsResponse: Codable, Sendable {
+    let page: Int?
+    let totalPages: Int?
+    let totalResults: Int?
+    let results: [SeerrCollection]
 }
 
 struct SeerrExternalIds: Codable, Sendable {
@@ -306,6 +347,15 @@ struct SeerrWatchProvider: Codable, Identifiable, Sendable {
         case logoPath = "logo_path"
         case providerId = "provider_id"
         case providerName = "provider_name"
+    }
+
+    var logoURL: URL? {
+        guard let logoPath, !logoPath.isEmpty else { return nil }
+        return URL(string: LureConstants.TMDB.imageBaseURL + "original" + logoPath)
+    }
+
+    var stableID: String {
+        "\(providerId ?? -1)-\(providerName ?? "")-\(logoPath ?? "")"
     }
 }
 
@@ -408,5 +458,59 @@ struct SeerrRatingsCombined: Codable, Sendable {
         tmdbRating != nil ||
         criticsScore != nil ||
         audienceScore != nil
+    }
+}
+
+// MARK: - Detail → MediaItem conversion (used by LibraryViewModel)
+
+extension SeerrMovieDetail {
+    func toMediaItem() -> SeerrMediaItem {
+        .movie(SeerrMovieResult(
+            id: id, mediaType: "movie", popularity: popularity,
+            posterPath: posterPath, backdropPath: backdropPath,
+            voteCount: voteCount, voteAverage: voteAverage,
+            genreIds: genres?.compactMap { $0.id }, overview: overview,
+            originalLanguage: originalLanguage, title: title,
+            originalTitle: originalTitle, releaseDate: releaseDate,
+            adult: adult, mediaInfo: mediaInfo
+        ))
+    }
+
+    func toLibraryItem() -> LibraryItem {
+        LibraryItem(
+            mediaType: "movie",
+            tmdbId: id,
+            title: displayTitle,
+            year: year,
+            voteAverage: voteAverage,
+            posterURL: posterURL,
+            isAvailable: mediaInfo?.isAvailable == true
+        )
+    }
+}
+
+extension SeerrTVDetail {
+    func toMediaItem() -> SeerrMediaItem {
+        .tv(SeerrTvResult(
+            id: id, mediaType: "tv", popularity: popularity,
+            posterPath: posterPath, backdropPath: backdropPath,
+            voteCount: voteCount, voteAverage: voteAverage,
+            genreIds: genres?.compactMap { $0.id }, overview: overview,
+            originalLanguage: originalLanguage, name: name,
+            originalName: originalName, originCountry: originCountry,
+            firstAirDate: firstAirDate, mediaInfo: mediaInfo
+        ))
+    }
+
+    func toLibraryItem() -> LibraryItem {
+        LibraryItem(
+            mediaType: "tv",
+            tmdbId: id,
+            title: displayTitle,
+            year: year,
+            voteAverage: voteAverage,
+            posterURL: posterURL,
+            isAvailable: mediaInfo?.isAvailable == true
+        )
     }
 }

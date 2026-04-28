@@ -6,21 +6,20 @@ struct MediaSliderView: View {
     let items: [SeerrMediaItem]
     let apiClient: SeerrAPIClient
     var transitionNamespace: Namespace.ID? = nil
+    var headerValue: DiscoverSectionDestination? = nil
 
     var body: some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 if let title, !title.isEmpty {
-                    HStack(spacing: 6) {
-                        if let icon {
-                            Image(systemName: icon)
-                                .foregroundStyle(.secondary)
+                    if let headerValue {
+                        NavigationLink(value: headerValue) {
+                            headerLabel(title: title)
                         }
-                        Text(title)
-                            .font(.title3)
-                            .fontWeight(.bold)
+                        .buttonStyle(.plain)
+                    } else {
+                        headerLabel(title: title)
                     }
-                    .padding(.horizontal, 16)
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -39,6 +38,26 @@ struct MediaSliderView: View {
                 .horizontalSoftEdges()
             }
         }
+    }
+
+    @ViewBuilder
+    private func headerLabel(title: String) -> some View {
+        HStack(spacing: 6) {
+            if let icon {
+                Image(systemName: icon)
+                    .foregroundStyle(.secondary)
+            }
+            Text(title)
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 16)
+        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

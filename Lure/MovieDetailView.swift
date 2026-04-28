@@ -8,6 +8,7 @@ struct MovieDetailView: View {
 
     @State private var vm: MovieDetailViewModel
     @State private var showRequestOptions = false
+    @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
     @Environment(InAppNotificationCenter.self) private var notificationCenter
 
@@ -40,6 +41,27 @@ struct MovieDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        showReportSheet = true
+                    } label: {
+                        Label("Report an Issue", systemImage: "exclamationmark.triangle")
+                    }
+                } label: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
+        .sheet(isPresented: $showReportSheet) {
+            ReportIssueSheet(
+                mediaId: vm.movie?.mediaInfo?.id,
+                mediaTitle: vm.movie?.displayTitle ?? initialTitle,
+                apiClient: apiClient
+            )
+        }
         .errorAlert(item: Binding(
             get: { vm.error.map { ErrorAlertItem(title: "Error", message: $0) } },
             set: { _ in vm.error = nil }
@@ -160,6 +182,12 @@ struct MovieDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 4) {
+                    if let cert = movie.certificationText {
+                        Text(cert)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.5), lineWidth: 1))
+                    }
                     if let year = movie.year { Text(year) }
                     if let runtime = movie.runtime, runtime > 0 { Text("·"); Text("\(runtime)m") }
                 }
@@ -188,6 +216,10 @@ struct MovieDetailView: View {
         }
 
         statsCard(movie)
+
+        if let providers = movie.usWatchProviders, !(providers.flatrate ?? []).isEmpty {
+            watchProvidersCard(providers)
+        }
 
         if let genres = movie.genres, !genres.isEmpty {
             genreChips(genres.compactMap(\.name))
@@ -288,6 +320,41 @@ if !vm.recommendations.isEmpty {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Watch Providers Card
+
+    private func watchProvidersCard(_ providers: SeerrWatchProviders) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("Streaming", icon: "play.tv")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(providers.flatrate ?? [], id: \.stableID) { provider in
+                        VStack(spacing: 4) {
+                            AsyncImage(url: provider.logoURL) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Text(provider.providerName ?? "")
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .frame(width: 60)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+            .horizontalSoftEdges()
+        }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
