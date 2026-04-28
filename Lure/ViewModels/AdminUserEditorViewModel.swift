@@ -9,7 +9,7 @@ final class AdminUserEditorViewModel {
     private(set) var errorMessage: String?
 
     private let apiClient: SeerrAPIClient
-    private let originalPermissionsValue: Int
+    private var originalPermissionsValue: Int
 
     init(user: SeerrUser, apiClient: SeerrAPIClient) {
         self.user = user
@@ -57,6 +57,7 @@ final class AdminUserEditorViewModel {
         do {
             let updatedUser = try await apiClient.updateUser(id: user.id, permissions: permissionsValue)
             permissionsValue = updatedUser.permissions ?? permissionsValue
+            originalPermissionsValue = updatedUser.permissions ?? originalPermissionsValue
             return updatedUser
         } catch {
             errorMessage = error.localizedDescription

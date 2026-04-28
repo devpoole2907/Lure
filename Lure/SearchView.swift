@@ -42,10 +42,15 @@ struct SearchView: View {
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchText.isEmpty)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: scope)
             .navigationDestination(for: MediaDestination.self) { dest in
-                if dest.mediaType == "movie" {
+                switch dest.mediaType {
+                case "movie":
                     MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
-                } else {
+                case "tv":
                     TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                case "person":
+                    EmptyView()
+                default:
+                    EmptyView()
                 }
             }
             .navigationDestination(for: SearchGenreDestination.self) { destination in
@@ -130,21 +135,26 @@ struct SearchView: View {
     }
 
     private func loadLibraryItems() async {
-        var allEntries: [SeerrMediaEntry] = []
-        let pageSize = 250
+        do {
+            var allEntries: [SeerrMediaEntry] = []
+            let pageSize = 250
 
-        for filter in ["available", "partial"] {
-            var skip = 0
-            while true {
-                guard let response = try? await apiClient.getMedia(filter: filter, take: pageSize, skip: skip) else { break }
-                allEntries.append(contentsOf: response.results)
-                if response.results.count < pageSize { break }
-                skip += pageSize
+            for filter in ["available", "partial"] {
+                var skip = 0
+                while true {
+                    let response = try await apiClient.getMedia(filter: filter, take: pageSize, skip: skip)
+                    allEntries.append(contentsOf: response.results)
+                    if response.results.count < pageSize { break }
+                    skip += pageSize
+                }
             }
-        }
 
-        libraryItems = allEntries.compactMap { $0.toLibraryItem() }
-        libraryItemsLoaded = true
+            libraryItems = allEntries.compactMap { $0.toLibraryItem() }
+            libraryItemsLoaded = true
+        } catch {
+            // Don't set libraryItemsLoaded on failure
+            print("Failed to load library items: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Recent Searches

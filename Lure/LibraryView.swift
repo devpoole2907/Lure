@@ -17,20 +17,26 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .navigationSubtitle(subtitleText(for: viewModel))
             .navigationDestination(for: MediaDestination.self) { destination in
-                if destination.mediaType == "movie" {
+                switch destination.mediaType {
+                case "movie":
                     MovieDetailView(
                         tmdbId: destination.tmdbId,
                         apiClient: apiClient,
                         initialTitle: destination.title,
                         initialPosterURL: destination.posterURL
                     )
-                } else {
+                case "tv":
                     TVDetailView(
                         tmdbId: destination.tmdbId,
                         apiClient: apiClient,
                         initialTitle: destination.title,
                         initialPosterURL: destination.posterURL
                     )
+                default:
+                    Text("Unsupported media type: \(destination.mediaType)")
+                        .onAppear {
+                            assertionFailure("Unexpected mediaType in LibraryView: \(destination.mediaType)")
+                        }
                 }
             }
             .toolbar {

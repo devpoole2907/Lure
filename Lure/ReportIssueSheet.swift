@@ -36,13 +36,13 @@ struct ReportIssueSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    if let title = mediaTitle {
-                        LabeledContent("Title", value: title)
+                if let mediaTitle = mediaTitle {
+                    Section {
+                        LabeledContent("Title", value: mediaTitle)
                             .foregroundStyle(.secondary)
+                    } header: {
+                        Text("Reporting issue for")
                     }
-                } header: {
-                    Text("Reporting issue for")
                 }
 
                 Section("Issue Type") {

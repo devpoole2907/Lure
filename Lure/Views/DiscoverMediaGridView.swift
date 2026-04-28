@@ -10,6 +10,7 @@ struct DiscoverMediaGridView: View {
     @State private var currentPage = 1
     @State private var hasMore = false
     @State private var isLoadingMore = false
+    @State private var loadError: Error?
 
     private var allItems: [SeerrMediaItem] {
         initialItems + additionalItems
@@ -51,10 +52,28 @@ struct DiscoverMediaGridView: View {
                     }
 
                     if hasMore {
-                        ProgressView()
+                        if loadError != nil {
+                            VStack(spacing: 8) {
+                                Text("Failed to load more items")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Button("Retry") {
+                                    Task {
+                                        loadError = nil
+                                        await loadNextPage()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                            }
                             .frame(maxWidth: .infinity)
                             .gridCellColumns(3)
-                            .task { await loadNextPage() }
+                            .padding(.vertical, 8)
+                        } else {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                                .gridCellColumns(3)
+                                .task { await loadNextPage() }
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -78,6 +97,7 @@ struct DiscoverMediaGridView: View {
         let nextPage = currentPage + 1
         do {
             let newItems = try await loadPage(nextPage)
+            loadError = nil
             if newItems.isEmpty {
                 hasMore = false
             } else {
@@ -85,7 +105,7 @@ struct DiscoverMediaGridView: View {
                 currentPage = nextPage
             }
         } catch {
-            hasMore = false
+            loadError = error
         }
     }
 }

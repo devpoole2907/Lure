@@ -243,7 +243,11 @@ struct SeerrReleaseDate: Codable, Sendable {
         Self.isoFormatter.date(from: releaseDate ?? "")
     }
 
-    private static let isoFormatter = ISO8601DateFormatter()
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 }
 
 struct SeerrProductionCompany: Codable, Identifiable, Sendable {

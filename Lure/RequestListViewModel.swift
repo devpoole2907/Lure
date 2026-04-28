@@ -148,27 +148,55 @@ final class RequestListViewModel {
 
     func approveRequests(ids: Set<Int>) async {
         guard !ids.isEmpty else { return }
-        do {
-            for requestID in ids {
+
+        var successfulIDs: [Int] = []
+        var failedIDs: [Int] = []
+
+        for requestID in ids {
+            do {
                 _ = try await apiClient.approveRequest(id: requestID)
+                successfulIDs.append(requestID)
+            } catch {
+                failedIDs.append(requestID)
             }
-            actionSuccessMessage = ids.count == 1 ? "Approved 1 request" : "Approved \(ids.count) requests"
+        }
+
+        if !successfulIDs.isEmpty {
+            actionSuccessMessage = successfulIDs.count == 1 ? "Approved 1 request" : "Approved \(successfulIDs.count) requests"
             await loadRequests()
-        } catch {
-            self.error = error.localizedDescription
+        }
+
+        if !failedIDs.isEmpty {
+            self.error = failedIDs.count == 1
+                ? "Failed to approve 1 request"
+                : "Failed to approve \(failedIDs.count) of \(ids.count) requests"
         }
     }
 
     func declineRequests(ids: Set<Int>) async {
         guard !ids.isEmpty else { return }
-        do {
-            for requestID in ids {
+
+        var successfulIDs: [Int] = []
+        var failedIDs: [Int] = []
+
+        for requestID in ids {
+            do {
                 _ = try await apiClient.declineRequest(id: requestID)
+                successfulIDs.append(requestID)
+            } catch {
+                failedIDs.append(requestID)
             }
-            actionSuccessMessage = ids.count == 1 ? "Declined 1 request" : "Declined \(ids.count) requests"
+        }
+
+        if !successfulIDs.isEmpty {
+            actionSuccessMessage = successfulIDs.count == 1 ? "Declined 1 request" : "Declined \(successfulIDs.count) requests"
             await loadRequests()
-        } catch {
-            self.error = error.localizedDescription
+        }
+
+        if !failedIDs.isEmpty {
+            self.error = failedIDs.count == 1
+                ? "Failed to decline 1 request"
+                : "Failed to decline \(failedIDs.count) of \(ids.count) requests"
         }
     }
 

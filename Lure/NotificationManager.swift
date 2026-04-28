@@ -31,18 +31,18 @@ final class NotificationManager {
         self.currentWorkerURL = workerURL
         self.currentServerURL = serverURL
         self.currentUsername = username
-        
+
+#if os(iOS) || os(visionOS)
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if granted {
-#if os(iOS) || os(visionOS)
                 DispatchQueue.main.async {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
-#endif
             } else {
                 print("Notification permission denied: \(String(describing: error))")
             }
         }
+#endif
     }
     
     func unregister(workerURL: String, serverURL: String, deviceToken: String) async {

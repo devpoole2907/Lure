@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct LibraryItem: Identifiable, Codable, Sendable, Equatable, Hashable {
     let mediaType: String
@@ -23,10 +24,9 @@ actor LibrarySnapshotCache {
     }
 
     private func cacheURL(for serverBaseURL: String) -> URL {
-        let key = serverBaseURL
-            .replacingOccurrences(of: "://", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
+        let data = Data(serverBaseURL.utf8)
+        let hash = SHA256.hash(data: data)
+        let key = hash.compactMap { String(format: "%02x", $0) }.joined()
         return cachesDirectory.appendingPathComponent("library-snapshot-\(key).json")
     }
 

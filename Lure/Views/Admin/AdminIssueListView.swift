@@ -64,9 +64,6 @@ struct AdminIssueListView: View {
         .modifier(AdminIssueSubtitleModifier(subtitle: viewModel.issues.isEmpty ? nil : "\(viewModel.totalIssueCount) issues"))
         .task { await viewModel.loadIfNeeded() }
         .refreshable { await viewModel.loadIssues() }
-        .onChange(of: viewModel.selectedFilter) { _, _ in
-            Task { await viewModel.loadIssues() }
-        }
         .errorAlert(item: $errorAlert)
         .onChange(of: viewModel.errorMessage) { _, message in
             guard let message else { return }

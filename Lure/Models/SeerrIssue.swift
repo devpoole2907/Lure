@@ -43,7 +43,11 @@ struct SeerrIssue: Codable, Identifiable, Sendable {
         return relativeFormatter.localizedString(for: date, relativeTo: .now)
     }
 
-    private static let isoFormatter = ISO8601DateFormatter()
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
     private static let relativeFormatter = RelativeDateTimeFormatter()
 }
 

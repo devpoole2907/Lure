@@ -38,12 +38,14 @@ struct MediaListRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    Text(mediaTypeLabel)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
+                    if let label = mediaTypeLabel {
+                        Text(label)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary)
+                            .clipShape(Capsule())
+                    }
 
                     if let year {
                         Text(year)
@@ -69,7 +71,16 @@ struct MediaListRow: View {
         .padding(.vertical, 2)
     }
 
-    private var mediaTypeLabel: String {
-        mediaType == "tv" ? "TV" : "Movie"
+    private var mediaTypeLabel: String? {
+        switch mediaType {
+        case "tv":
+            return "TV"
+        case "movie":
+            return "Movie"
+        case "person":
+            return "Person"
+        default:
+            return nil
+        }
     }
 }
