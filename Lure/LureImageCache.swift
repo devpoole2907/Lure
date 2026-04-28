@@ -29,10 +29,18 @@ actor LureImageCache {
     }
 
     func imageData(for url: URL) async throws -> Data {
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
+        guard let scheme = url.scheme?.lowercased() else {
             throw URLError(.unsupportedURL)
         }
+        #if DEBUG
+        guard scheme == "http" || scheme == "https" else {
+            throw URLError(.unsupportedURL)
+        }
+        #else
+        guard scheme == "https" else {
+            throw URLError(.unsupportedURL)
+        }
+        #endif
 
         if let cachedData = memoryCache.object(forKey: url as NSURL) {
             return Data(referencing: cachedData)
@@ -134,6 +142,11 @@ actor LureImageCache {
     }
 
     func clear() {
+        for (_, task) in inFlightTasks {
+            task.cancel()
+        }
+        inFlightTasks.removeAll()
+
         memoryCache.removeAllObjects()
         if fileManager.fileExists(atPath: cacheDirectoryURL.path) {
             try? fileManager.removeItem(at: cacheDirectoryURL)

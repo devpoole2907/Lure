@@ -159,12 +159,18 @@ final class LibraryViewModel {
         let newItemIDs = refreshedItems.lazy
             .map(\.id)
             .filter { !existingIDs.contains($0) }
-        for newItemID in newItemIDs {
-            let visibleIDs = Set(items.map(\.id))
-            let nextItems = refreshedItems.filter { visibleIDs.contains($0.id) || $0.id == newItemID }
-            if nextItems != items {
-                items = nextItems
-                await pauseBetweenDiffStages()
+
+        let MAX_STAGED = 10
+        if newItemIDs.count > MAX_STAGED {
+            items = refreshedItems
+        } else {
+            for newItemID in newItemIDs {
+                let visibleIDs = Set(items.map(\.id))
+                let nextItems = refreshedItems.filter { visibleIDs.contains($0.id) || $0.id == newItemID }
+                if nextItems != items {
+                    items = nextItems
+                    await pauseBetweenDiffStages()
+                }
             }
         }
     }

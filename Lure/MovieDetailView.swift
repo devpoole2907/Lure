@@ -342,7 +342,7 @@ if !vm.recommendations.isEmpty {
                             .frame(width: 44, height: 44)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                            Text(provider.providerName ?? "")
+                            Text(provider.providerName ?? "Unknown")
                                 .font(.caption2)
                                 .lineLimit(1)
                                 .frame(width: 60)

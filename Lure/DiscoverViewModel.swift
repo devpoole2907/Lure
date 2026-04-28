@@ -78,8 +78,6 @@ final class DiscoverViewModel {
             if error == nil {
                 error = "Could not load collections."
             }
-        } else {
-            error = nil
         }
     }
 }
