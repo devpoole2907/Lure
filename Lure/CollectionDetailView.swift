@@ -36,8 +36,13 @@ struct CollectionDetailView: View {
             // Only fetch full detail if parts are missing
             if collection.parts == nil, let id = collection.id {
                 isLoading = true
-                fullCollection = try? await apiClient.getCollectionDetail(collectionId: id)
-                isLoading = false
+                do {
+                    fullCollection = try await apiClient.getCollectionDetail(collectionId: id)
+                    isLoading = false
+                } catch {
+                    isLoading = false
+                    // Handle error - collection remains incomplete
+                }
             }
         }
         .background { artBackground }
@@ -155,10 +160,25 @@ struct CollectionDetailView: View {
 }
 
 extension SeerrCollection: Hashable {
-    public static func == (lhs: SeerrCollection, rhs: SeerrCollection) -> Bool {
-        lhs.id == rhs.id
+    static func == (lhs: SeerrCollection, rhs: SeerrCollection) -> Bool {
+        if let lhsId = lhs.id, let rhsId = rhs.id {
+            return lhsId == rhsId
+        }
+        return lhs.name == rhs.name &&
+               lhs.overview == rhs.overview &&
+               lhs.posterPath == rhs.posterPath &&
+               lhs.backdropPath == rhs.backdropPath &&
+               lhs.parts == rhs.parts
     }
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+    func hash(into hasher: inout Hasher) {
+        if let id = id {
+            hasher.combine(id)
+        } else {
+            hasher.combine(name)
+            hasher.combine(overview)
+            hasher.combine(posterPath)
+            hasher.combine(backdropPath)
+            hasher.combine(parts)
+        }
     }
 }

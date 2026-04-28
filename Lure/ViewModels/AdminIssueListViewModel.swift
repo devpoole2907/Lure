@@ -19,6 +19,7 @@ enum AdminIssueFilter: String, CaseIterable, Identifiable {
 final class AdminIssueListViewModel {
     private(set) var issues: [SeerrIssue] = []
     private(set) var isLoading = false
+    private(set) var isLoadingMore = false
     private(set) var errorMessage: String?
     var selectedFilter: AdminIssueFilter = .open
 
@@ -68,7 +69,8 @@ final class AdminIssueListViewModel {
     }
 
     func loadMore() async {
-        guard hasMore else { return }
+        guard hasMore, !isLoadingMore else { return }
+        isLoadingMore = true
         let nextSkip = currentSkip + pageSize
 
         do {
@@ -78,11 +80,15 @@ final class AdminIssueListViewModel {
                 sort: "createdAt",
                 filter: selectedFilter.apiValue
             )
-            issues.append(contentsOf: response.results)
+            let existingIds = Set(issues.map(\.id))
+            let newIssues = response.results.filter { !existingIds.contains($0.id) }
+            issues.append(contentsOf: newIssues)
             currentSkip = nextSkip
             totalResults = response.pageInfo.results ?? totalResults
+            isLoadingMore = false
         } catch {
             errorMessage = error.localizedDescription
+            isLoadingMore = false
         }
     }
 

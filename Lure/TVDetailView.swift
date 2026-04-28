@@ -44,7 +44,7 @@ struct TVDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button(role: .destructive) {
+                    Button {
                         showReportSheet = true
                     } label: {
                         Label("Report an Issue", systemImage: "exclamationmark.triangle")

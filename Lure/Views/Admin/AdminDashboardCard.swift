@@ -17,19 +17,23 @@ struct AdminDashboardCard: View {
 
                 Spacer()
 
-                pendingBadge
+                if requestCount != nil {
+                    pendingBadge
+                }
             }
 
-            HStack(spacing: LureDesign.Spacing.row) {
-                statBlock(title: "Total", value: requestCount?.total ?? 0)
-                statBlock(title: "Movies", value: requestCount?.movie ?? 0)
-                statBlock(title: "TV", value: requestCount?.tv ?? 0)
-            }
+            if requestCount != nil {
+                HStack(spacing: LureDesign.Spacing.row) {
+                    statBlock(title: "Total", value: requestCount?.total ?? 0)
+                    statBlock(title: "Movies", value: requestCount?.movie ?? 0)
+                    statBlock(title: "TV", value: requestCount?.tv ?? 0)
+                }
 
-            if let pending = requestCount?.pending {
-                Text(pending == 1 ? "1 request is waiting for approval." : "\(pending) requests are waiting for approval.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let pending = requestCount?.pending {
+                    Text(pending == 1 ? "1 request is waiting for approval." : "\(pending) requests are waiting for approval.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             NavigationLink {

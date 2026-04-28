@@ -52,9 +52,9 @@ struct CollectionsView: View {
 
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 20) {
-                        ForEach(vm.collections) { collection in
-                            NavigationLink(value: collection) {
-                                collectionCard(collection, posterWidth: posterWidth)
+                        ForEach(vm.collections.indices, id: \.self) { index in
+                            NavigationLink(value: vm.collections[index]) {
+                                collectionCard(vm.collections[index], posterWidth: posterWidth)
                             }
                             .buttonStyle(.plain)
                         }

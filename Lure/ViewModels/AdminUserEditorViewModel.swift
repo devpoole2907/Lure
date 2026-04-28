@@ -49,6 +49,7 @@ final class AdminUserEditorViewModel {
     }
 
     func save() async -> SeerrUser? {
+        guard !isSaving else { return nil }
         isSaving = true
         errorMessage = nil
 

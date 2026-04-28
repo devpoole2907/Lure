@@ -5,12 +5,12 @@ import Observation
 final class AdminUserManagementViewModel {
     private(set) var users: [SeerrUser] = []
     private(set) var isLoading = false
+    private(set) var isLoadingMore = false
     private(set) var isImporting = false
     private(set) var errorMessage: String?
 
     private let apiClient: SeerrAPIClient
     private let pageSize = 20
-    private var currentSkip = 0
     private var totalResults = 0
     private var hasLoaded = false
 
@@ -19,7 +19,7 @@ final class AdminUserManagementViewModel {
     }
 
     var hasMore: Bool {
-        currentSkip + pageSize < totalResults
+        users.count < totalResults
     }
 
     var totalUserCount: Int {
@@ -34,7 +34,6 @@ final class AdminUserManagementViewModel {
     func loadUsers() async {
         isLoading = true
         errorMessage = nil
-        currentSkip = 0
 
         do {
             let response = try await apiClient.getUsers(take: pageSize, skip: 0)
@@ -49,13 +48,15 @@ final class AdminUserManagementViewModel {
     }
 
     func loadMore() async {
-        guard hasMore else { return }
-        let nextSkip = currentSkip + pageSize
+        guard hasMore, !isLoadingMore else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        let skip = users.count
 
         do {
-            let response = try await apiClient.getUsers(take: pageSize, skip: nextSkip)
+            let response = try await apiClient.getUsers(take: pageSize, skip: skip)
             users.append(contentsOf: response.results)
-            currentSkip = nextSkip
             totalResults = response.pageInfo.results ?? totalResults
         } catch {
             errorMessage = error.localizedDescription

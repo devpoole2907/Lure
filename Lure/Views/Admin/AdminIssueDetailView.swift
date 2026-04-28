@@ -142,7 +142,7 @@ struct AdminIssueDetailView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.replyMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isSendingReply)
+                    .disabled(viewModel.replyMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isSendingReply || viewModel.isUpdatingStatus)
                 }
 
                 Button {
@@ -162,7 +162,7 @@ struct AdminIssueDetailView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(viewModel.issue.issueStatus == .resolved ? .orange : .green)
-                .disabled(viewModel.isUpdatingStatus)
+                .disabled(viewModel.isUpdatingStatus || viewModel.isSendingReply)
             }
             .padding()
             .background(.ultraThinMaterial)

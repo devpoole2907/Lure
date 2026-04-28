@@ -146,7 +146,7 @@ struct DiscoverView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 12) {
-                    ForEach(collections) { collection in
+                    ForEach(collections.filter { $0.id != nil }, id: \.id) { collection in
                         NavigationLink(value: collection) {
                             collectionCard(collection)
                         }

@@ -342,6 +342,8 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
 
     /// Convert to SeerrMediaItem for use with TitleCardView and navigation.
     func toMediaItem() -> SeerrMediaItem? {
+        guard let tmdbId else { return nil }
+
         let info = SeerrMediaInfo(
             id: id, tmdbId: tmdbId, tvdbId: tvdbId, status: status,
             requests: nil, seasons: nil, mediaType: mediaType,
@@ -350,7 +352,7 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
         switch mediaType {
         case "movie":
             return .movie(SeerrMovieResult(
-                id: tmdbId ?? id, mediaType: mediaType, popularity: nil,
+                id: tmdbId, mediaType: mediaType, popularity: nil,
                 posterPath: posterPath, backdropPath: backdropPath,
                 voteCount: nil, voteAverage: nil, genreIds: nil, overview: nil,
                 originalLanguage: nil, title: title, originalTitle: originalTitle,
@@ -358,7 +360,7 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
             ))
         case "tv":
             return .tv(SeerrTvResult(
-                id: tmdbId ?? id, mediaType: mediaType, popularity: nil,
+                id: tmdbId, mediaType: mediaType, popularity: nil,
                 posterPath: posterPath, backdropPath: backdropPath,
                 voteCount: nil, voteAverage: nil, genreIds: nil, overview: nil,
                 originalLanguage: nil, name: name, originalName: originalName,

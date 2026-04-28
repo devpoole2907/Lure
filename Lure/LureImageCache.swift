@@ -9,6 +9,7 @@ actor LureImageCache {
     private let memoryCache: NSCache<NSURL, NSData>
     private let cacheDirectoryURL: URL
     private let diskCacheLimit: Int64 = 256 * 1024 * 1024
+    private var inFlightTasks: [URL: Task<Data, Error>] = [:]
 
     init() {
         let fileManager = FileManager.default
@@ -44,23 +45,36 @@ actor LureImageCache {
             return diskData
         }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse,
-              200..<300 ~= httpResponse.statusCode,
-              !data.isEmpty else {
-            throw URLError(.badServerResponse)
+        // Check for in-flight task
+        if let existingTask = inFlightTasks[url] {
+            return try await existingTask.value
         }
 
-        let dataToStore = compressedData(from: data) ?? data
+        // Create and store new task
+        let task = Task<Data, Error> {
+            defer { inFlightTasks[url] = nil }
 
-        guard Int64(dataToStore.count) <= diskCacheLimit else {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  200..<300 ~= httpResponse.statusCode,
+                  !data.isEmpty else {
+                throw URLError(.badServerResponse)
+            }
+
+            let dataToStore = compressedData(from: data) ?? data
+
+            guard Int64(dataToStore.count) <= diskCacheLimit else {
+                return dataToStore
+            }
+
+            memoryCache.setObject(dataToStore as NSData, forKey: url as NSURL, cost: dataToStore.count)
+            evictIfNecessary(incomingSize: Int64(dataToStore.count))
+            try? dataToStore.write(to: fileURL, options: .atomic)
             return dataToStore
         }
 
-        memoryCache.setObject(dataToStore as NSData, forKey: url as NSURL, cost: dataToStore.count)
-        evictIfNecessary(incomingSize: Int64(dataToStore.count))
-        try? dataToStore.write(to: fileURL, options: .atomic)
-        return dataToStore
+        inFlightTasks[url] = task
+        return try await task.value
     }
 
     private func updateModificationDate(for fileURL: URL) throws {

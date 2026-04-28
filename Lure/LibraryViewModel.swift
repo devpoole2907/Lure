@@ -55,6 +55,7 @@ final class LibraryViewModel {
     }
 
     func refresh() async {
+        guard !isLoading else { return }
         await refreshLibrary(showBlockingLoader: false)
     }
 

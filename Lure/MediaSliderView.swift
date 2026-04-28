@@ -14,11 +14,11 @@ struct MediaSliderView: View {
                 if let title, !title.isEmpty {
                     if let headerValue {
                         NavigationLink(value: headerValue) {
-                            headerLabel(title: title)
+                            headerLabel(title: title, isNavigable: true)
                         }
                         .buttonStyle(.plain)
                     } else {
-                        headerLabel(title: title)
+                        headerLabel(title: title, isNavigable: false)
                     }
                 }
 
@@ -41,7 +41,7 @@ struct MediaSliderView: View {
     }
 
     @ViewBuilder
-    private func headerLabel(title: String) -> some View {
+    private func headerLabel(title: String, isNavigable: Bool) -> some View {
         HStack(spacing: 6) {
             if let icon {
                 Image(systemName: icon)
@@ -51,9 +51,11 @@ struct MediaSliderView: View {
                 .font(.title3)
                 .fontWeight(.bold)
                 .foregroundStyle(.primary)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+            if isNavigable {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.horizontal, 16)
         .contentShape(Rectangle())

@@ -73,12 +73,13 @@ final class DiscoverViewModel {
 
     private func loadCollections() async {
         let result = await CollectionsViewModel.loadCollections(using: apiClient)
+        collections = result
         if result.isEmpty {
             if error == nil {
                 error = "Could not load collections."
             }
         } else {
-            collections = result
+            error = nil
         }
     }
 }
