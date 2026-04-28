@@ -15,21 +15,28 @@ struct LibraryItem: Identifiable, Codable, Sendable, Equatable, Hashable {
 actor LibrarySnapshotCache {
     static let shared = LibrarySnapshotCache()
 
-    private let cacheURL: URL
+    private let cachesDirectory: URL
 
     init() {
-        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        cacheURL = cachesDirectory.appendingPathComponent("library-snapshot.json")
     }
 
-    func load() -> [LibraryItem]? {
-        guard let data = try? Data(contentsOf: cacheURL) else { return nil }
+    private func cacheURL(for serverBaseURL: String) -> URL {
+        let key = serverBaseURL
+            .replacingOccurrences(of: "://", with: "-")
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return cachesDirectory.appendingPathComponent("library-snapshot-\(key).json")
+    }
+
+    func load(serverBaseURL: String) -> [LibraryItem]? {
+        guard let data = try? Data(contentsOf: cacheURL(for: serverBaseURL)) else { return nil }
         return try? JSONDecoder().decode([LibraryItem].self, from: data)
     }
 
-    func store(_ items: [LibraryItem]) {
+    func store(_ items: [LibraryItem], serverBaseURL: String) {
         guard let data = try? JSONEncoder().encode(items) else { return }
-        try? data.write(to: cacheURL, options: .atomic)
+        try? data.write(to: cacheURL(for: serverBaseURL), options: .atomic)
     }
 }

@@ -5,18 +5,30 @@ struct MovieDetailView: View {
     let apiClient: SeerrAPIClient
     let initialTitle: String?
     let initialPosterURL: URL?
+    let currentUser: SeerrUser?
+    let onRequestUpdated: ((SeerrMediaRequest) -> Void)?
 
     @State private var vm: MovieDetailViewModel
     @State private var showRequestOptions = false
     @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
+    @State private var isModeratingRequest = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
 
-    init(tmdbId: Int, apiClient: SeerrAPIClient, initialTitle: String? = nil, initialPosterURL: URL? = nil) {
+    init(
+        tmdbId: Int,
+        apiClient: SeerrAPIClient,
+        initialTitle: String? = nil,
+        initialPosterURL: URL? = nil,
+        currentUser: SeerrUser? = nil,
+        onRequestUpdated: ((SeerrMediaRequest) -> Void)? = nil
+    ) {
         self.tmdbId = tmdbId
         self.apiClient = apiClient
         self.initialTitle = initialTitle
         self.initialPosterURL = initialPosterURL
+        self.currentUser = currentUser
+        self.onRequestUpdated = onRequestUpdated
         self._vm = State(initialValue: MovieDetailViewModel(tmdbId: tmdbId, apiClient: apiClient))
     }
 
@@ -38,11 +50,13 @@ struct MovieDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
         .navigationTitle(vm.movie?.displayTitle ?? initialTitle ?? "Movie")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+#endif
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .automatic) {
                 Menu {
                     Button {
                         showReportSheet = true
@@ -50,7 +64,7 @@ struct MovieDetailView: View {
                         Label("Report an Issue", systemImage: "exclamationmark.triangle")
                     }
                 } label: {
-                    Image(systemName: "exclamationmark.triangle")
+                    Image(systemName: "ellipsis.circle")
                         .foregroundStyle(.white.opacity(0.8))
                 }
             }
@@ -182,14 +196,18 @@ struct MovieDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 4) {
+                    if let year = movie.year { Text(year) }
                     if let cert = movie.certificationText {
+                        if movie.year != nil { Text("·") }
                         Text(cert)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.5), lineWidth: 1))
                     }
-                    if let year = movie.year { Text(year) }
-                    if let runtime = movie.runtime, runtime > 0 { Text("·"); Text("\(runtime)m") }
+                    if let runtime = movie.runtime, runtime > 0 {
+                        if movie.year != nil || movie.certificationText != nil { Text("·") }
+                        Text("\(runtime)m")
+                    }
                 }
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.7))
@@ -217,8 +235,8 @@ struct MovieDetailView: View {
 
         statsCard(movie)
 
-        if let providers = movie.usWatchProviders, !(providers.flatrate ?? []).isEmpty {
-            watchProvidersCard(providers)
+        if let providers = movie.usWatchProviders, let named = namedFlatrate(providers) {
+            watchProvidersCard(providers, named: named)
         }
 
         if let genres = movie.genres, !genres.isEmpty {
@@ -259,29 +277,112 @@ if !vm.recommendations.isEmpty {
                 .padding(.vertical, 14)
                 .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
         } else {
-            Button {
-                showRequestOptions = true
-            } label: {
-                Group {
-                    if vm.isRequesting {
-                        ProgressView()
-                    } else {
-                        Label(movie.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: movie))
-                            .font(.subheadline.weight(.semibold))
+            let pendingRequest = pendingRequest(for: movie)
+
+            HStack(spacing: 12) {
+                Button {
+                    showRequestOptions = true
+                } label: {
+                    Group {
+                        if vm.isRequesting {
+                            ProgressView()
+                        } else {
+                            Label(movie.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: movie))
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+                .disabled(vm.isRequesting || isModeratingRequest)
+
+                if let pendingRequest, canModerateRequests {
+                    moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
+                        await moderateRequest(
+                            action: { try await apiClient.approveRequest(id: pendingRequest.id) },
+                            successTitle: "Request Approved",
+                            successMessage: "Approved \(movie.displayTitle)"
+                        )
+                    }
+
+                    moderationButton(title: "Decline", systemImage: "xmark", tint: .orange) {
+                        await moderateRequest(
+                            action: { try await apiClient.declineRequest(id: pendingRequest.id) },
+                            successTitle: "Request Declined",
+                            successMessage: "Declined \(movie.displayTitle)"
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-            .disabled(vm.isRequesting)
         }
     }
 
     private func requestButtonIcon(for movie: SeerrMovieDetail) -> String {
         movie.mediaInfo?.isRequested == true ? "clock.fill" : "plus.circle.fill"
+    }
+
+    private var canModerateRequests: Bool {
+        currentUser?.canManageRequests == true || currentUser?.isAdmin == true
+    }
+
+    private func pendingRequest(for movie: SeerrMovieDetail) -> SeerrMediaRequest? {
+        movie.mediaInfo?.activeRequests.first { $0.requestStatus == .pending }
+    }
+
+    private func moderationButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping @Sendable () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Group {
+                if isModeratingRequest {
+                    ProgressView()
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            .frame(width: 52, height: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .glassEffect(.regular.tint(tint.opacity(0.2)).interactive(), in: RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(tint)
+        .disabled(isModeratingRequest || vm.isRequesting)
+    }
+
+    private func moderateRequest(
+        action: @escaping @Sendable () async throws -> SeerrMediaRequest,
+        successTitle: String,
+        successMessage: String
+    ) async {
+        isModeratingRequest = true
+        defer { isModeratingRequest = false }
+
+        do {
+            let updatedRequest = try await action()
+            onRequestUpdated?(updatedRequest)
+            await vm.load()
+            notificationCenter.show(LureBannerItem(
+                title: successTitle,
+                message: successMessage,
+                style: .success
+            ))
+        } catch {
+            notificationCenter.show(LureBannerItem(
+                title: "Action Failed",
+                message: error.localizedDescription,
+                style: .error
+            ))
+        }
     }
 
     // MARK: - Overview Card
@@ -325,14 +426,19 @@ if !vm.recommendations.isEmpty {
 
     // MARK: - Watch Providers Card
 
-    private func watchProvidersCard(_ providers: SeerrWatchProviders) -> some View {
+    private func namedFlatrate(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
+        let named = (providers.flatrate ?? []).filter { $0.providerName != nil && !$0.providerName!.isEmpty }
+        return named.isEmpty ? nil : named
+    }
+
+    private func watchProvidersCard(_ providers: SeerrWatchProviders, named: [SeerrWatchProvider]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("Streaming", icon: "play.tv")
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(providers.flatrate ?? [], id: \.stableID) { provider in
+                    ForEach(named, id: \.stableID) { provider in
                         VStack(spacing: 4) {
                             AsyncImage(url: provider.logoURL) { image in
                                 image.resizable().aspectRatio(contentMode: .fill)

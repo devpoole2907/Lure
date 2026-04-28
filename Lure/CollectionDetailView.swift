@@ -19,16 +19,24 @@ struct CollectionDetailView: View {
             }
         }
         .navigationTitle(displayCollection.name ?? "Collection")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
+#if os(iOS) || os(visionOS)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+#endif
         .navigationDestination(for: MediaDestination.self) { dest in
             if dest.mediaType == "movie" {
                 MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+#if os(iOS) || os(visionOS)
                     .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
+#endif
             } else {
                 TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+#if os(iOS) || os(visionOS)
                     .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
+#endif
             }
         }
         .task {
@@ -145,7 +153,9 @@ struct CollectionDetailView: View {
                         let dest = MediaDestination(mediaType: "movie", tmdbId: movie.id, title: movie.displayTitle, posterURL: movie.posterURL)
                         NavigationLink(value: dest) {
                             TitleCardView(item: item)
+#if os(iOS) || os(visionOS)
                                 .matchedTransitionSource(id: dest, in: navigationTransitionNamespace)
+#endif
                         }
                         .buttonStyle(.plain)
                     }
@@ -167,8 +177,7 @@ extension SeerrCollection: Hashable {
         return lhs.name == rhs.name &&
                lhs.overview == rhs.overview &&
                lhs.posterPath == rhs.posterPath &&
-               lhs.backdropPath == rhs.backdropPath &&
-               lhs.parts == rhs.parts
+               lhs.backdropPath == rhs.backdropPath
     }
     func hash(into hasher: inout Hasher) {
         if let id = id {
@@ -178,7 +187,6 @@ extension SeerrCollection: Hashable {
             hasher.combine(overview)
             hasher.combine(posterPath)
             hasher.combine(backdropPath)
-            hasher.combine(parts)
         }
     }
 }

@@ -65,7 +65,7 @@ struct AdminUserManagementView: View {
         .refreshable { await viewModel.loadUsers() }
         .task { await viewModel.loadIfNeeded() }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .automatic) {
                 if viewModel.isImporting {
                     ProgressView()
                 } else {

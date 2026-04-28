@@ -5,18 +5,18 @@ import Observation
 final class AdminUserEditorViewModel {
     let user: SeerrUser
     var permissionsValue: Int
-    var permissionsText: String
     private(set) var isSaving = false
     private(set) var errorMessage: String?
 
     private let apiClient: SeerrAPIClient
+    private let originalPermissionsValue: Int
 
     init(user: SeerrUser, apiClient: SeerrAPIClient) {
         self.user = user
         self.apiClient = apiClient
         let value = user.permissions ?? 0
         self.permissionsValue = value
-        self.permissionsText = String(value)
+        self.originalPermissionsValue = value
     }
 
     var permissionLevelLabel: String {
@@ -25,6 +25,10 @@ final class AdminUserEditorViewModel {
 
     var isAdminEnabled: Bool {
         contains(.admin)
+    }
+
+    var hasChanges: Bool {
+        permissionsValue != originalPermissionsValue
     }
 
     func contains(_ permission: SeerrPermission) -> Bool {
@@ -37,15 +41,10 @@ final class AdminUserEditorViewModel {
         } else {
             permissionsValue &= ~permission.rawValue
         }
-        permissionsText = String(permissionsValue)
     }
 
-    func syncFromText() {
-        let filtered = permissionsText.filter(\.isNumber)
-        if filtered != permissionsText {
-            permissionsText = filtered
-        }
-        permissionsValue = Int(filtered) ?? 0
+    func reset() {
+        permissionsValue = originalPermissionsValue
     }
 
     func save() async -> SeerrUser? {
@@ -58,7 +57,6 @@ final class AdminUserEditorViewModel {
         do {
             let updatedUser = try await apiClient.updateUser(id: user.id, permissions: permissionsValue)
             permissionsValue = updatedUser.permissions ?? permissionsValue
-            permissionsText = String(permissionsValue)
             return updatedUser
         } catch {
             errorMessage = error.localizedDescription

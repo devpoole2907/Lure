@@ -66,7 +66,7 @@ final class AdminIssueListViewModel {
             let response = try await apiClient.getIssues(
                 take: pageSize,
                 skip: 0,
-                sort: "createdAt",
+                sort: "added",
                 filter: selectedFilter.apiValue
             )
             guard capturedVersion == requestVersion else { return }
@@ -92,7 +92,7 @@ final class AdminIssueListViewModel {
             let response = try await apiClient.getIssues(
                 take: pageSize,
                 skip: nextSkip,
-                sort: "createdAt",
+                sort: "added",
                 filter: selectedFilter.apiValue
             )
             guard capturedVersion == requestVersion else {

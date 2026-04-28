@@ -27,7 +27,7 @@ struct SearchGenreResultsView: View {
                 List {
                     ForEach(vm.results) { item in
                         NavigationLink(value: MediaDestination(mediaType: item.mediaType, tmdbId: item.tmdbId, title: item.title, posterURL: item.posterURL)) {
-                            SearchResultRow(item: item)
+                            MediaListRow(item: item)
                         }
                         .task {
                             await vm.loadMoreIfNeeded(currentItem: item)
@@ -43,7 +43,9 @@ struct SearchGenreResultsView: View {
             }
         }
         .navigationTitle(destination.title)
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .task(id: destination) { await vm.load() }
     }
 }

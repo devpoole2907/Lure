@@ -86,7 +86,9 @@ struct ReportIssueSheet: View {
                 }
             }
             .navigationTitle("Report Issue")
+#if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -106,8 +108,10 @@ struct ReportIssueSheet: View {
                 Text("Your issue has been submitted. Thank you for the report.")
             }
         }
+#if os(iOS) || os(visionOS)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+#endif
     }
 
     private func submit() {

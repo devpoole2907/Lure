@@ -118,13 +118,17 @@ struct AdminIssueDetailView: View {
             }
         }
         .navigationTitle("Issue #\(viewModel.issue.id)")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
+#endif
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
                 HStack(spacing: 10) {
                     TextField("Reply to issue", text: $viewModel.replyMessage, axis: .vertical)
+#if os(iOS) || os(visionOS)
                         .textFieldStyle(.roundedBorder)
+#endif
                         .lineLimit(1...4)
 
                     Button {

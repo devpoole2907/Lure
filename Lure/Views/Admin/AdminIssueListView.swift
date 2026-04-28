@@ -58,7 +58,9 @@ struct AdminIssueListView: View {
             }
         }
         .navigationTitle("Issue Management")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .modifier(AdminIssueSubtitleModifier(subtitle: viewModel.issues.isEmpty ? nil : "\(viewModel.totalIssueCount) issues"))
         .task { await viewModel.loadIfNeeded() }
         .refreshable { await viewModel.loadIssues() }

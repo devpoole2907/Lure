@@ -1,51 +1,38 @@
 import SwiftUI
-import SwiftData
 
 struct UserProfileView: View {
     let apiClient: SeerrAPIClient
     let currentUser: SeerrUser
     let onLogout: () -> Void
 
-    @Environment(\.modelContext) private var modelContext
-    @Query(filter: #Predicate<LureServerProfile> { $0.isActive }) private var activeProfiles: [LureServerProfile]
-
     @State private var viewModel: UserProfileViewModel?
-    @State private var apnsWorkerURL: String = ""
     @State private var cacheSize: String = ""
     @State private var showCacheClearedAlert = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let vm = viewModel {
-                    profileContent(vm: vm)
-                } else {
-                    ProgressView()
-                }
+        Group {
+            if let vm = viewModel {
+                profileContent(vm: vm)
+            } else {
+                ProgressView()
             }
-            .navigationTitle("Profile")
-            .task {
-                if viewModel == nil {
-                    let vm = UserProfileViewModel(apiClient: apiClient)
-                    viewModel = vm
-                    await vm.load(user: currentUser)
-                }
-            }
-            .toolbarTitleDisplayMode(.large)
         }
+        .navigationTitle("Profile")
+        .task {
+            if viewModel == nil {
+                let vm = UserProfileViewModel(apiClient: apiClient)
+                viewModel = vm
+                await vm.load(user: currentUser)
+            }
+        }
+#if os(iOS) || os(visionOS)
+        .toolbarTitleDisplayMode(.large)
+#endif
     }
 
     @ViewBuilder
     private func profileContent(vm: UserProfileViewModel) -> some View {
         List {
-            if currentUser.isAdmin {
-                Section {
-                    AdminDashboardCard(requestCount: vm.requestCountSummary, apiClient: apiClient)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                        .listRowBackground(Color.clear)
-                }
-            }
-
             // Avatar and name
             Section {
                 HStack(spacing: 16) {
@@ -87,13 +74,17 @@ struct UserProfileView: View {
 
             // Quota
             if let quota = vm.quota {
-                Section("Quota") {
+                Section {
                     if let movie = quota.movie {
                         quotaRow(label: "Movies", detail: movie)
                     }
                     if let tv = quota.tv {
                         quotaRow(label: "TV Shows", detail: tv)
                     }
+                } header: {
+                    Text("Request Quota")
+                } footer: {
+                    Text("How many requests you can make within the rolling time window set by your server admin.")
                 }
             }
 
@@ -104,16 +95,6 @@ struct UserProfileView: View {
                     Spacer()
                     Text("\(currentUser.requestCount ?? 0)")
                         .foregroundStyle(.secondary)
-                }
-            }
-
-            if currentUser.isAdmin {
-                Section("Administration") {
-                    NavigationLink {
-                        AdminUserManagementView(apiClient: apiClient)
-                    } label: {
-                        Label("User Management", systemImage: "person.2.badge.gearshape")
-                    }
                 }
             }
 
@@ -134,47 +115,6 @@ struct UserProfileView: View {
                                 }
                             }
                         }
-                    }
-                }
-            }
-
-            // Admin Setup
-            if currentUser.isAdmin {
-                Section("Push Notifications (Admin)") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Cloudflare Worker URL")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField("https://lure-apns-worker.../push", text: $apnsWorkerURL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { saveWorkerURL() }
-                        
-                        if !apnsWorkerURL.isEmpty {
-                            let serverURL = activeProfiles.first?.serverURL ?? ""
-                            let hash = NotificationManager.hashServerURL(serverURL)
-                            let webhookURL = "\(apnsWorkerURL)?serverId=\(hash)"
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Overseerr Webhook URL:")
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                Text(webhookURL)
-                                    .font(.caption2)
-                                    .foregroundStyle(.blue)
-                                    .textSelection(.enabled)
-                                Text("Paste this into Overseerr -> Settings -> Notifications -> Webhook")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.top, 8)
-                        }
-                    }
-                }
-                .onAppear {
-                    if let profile = activeProfiles.first, let url = profile.apnsWorkerURL {
-                        apnsWorkerURL = url
                     }
                 }
             }
@@ -238,18 +178,5 @@ struct UserProfileView: View {
         let bytes = await LureImageCache.shared.cacheSizeInBytes()
         let formatted = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
         await MainActor.run { cacheSize = formatted }
-    }
-
-    private func saveWorkerURL() {
-        if let profile = activeProfiles.first {
-            let trimmed = apnsWorkerURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            profile.apnsWorkerURL = trimmed.isEmpty ? nil : trimmed
-            try? modelContext.save()
-            
-            // Re-register local device
-            if let workerUrl = profile.apnsWorkerURL {
-                NotificationManager.shared.register(workerURL: workerUrl, serverURL: profile.serverURL, username: currentUser.displayName)
-            }
-        }
     }
 }

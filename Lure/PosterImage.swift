@@ -1,5 +1,11 @@
 import SwiftUI
+#if os(iOS) || os(visionOS)
 import UIKit
+private typealias PlatformImage = UIImage
+#elseif os(macOS)
+import AppKit
+private typealias PlatformImage = NSImage
+#endif
 
 struct PosterImage: View {
     let url: URL?
@@ -7,13 +13,13 @@ struct PosterImage: View {
     var height: CGFloat = 180
     var cornerRadius: CGFloat = 10
 
-    @State private var cachedImage: UIImage?
+    @State private var cachedImage: PlatformImage?
     @State private var isLoading = false
 
     var body: some View {
         Group {
             if let cachedImage {
-                Image(uiImage: cachedImage)
+                Image(platformImage: cachedImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .transition(.opacity)
@@ -53,15 +59,25 @@ struct PosterImage: View {
 
         do {
             let data = try await LureImageCache.shared.imageData(for: url)
-            let uiImage = await Task.detached(priority: .userInitiated) {
-                UIImage(data: data)
+            let platformImage = await Task.detached(priority: .userInitiated) {
+                PlatformImage(data: data)
             }.value
-            guard let uiImage else { return }
+            guard let platformImage else { return }
             withAnimation(.easeInOut(duration: 0.2)) {
-                cachedImage = uiImage
+                cachedImage = platformImage
             }
         } catch {
             cachedImage = nil
         }
+    }
+}
+
+private extension Image {
+    init(platformImage: PlatformImage) {
+        #if os(iOS) || os(visionOS)
+        self.init(uiImage: platformImage)
+        #elseif os(macOS)
+        self.init(nsImage: platformImage)
+        #endif
     }
 }

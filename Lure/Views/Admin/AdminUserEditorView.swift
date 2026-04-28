@@ -6,6 +6,7 @@ struct AdminUserEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: AdminUserEditorViewModel
+    @State private var isEditing = false
     @State private var errorAlert: ErrorAlertItem?
 
     init(user: SeerrUser, apiClient: SeerrAPIClient, onSave: @escaping (SeerrUser) -> Void) {
@@ -14,70 +15,53 @@ struct AdminUserEditorView: View {
     }
 
     var body: some View {
-        @Bindable var viewModel = viewModel
-
         Form {
             Section("User") {
                 LabeledContent("Name", value: viewModel.user.displayName)
                 if let email = viewModel.user.email {
                     LabeledContent("Email", value: email)
                 }
-                LabeledContent("Permission Level", value: viewModel.permissionLevelLabel)
-                LabeledContent("Bit Flag Value", value: String(viewModel.permissionsValue))
+                LabeledContent("Role", value: viewModel.permissionLevelLabel)
             }
 
-            Section {
-                TextField("Permissions", text: $viewModel.permissionsText)
-                    .keyboardType(.numberPad)
-                    .textInputAutocapitalization(.never)
-                    .monospacedDigit()
-                    .onChange(of: viewModel.permissionsText) { _, _ in
-                        viewModel.syncFromText()
-                    }
-            } header: {
-                Text("Permission Integer")
-            } footer: {
-                Text("This writes the permission bit-flag integer back to Seerr.")
-            }
-
-            if viewModel.isAdminEnabled {
-                Section {
-                    Label("Admin includes every other permission automatically.", systemImage: "lock.shield")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-            }
-
-            ForEach(SeerrPermission.editableGroups, id: \.category.id) { group in
-                Section(group.category.rawValue) {
-                    ForEach(group.permissions) { permission in
-                        Toggle(isOn: Binding(
-                            get: { viewModel.contains(permission) },
-                            set: { viewModel.set(permission, enabled: $0) }
-                        )) {
-                            Label(permission.title, systemImage: permission.symbolName)
-                        }
-                    }
-                }
+            if isEditing {
+                editingContent
+            } else {
+                viewContent
             }
         }
         .navigationTitle(viewModel.user.displayName)
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
-        .scrollDismissesKeyboard(.interactively)
+#endif
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if viewModel.isSaving {
-                    ProgressView()
-                } else {
-                    Button("Save") {
-                        Task {
-                            if let updatedUser = await viewModel.save() {
-                                onSave(updatedUser)
-                                dismiss()
+            if isEditing {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        viewModel.reset()
+                        isEditing = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if viewModel.isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") {
+                            Task {
+                                if let updatedUser = await viewModel.save() {
+                                    onSave(updatedUser)
+                                    isEditing = false
+                                }
                             }
                         }
+                        .disabled(!viewModel.hasChanges)
                     }
-                    .disabled(viewModel.permissionsText.isEmpty)
+                }
+            } else {
+                ToolbarItem(placement: .automatic) {
+                    Button("Edit") {
+                        isEditing = true
+                    }
                 }
             }
         }
@@ -86,6 +70,56 @@ struct AdminUserEditorView: View {
             guard let message else { return }
             errorAlert = ErrorAlertItem(title: "Save Failed", message: message)
             viewModel.clearError()
+        }
+    }
+
+    // MARK: - View Mode
+
+    @ViewBuilder
+    private var viewContent: some View {
+        let activeGroups = SeerrPermission.editableGroups
+            .map { (category: $0.category, permissions: $0.permissions.filter { viewModel.contains($0) }) }
+            .filter { !$0.permissions.isEmpty }
+
+        if activeGroups.isEmpty {
+            Section("Permissions") {
+                Text("No permissions granted")
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            ForEach(activeGroups, id: \.category.id) { group in
+                Section(group.category.rawValue) {
+                    ForEach(group.permissions) { permission in
+                        Label(permission.title, systemImage: permission.symbolName)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Edit Mode
+
+    @ViewBuilder
+    private var editingContent: some View {
+        if viewModel.isAdminEnabled {
+            Section {
+                Label("Admin includes every other permission automatically.", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+
+        ForEach(SeerrPermission.editableGroups, id: \.category.id) { group in
+            Section(group.category.rawValue) {
+                ForEach(group.permissions) { permission in
+                    Toggle(isOn: Binding(
+                        get: { viewModel.contains(permission) },
+                        set: { viewModel.set(permission, enabled: $0) }
+                    )) {
+                        Label(permission.title, systemImage: permission.symbolName)
+                    }
+                }
+            }
         }
     }
 }

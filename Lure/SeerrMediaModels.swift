@@ -372,7 +372,7 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
     }
 
     func toLibraryItem() -> LibraryItem? {
-        guard let mediaType, let tmdbId else { return nil }
+        guard let mediaType, let tmdbId, displayTitle != "Unknown" else { return nil }
         return LibraryItem(
             mediaType: mediaType,
             tmdbId: tmdbId,

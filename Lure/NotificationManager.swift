@@ -1,5 +1,6 @@
 import SwiftUI
 import CryptoKit
+import UserNotifications
 
 enum APNSConfig {
     static let appSecret = "YOUR_APP_SECRET_HERE" // The user will replace this
@@ -33,9 +34,11 @@ final class NotificationManager {
         
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if granted {
+#if os(iOS) || os(visionOS)
                 DispatchQueue.main.async {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
+#endif
             } else {
                 print("Notification permission denied: \(String(describing: error))")
             }

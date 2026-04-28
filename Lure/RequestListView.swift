@@ -18,7 +18,9 @@ struct RequestListView: View {
             content
                 .navigationTitle("Requests")
                 .navigationSubtitle(subtitleText)
+#if os(iOS) || os(visionOS)
                 .toolbarTitleDisplayMode(.large)
+#endif
                 .toolbar { toolbarContent }
                 .refreshable { await vm.loadRequests() }
                 .task { await vm.loadRequestsIfNeeded() }
@@ -58,16 +60,6 @@ struct RequestListView: View {
     @ViewBuilder
     private var content: some View {
         List {
-            if currentUser?.isAdmin == true {
-                Section("Admin") {
-                    NavigationLink {
-                        AdminIssueListView(apiClient: apiClient)
-                    } label: {
-                        Label("Manage Issues", systemImage: "exclamationmark.bubble")
-                    }
-                }
-            }
-
             if vm.isLoading && vm.sortedRequests.isEmpty {
                 Section {
                     ProgressView("Loading requests...")
@@ -170,7 +162,7 @@ struct RequestListView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarLeading) {
+        ToolbarItemGroup(placement: .automatic) {
             Menu {
                 ForEach(RequestFilter.allCases) { filter in
                     Button {
@@ -206,7 +198,7 @@ struct RequestListView: View {
             }
         }
 
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .automatic) {
             Menu {
                 ForEach(RequestSortOrder.allCases) { order in
                     Button {

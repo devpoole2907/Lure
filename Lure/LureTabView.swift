@@ -25,12 +25,14 @@ struct LureTabView: View {
                 RequestListView(apiClient: apiClient, currentUser: currentUser)
             }
 
-            Tab("Profile", systemImage: "person.crop.circle", value: LureTab.profile) {
-                UserProfileView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
+            Tab("More", systemImage: "ellipsis.circle", value: LureTab.more) {
+                MoreView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+#if os(iOS) || os(visionOS)
         .tabBarMinimizeBehavior(.onScrollDown)
+#endif
         .task {
             await SearchViewModel.preloadBrowseGenres(using: apiClient)
         }
@@ -38,5 +40,5 @@ struct LureTabView: View {
 }
 
 private enum LureTab: Hashable {
-    case discover, search, library, requests, profile
+    case discover, search, library, requests, more
 }

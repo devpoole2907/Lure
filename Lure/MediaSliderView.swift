@@ -23,7 +23,7 @@ struct MediaSliderView: View {
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 12) {
+                    LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(items) { item in
                             let destination = MediaDestination(mediaType: item.mediaType, tmdbId: item.tmdbId, title: item.title, posterURL: item.posterURL)
 

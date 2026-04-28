@@ -16,7 +16,13 @@ struct TVSeasonDetailView: View {
     private var totalCount: Int { season.episodeCount ?? availableEpisodes.count }
 
     private var availableCount: Int {
-        availableEpisodes.filter { $0.status == 5 }.count
+        if let episodes = statusSeason?.episodes, !episodes.isEmpty {
+            return episodes.filter { $0.status == 5 }.count
+        }
+        if statusSeason?.status == 5, totalCount > 0 {
+            return totalCount
+        }
+        return 0
     }
 
     var body: some View {
@@ -35,9 +41,11 @@ struct TVSeasonDetailView: View {
         .environment(\.colorScheme, .dark)
         .background { artBackground }
         .navigationTitle(seasonTitle)
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+#endif
     }
 
     // MARK: - Background
@@ -84,15 +92,13 @@ struct TVSeasonDetailView: View {
 
                 if totalCount > 0 {
                     let allAvailable = availableCount == totalCount
-                    Label(
-                        allAvailable ? "All Available" : "\(availableCount) of \(totalCount) available",
-                        systemImage: allAvailable ? "checkmark.circle.fill" : "circle.lefthalf.filled"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(allAvailable ? .green : .purple)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .glassEffect(.regular, in: Capsule())
+                    let hasEpisodeData = statusSeason?.episodes != nil && !(statusSeason?.episodes?.isEmpty ?? true)
+                    availabilityLabel(allAvailable: allAvailable, hasEpisodeData: hasEpisodeData)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(availabilityColor(allAvailable: allAvailable, hasEpisodeData: hasEpisodeData))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .glassEffect(.regular, in: Capsule())
                 }
             }
         }
@@ -112,9 +118,11 @@ struct TVSeasonDetailView: View {
                 .padding(.bottom, 8)
 
             if totalCount > 0 {
+                let fallbackAvailable = availableEpisodes.isEmpty && statusSeason?.status == 5
                 ForEach(1...totalCount, id: \.self) { num in
                     let epStatus = availableEpisodes.first { $0.episodeNumber == num }
-                    episodeRow(number: num, status: epStatus, isLast: num == totalCount)
+                    let status = epStatus ?? (fallbackAvailable ? SeerrEpisodeStatus(id: nil, episodeNumber: num, status: 5) : nil)
+                    episodeRow(number: num, status: status, isLast: num == totalCount)
                 }
             } else {
                 let sorted = availableEpisodes.sorted { ($0.episodeNumber ?? 0) < ($1.episodeNumber ?? 0) }
@@ -127,6 +135,26 @@ struct TVSeasonDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func availabilityLabel(allAvailable: Bool, hasEpisodeData: Bool) -> Label<Text, Image> {
+        if hasEpisodeData {
+            return Label(
+                allAvailable ? "All Available" : "\(availableCount) of \(totalCount) available",
+                systemImage: allAvailable ? "checkmark.circle.fill" : "circle.lefthalf.filled"
+            )
+        } else if statusSeason?.status == 5 {
+            return Label("All \(totalCount) Available", systemImage: "checkmark.circle.fill")
+        } else {
+            return Label("\(totalCount) episode\(totalCount == 1 ? "" : "s")", systemImage: "tv")
+        }
+    }
+
+    private func availabilityColor(allAvailable: Bool, hasEpisodeData: Bool) -> Color {
+        if hasEpisodeData {
+            return allAvailable ? .green : .purple
+        }
+        return statusSeason?.status == 5 ? .green : .secondary
     }
 
     private func episodeRow(number: Int, status: SeerrEpisodeStatus?, isLast: Bool) -> some View {

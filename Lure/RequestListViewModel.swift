@@ -39,6 +39,10 @@ final class RequestListViewModel {
         currentSkip + pageSize < totalCount
     }
 
+    var pendingRequests: [SeerrMediaRequest] {
+        sortedRequests.filter { $0.requestStatus == .pending }
+    }
+
     func loadRequests() async {
         isLoading = true
         error = nil
@@ -97,23 +101,27 @@ final class RequestListViewModel {
         request.media?.posterURL ?? enrichment(for: request.id)?.posterURL
     }
 
-    func approveRequest(_ request: SeerrMediaRequest) async {
+    func approveRequest(_ request: SeerrMediaRequest) async -> SeerrMediaRequest? {
         do {
-            _ = try await apiClient.approveRequest(id: request.id)
+            let updatedRequest = try await apiClient.approveRequest(id: request.id)
             actionSuccessMessage = "Approved \(request.displayTitle)"
             await loadRequests()
+            return updatedRequest
         } catch {
             self.error = error.localizedDescription
+            return nil
         }
     }
 
-    func declineRequest(_ request: SeerrMediaRequest) async {
+    func declineRequest(_ request: SeerrMediaRequest) async -> SeerrMediaRequest? {
         do {
-            _ = try await apiClient.declineRequest(id: request.id)
+            let updatedRequest = try await apiClient.declineRequest(id: request.id)
             actionSuccessMessage = "Declined \(request.displayTitle)"
             await loadRequests()
+            return updatedRequest
         } catch {
             self.error = error.localizedDescription
+            return nil
         }
     }
 
@@ -135,6 +143,45 @@ final class RequestListViewModel {
             await loadRequests()
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    func approveRequests(ids: Set<Int>) async {
+        guard !ids.isEmpty else { return }
+        do {
+            for requestID in ids {
+                _ = try await apiClient.approveRequest(id: requestID)
+            }
+            actionSuccessMessage = ids.count == 1 ? "Approved 1 request" : "Approved \(ids.count) requests"
+            await loadRequests()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func declineRequests(ids: Set<Int>) async {
+        guard !ids.isEmpty else { return }
+        do {
+            for requestID in ids {
+                _ = try await apiClient.declineRequest(id: requestID)
+            }
+            actionSuccessMessage = ids.count == 1 ? "Declined 1 request" : "Declined \(ids.count) requests"
+            await loadRequests()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func applyUpdatedRequest(_ request: SeerrMediaRequest) {
+        if let index = requests.firstIndex(where: { $0.id == request.id }) {
+            requests[index] = request
+        }
+    }
+
+    func removeRequest(id: Int) {
+        requests.removeAll { $0.id == id }
+        if totalCount > 0 {
+            totalCount -= 1
         }
     }
 

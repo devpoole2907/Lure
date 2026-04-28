@@ -2,21 +2,25 @@ import SwiftUI
 import SwiftData
 import UserNotifications
 
+#if os(iOS) || os(visionOS)
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
         let token = tokenParts.joined()
         NotificationCenter.default.post(name: NSNotification.Name("didReceiveDeviceToken"), object: token)
     }
-    
+
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         print("Failed to register for remote notifications: \(error)")
     }
 }
+#endif
 
 @main
 struct LureApp: App {
+#if os(iOS) || os(visionOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+#endif
     let modelContainer: ModelContainer
 
     init() {

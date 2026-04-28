@@ -21,27 +21,39 @@ struct DiscoverView: View {
                     case .trending:
                         DiscoverMediaGridView(
                             title: "Trending",
-                            items: vm.trending,
+                            initialItems: vm.trending,
                             transitionNamespace: navigationTransitionNamespace
-                        )
+                        ) { page in
+                            let response = try await apiClient.getDiscoverTrending(page: page)
+                            return response.results.map { $0.toMediaItem() }
+                        }
                     case .popularMovies:
                         DiscoverMediaGridView(
                             title: "Popular Movies",
-                            items: vm.popularMovies,
+                            initialItems: vm.popularMovies,
                             transitionNamespace: navigationTransitionNamespace
-                        )
+                        ) { page in
+                            let response = try await apiClient.getDiscoverMovies(page: page, sortBy: "popularity.desc")
+                            return response.results.map { $0.toMediaItem() }
+                        }
                     case .popularTV:
                         DiscoverMediaGridView(
                             title: "Popular TV",
-                            items: vm.popularTV,
+                            initialItems: vm.popularTV,
                             transitionNamespace: navigationTransitionNamespace
-                        )
+                        ) { page in
+                            let response = try await apiClient.getDiscoverTV(page: page, sortBy: "popularity.desc")
+                            return response.results.map { $0.toMediaItem() }
+                        }
                     case .upcoming:
                         DiscoverMediaGridView(
                             title: "Upcoming",
-                            items: vm.upcomingMovies,
+                            initialItems: vm.upcomingMovies,
                             transitionNamespace: navigationTransitionNamespace
-                        )
+                        ) { page in
+                            let response = try await apiClient.getDiscoverMoviesUpcoming(page: page)
+                            return response.results.map { $0.toMediaItem() }
+                        }
                     case .collections:
                         CollectionsView(apiClient: apiClient)
                     }
@@ -53,10 +65,14 @@ struct DiscoverView: View {
             .navigationDestination(for: MediaDestination.self) { dest in
                 if dest.mediaType == "movie" {
                     MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+#if os(iOS) || os(visionOS)
                         .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
+#endif
                 } else {
                     TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+#if os(iOS) || os(visionOS)
                         .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
+#endif
                 }
             }
             .refreshable { await viewModel?.refresh() }
@@ -67,7 +83,9 @@ struct DiscoverView: View {
                     await vm.loadInitialData()
                 }
             }
+#if os(iOS) || os(visionOS)
             .toolbarTitleDisplayMode(.large)
+#endif
         }
     }
 
@@ -145,7 +163,7 @@ struct DiscoverView: View {
             .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(collections.filter { $0.id != nil }, id: \.id) { collection in
                         NavigationLink(value: collection) {
                             collectionCard(collection)

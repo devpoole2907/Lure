@@ -15,7 +15,9 @@ struct CollectionsView: View {
             }
         }
         .navigationTitle("Collections")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .refreshable { await viewModel?.refresh() }
         .task {
             if viewModel == nil {

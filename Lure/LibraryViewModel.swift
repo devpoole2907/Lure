@@ -1,6 +1,14 @@
 import Foundation
 import Observation
 
+enum LibrarySortOrder: String, CaseIterable, Identifiable {
+    case title = "Title"
+    case year = "Year"
+    case rating = "Rating"
+
+    var id: String { rawValue }
+}
+
 struct LibrarySection: Identifiable {
     let title: String
     let indexLabel: String
@@ -16,6 +24,8 @@ final class LibraryViewModel {
     private(set) var error: String?
     private(set) var didLoadInitialSnapshot = false
 
+    var sortOrder: LibrarySortOrder = .title
+
     private let apiClient: SeerrAPIClient
 
     init(apiClient: SeerrAPIClient) {
@@ -23,14 +33,28 @@ final class LibraryViewModel {
     }
 
     var sectionedItems: [LibrarySection] {
-        let sorted = items.sorted { $0.title.lowercased() < $1.title.lowercased() }
-        let grouped = Dictionary(grouping: sorted) { item in
-            sectionLabel(for: item.title)
+        let filtered = items.filter { $0.title != "Unknown" }
+        let sorted: [LibraryItem]
+        switch sortOrder {
+        case .title:
+            sorted = filtered.sorted { $0.title.lowercased() < $1.title.lowercased() }
+        case .year:
+            sorted = filtered.sorted { ($0.year ?? "") > ($1.year ?? "") }
+        case .rating:
+            sorted = filtered.sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
         }
-        return grouped.keys.sorted().map { label in
-            LibrarySection(title: label, indexLabel: label, items: grouped[label] ?? [])
+
+        if sortOrder == .title {
+            let grouped = Dictionary(grouping: sorted) { sectionLabel(for: $0.title) }
+            return grouped.keys.sorted().map { label in
+                LibrarySection(title: label, indexLabel: label, items: grouped[label] ?? [])
+            }
         }
+
+        return [LibrarySection(title: sortOrder.rawValue, indexLabel: "", items: sorted)]
     }
+
+    var isIndexed: Bool { sortOrder == .title }
 
     private func sectionLabel(for title: String) -> String {
         guard let scalar = title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.first else {
@@ -45,7 +69,7 @@ final class LibraryViewModel {
         isLoading = true
         error = nil
 
-        if !didLoadInitialSnapshot, let cachedEntries = await LibrarySnapshotCache.shared.load(), !cachedEntries.isEmpty {
+        if !didLoadInitialSnapshot, let cachedEntries = await LibrarySnapshotCache.shared.load(serverBaseURL: apiClient.baseURL), !cachedEntries.isEmpty {
             items = cachedEntries
             didLoadInitialSnapshot = true
         }
@@ -73,7 +97,7 @@ final class LibraryViewModel {
             await applyRefreshedItems(refreshedItems)
             error = nil
             didLoadInitialSnapshot = true
-            await LibrarySnapshotCache.shared.store(refreshedItems)
+            await LibrarySnapshotCache.shared.store(refreshedItems.filter { $0.title != "Unknown" }, serverBaseURL: apiClient.baseURL)
         } catch {
             if items.isEmpty {
                 self.error = error.localizedDescription
@@ -83,14 +107,16 @@ final class LibraryViewModel {
 
     private func fetchAllAvailableEntries() async throws -> [SeerrMediaEntry] {
         var allEntries: [SeerrMediaEntry] = []
-        var skip = 0
         let pageSize = 250
 
-        while true {
-            let response = try await apiClient.getMedia(filter: "available", take: pageSize, skip: skip)
-            allEntries.append(contentsOf: response.results)
-            if response.results.count < pageSize { break }
-            skip += pageSize
+        for filter in ["available", "partial"] {
+            var skip = 0
+            while true {
+                let response = try await apiClient.getMedia(filter: filter, take: pageSize, skip: skip)
+                allEntries.append(contentsOf: response.results)
+                if response.results.count < pageSize { break }
+                skip += pageSize
+            }
         }
 
         return allEntries
@@ -110,13 +136,20 @@ final class LibraryViewModel {
                             return (entry.id, entry.toLibraryItem())
                         }
 
-                        if mediaType == "movie" {
-                            if let detail = try? await apiClient.getMovieDetail(tmdbId: tmdbId) {
-                                return (entry.id, detail.toLibraryItem())
-                            }
-                        } else if mediaType == "tv" {
-                            if let detail = try? await apiClient.getTVDetail(tmdbId: tmdbId) {
-                                return (entry.id, detail.toLibraryItem())
+                        for attempt in 1...3 {
+                            do {
+                                if mediaType == "movie" {
+                                    let detail = try await apiClient.getMovieDetail(tmdbId: tmdbId)
+                                    return (entry.id, detail.toLibraryItem())
+                                } else if mediaType == "tv" {
+                                    let detail = try await apiClient.getTVDetail(tmdbId: tmdbId)
+                                    return (entry.id, detail.toLibraryItem())
+                                }
+                                break
+                            } catch {
+                                if attempt < 3 {
+                                    try? await Task.sleep(for: .milliseconds(600 * attempt))
+                                }
                             }
                         }
 

@@ -241,7 +241,7 @@ actor SeerrAPIClient {
         try await post("/api/v1/issue", body: body)
     }
 
-    func getIssues(take: Int = 20, skip: Int = 0, sort: String = "createdAt", filter: String = "open") async throws -> SeerrIssueListResponse {
+    func getIssues(take: Int = 20, skip: Int = 0, sort: String = "added", filter: String = "open") async throws -> SeerrIssueListResponse {
         try await get("/api/v1/issue", params: [
             "take": String(take),
             "skip": String(skip),
@@ -255,18 +255,8 @@ actor SeerrAPIClient {
     }
 
     func getIssueComments(issueId: Int) async throws -> [SeerrIssueComment] {
-        let request = try buildRequest(path: "/api/v1/issue/\(issueId)/comment", method: "GET")
-        let data = try await performData(request)
-
-        if let comments = try? JSONDecoder().decode([SeerrIssueComment].self, from: data) {
-            return comments
-        }
-
-        if let issue = try? JSONDecoder().decode(SeerrIssue.self, from: data) {
-            return issue.comments ?? []
-        }
-
-        throw LureError.invalidResponse
+        let issue: SeerrIssue = try await get("/api/v1/issue/\(issueId)")
+        return issue.comments ?? []
     }
 
     func replyToIssue(issueId: Int, message: String) async throws -> SeerrIssue {

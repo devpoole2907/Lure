@@ -52,17 +52,23 @@ struct LoginView: View {
                 Spacer()
             }
             .lureGradientBackground(.blue)
+#if os(iOS) || os(visionOS)
             .toolbar(.hidden, for: .navigationBar)
+#endif
         }
     }
 
     @ViewBuilder
     private var serverForm: some View {
         TextField("Seerr URL (e.g. http://192.168.1.50:5055)", text: $authViewModel.serverURL)
+#if os(iOS) || os(visionOS)
             .keyboardType(.URL)
             .textInputAutocapitalization(.never)
+#endif
             .autocorrectionDisabled()
+#if os(iOS) || os(visionOS)
             .textFieldStyle(.roundedBorder)
+#endif
 
         Button {
             Task {
@@ -94,12 +100,18 @@ struct LoginView: View {
             }
 
             TextField("Username", text: $authViewModel.username)
+#if os(iOS) || os(visionOS)
                 .textInputAutocapitalization(.never)
+#endif
                 .autocorrectionDisabled()
+#if os(iOS) || os(visionOS)
                 .textFieldStyle(.roundedBorder)
+#endif
 
             SecureField("Password", text: $authViewModel.password)
+#if os(iOS) || os(visionOS)
                 .textFieldStyle(.roundedBorder)
+#endif
 
             Button {
                 Task {

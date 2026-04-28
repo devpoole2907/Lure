@@ -15,6 +15,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
+            .navigationSubtitle(subtitleText(for: viewModel))
             .navigationDestination(for: MediaDestination.self) { destination in
                 if destination.mediaType == "movie" {
                     MovieDetailView(
@@ -32,14 +33,43 @@ struct LibraryView: View {
                     )
                 }
             }
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    if let viewModel {
+                        Menu {
+                            ForEach(LibrarySortOrder.allCases) { order in
+                                Button {
+                                    withAnimation { viewModel.sortOrder = order }
+                                } label: {
+                                    if viewModel.sortOrder == order {
+                                        Label(order.rawValue, systemImage: "checkmark")
+                                    } else {
+                                        Text(order.rawValue)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Sort", systemImage: "arrow.up.arrow.down")
+                        }
+                    }
+                }
+            }
             .refreshable {
                 await viewModel?.refresh()
             }
             .task {
                 await loadLibraryIfNeeded()
             }
+#if os(iOS) || os(visionOS)
             .toolbarTitleDisplayMode(.large)
+#endif
         }
+    }
+
+    private func subtitleText(for viewModel: LibraryViewModel?) -> String {
+        guard let vm = viewModel, !vm.isLoading else { return "" }
+        let count = vm.items.filter { $0.title != "Unknown" }.count
+        return count == 1 ? "1 item" : "\(count) items"
     }
 
     @MainActor

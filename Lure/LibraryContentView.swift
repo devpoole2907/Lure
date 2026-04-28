@@ -30,7 +30,8 @@ private struct LibraryListView: View {
 
     var body: some View {
         let sections = viewModel.sectionedItems
-        if #available(iOS 26.0, *) {
+#if os(iOS)
+        if #available(iOS 26.0, *), viewModel.isIndexed {
             List {
                 librarySections(sections)
             }
@@ -40,6 +41,11 @@ private struct LibraryListView: View {
                 librarySections(sections)
             }
         }
+#else
+        List {
+            librarySections(sections)
+        }
+#endif
     }
 
     @ViewBuilder
@@ -48,11 +54,11 @@ private struct LibraryListView: View {
             Section(section.title) {
                 ForEach(section.items) { item in
                     NavigationLink(value: destination(for: item)) {
-                        LibraryListRow(item: item)
+                        MediaListRow(item: item)
                     }
                 }
             }
-            .modifier(SectionIndexModifier(label: section.indexLabel))
+            .modifier(SectionIndexModifier(label: section.indexLabel, isIndexed: viewModel.isIndexed))
         }
 
         if viewModel.isRefreshing {
@@ -75,55 +81,12 @@ private struct LibraryListView: View {
     }
 }
 
-private struct LibraryListRow: View {
-    let item: LibraryItem
-
-    var body: some View {
-        HStack(spacing: 12) {
-            PosterImage(url: item.posterURL, width: 50, height: 75, cornerRadius: 6)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    if let year = item.year {
-                        Text(year)
-                    }
-                    if item.mediaType == "tv" {
-                        Text("• TV Series")
-                    }
-                    if let rating = item.voteAverage, rating > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "star.fill")
-                                .foregroundStyle(.yellow)
-                            Text(String(format: "%.1f", rating))
-                        }
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if item.isAvailable {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.caption)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-}
-
 private struct SectionIndexModifier: ViewModifier {
     let label: String
+    let isIndexed: Bool
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), isIndexed {
             content.sectionIndexLabel(Text(label))
         } else {
             content

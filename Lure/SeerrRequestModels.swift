@@ -33,6 +33,23 @@ struct SeerrMediaRequest: Codable, Identifiable, Sendable {
         guard let requestStatus else { return false }
         return requestStatus != .declined && requestStatus != .failed
     }
+
+    var createdAtRelativeText: String? {
+        Self.relativeDateText(from: createdAt)
+    }
+
+    var createdAtDisplayText: String? {
+        guard let createdAt, let date = Self.isoFormatter.date(from: createdAt) else { return nil }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private static func relativeDateText(from value: String?) -> String? {
+        guard let value, let date = isoFormatter.date(from: value) else { return nil }
+        return relativeFormatter.localizedString(for: date, relativeTo: .now)
+    }
+
+    private static let isoFormatter = ISO8601DateFormatter()
+    private static let relativeFormatter = RelativeDateTimeFormatter()
 }
 
 struct SeerrRequestMedia: Codable, Sendable {
