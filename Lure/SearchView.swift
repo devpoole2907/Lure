@@ -11,6 +11,7 @@ struct SearchView: View {
     @State private var scope: SearchScope = .discover
     @State private var libraryItems: [LibraryItem] = []
     @State private var libraryItemsLoaded = false
+    @State private var libraryLoadTask: Task<Void, Never>?
     @Namespace private var genreTransitionNamespace
 
     @AppStorage("lure.search.recents") private var recentsStorage: String = "[]"
@@ -71,8 +72,14 @@ struct SearchView: View {
             recordRecent(searchText)
         }
         .onChange(of: scope) { _, newScope in
-            if newScope == .library, !libraryItemsLoaded {
-                Task { await loadLibraryItems() }
+            if newScope == .library, !libraryItemsLoaded, libraryLoadTask == nil {
+                libraryLoadTask = Task {
+                    await loadLibraryItems()
+                    libraryLoadTask = nil
+                }
+            } else if newScope != .library {
+                libraryLoadTask?.cancel()
+                libraryLoadTask = nil
             }
         }
         .onChange(of: searchText) { _, newValue in
@@ -135,6 +142,7 @@ struct SearchView: View {
     }
 
     private func loadLibraryItems() async {
+        guard libraryLoadTask != nil else { return }
         do {
             var allEntries: [SeerrMediaEntry] = []
             let pageSize = 250

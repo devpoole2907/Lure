@@ -57,7 +57,7 @@ final class AdminUserEditorViewModel {
         do {
             let updatedUser = try await apiClient.updateUser(id: user.id, permissions: permissionsValue)
             permissionsValue = updatedUser.permissions ?? permissionsValue
-            originalPermissionsValue = updatedUser.permissions ?? originalPermissionsValue
+            originalPermissionsValue = updatedUser.permissions ?? permissionsValue
             return updatedUser
         } catch {
             errorMessage = error.localizedDescription
