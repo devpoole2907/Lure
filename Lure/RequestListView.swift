@@ -117,7 +117,7 @@ struct RequestListView: View {
 
     @ViewBuilder
     private func trailingActions(for request: SeerrMediaRequest) -> some View {
-        if currentUser?.isAdmin == true {
+        if canModerateRequests {
             Button(role: .destructive) {
                 Task { await vm.deleteRequest(request) }
             } label: {
@@ -137,7 +137,7 @@ struct RequestListView: View {
 
     @ViewBuilder
     private func leadingActions(for request: SeerrMediaRequest) -> some View {
-        if currentUser?.isAdmin == true {
+        if canModerateRequests {
             if request.requestStatus == .pending {
                 Button {
                     Task { await vm.approveRequest(request) }
@@ -241,6 +241,10 @@ struct RequestListView: View {
         case .movie: "film"
         case .tv:    "tv"
         }
+    }
+
+    private var canModerateRequests: Bool {
+        currentUser?.canManageRequests == true
     }
 }
 
