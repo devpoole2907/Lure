@@ -26,18 +26,22 @@ struct MoreView: View {
                     }
                 }
 
-                if currentUser.isAdmin == true {
+                if canAccessAdminSection {
                     Section("Administration") {
-                        NavigationLink(value: MoreDestination.userManagement) {
-                            moreRow(icon: "person.2.fill", color: .indigo,
-                                    title: "User Management",
-                                    subtitle: totalUserCount > 0 ? "\(totalUserCount) user\(totalUserCount == 1 ? "" : "s")" : "Manage users and permissions")
+                        if canManageUsers {
+                            NavigationLink(value: MoreDestination.userManagement) {
+                                moreRow(icon: "person.2.fill", color: .indigo,
+                                        title: "User Management",
+                                        subtitle: totalUserCount > 0 ? "\(totalUserCount) user\(totalUserCount == 1 ? "" : "s")" : "Manage users and permissions")
+                            }
                         }
 
-                        NavigationLink(value: MoreDestination.manageIssues) {
-                            moreRow(icon: "exclamationmark.bubble.fill", color: .orange,
-                                    title: "Manage Issues",
-                                    subtitle: totalIssueCount > 0 ? "\(totalIssueCount) issue\(totalIssueCount == 1 ? "" : "s")" : "Review and respond to reported issues")
+                        if canManageOrViewIssues {
+                            NavigationLink(value: MoreDestination.manageIssues) {
+                                moreRow(icon: "exclamationmark.bubble.fill", color: .orange,
+                                        title: "Manage Issues",
+                                        subtitle: totalIssueCount > 0 ? "\(totalIssueCount) issue\(totalIssueCount == 1 ? "" : "s")" : "Review and respond to reported issues")
+                            }
                         }
                     }
                 }
@@ -77,19 +81,33 @@ struct MoreView: View {
     }
 
     private func loadAdminCounts() async {
-        guard currentUser.isAdmin == true else { return }
+        guard canAccessAdminSection else { return }
 
-        async let userResponse = try? await apiClient.getUsers(take: 1, skip: 0)
-        async let issueResponse = try? await apiClient.getIssues(take: 1, skip: 0)
-
-        let (userResp, issueResp) = await (userResponse, issueResponse)
-
-        if let userResp {
-            totalUserCount = userResp.pageInfo.results ?? 0
+        if canManageUsers {
+            let userResponse = try? await apiClient.getUsers(take: 1, skip: 0)
+            if let userResponse {
+                totalUserCount = userResponse.pageInfo.results ?? 0
+            }
         }
-        if let issueResp {
-            totalIssueCount = issueResp.pageInfo.results ?? 0
+
+        if canManageOrViewIssues {
+            let issueResponse = try? await apiClient.getIssues(take: 1, skip: 0)
+            if let issueResponse {
+                totalIssueCount = issueResponse.pageInfo.results ?? 0
+            }
         }
+    }
+
+    private var canManageUsers: Bool {
+        currentUser.canManageUsers
+    }
+
+    private var canManageOrViewIssues: Bool {
+        currentUser.canManageIssues || currentUser.canViewIssues
+    }
+
+    private var canAccessAdminSection: Bool {
+        canManageUsers || canManageOrViewIssues
     }
 
     private func moreRow(icon: String, color: Color, title: String, subtitle: String) -> some View {
