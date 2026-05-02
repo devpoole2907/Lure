@@ -25,7 +25,9 @@ struct LureApp: App {
 
     init() {
         let schema = Schema([
-            LureServerProfile.self
+            LureServerProfile.self,
+            CachedLibraryItem.self,
+            CachedRequestItem.self
         ])
         let config = ModelConfiguration()
         do {

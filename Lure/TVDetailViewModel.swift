@@ -1,13 +1,15 @@
 import Foundation
 import Observation
+import SwiftUI
 
+@MainActor
 @Observable
 final class TVDetailViewModel {
     let tmdbId: Int
     private(set) var show: SeerrTVDetail?
     private(set) var ratings: SeerrRatingsCombined?
     private(set) var recommendations: [SeerrMediaItem] = []
-    private(set) var isLoading: Bool = false
+    private(set) var isLoading: Bool = true
     private(set) var isRequesting: Bool = false
     var error: String?
     private(set) var requestSuccess: Bool = false
@@ -23,20 +25,29 @@ final class TVDetailViewModel {
     }
 
     func load() async {
-        isLoading = true
-        error = nil
+        withAnimation(.smooth(duration: 0.3)) {
+            isLoading = true
+            error = nil
+        }
 
         do {
-            show = try await apiClient.getTVDetail(tmdbId: tmdbId)
+            let loadedShow = try await apiClient.getTVDetail(tmdbId: tmdbId)
+            withAnimation(.smooth(duration: 0.35)) {
+                show = loadedShow
+            }
         } catch {
-            self.error = error.localizedDescription
+            withAnimation(.smooth(duration: 0.25)) {
+                self.error = error.localizedDescription
+            }
         }
 
         async let ratingsLoad: () = loadRatings()
         async let recsLoad: () = loadRecommendations()
         _ = await (ratingsLoad, recsLoad)
 
-        isLoading = false
+        withAnimation(.smooth(duration: 0.3)) {
+            isLoading = false
+        }
     }
 
     func selectAllSeasons(is4k: Bool = false) {
@@ -139,12 +150,18 @@ final class TVDetailViewModel {
     }
 
     private func loadRatings() async {
-        ratings = try? await apiClient.getTVRatings(tmdbId: tmdbId)
+        let loadedRatings = try? await apiClient.getTVRatings(tmdbId: tmdbId)
+        withAnimation(.smooth(duration: 0.35)) {
+            ratings = loadedRatings
+        }
     }
 
     private func loadRecommendations() async {
         if let response = try? await apiClient.getTVRecommendations(tmdbId: tmdbId) {
-            recommendations = response.results.map { $0.toMediaItem() }
+            let loadedRecommendations = response.results.map { $0.toMediaItem() }
+            withAnimation(.smooth(duration: 0.35)) {
+                recommendations = loadedRecommendations
+            }
         }
     }
 }

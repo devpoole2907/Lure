@@ -4,6 +4,7 @@ struct LibraryView: View {
     let apiClient: SeerrAPIClient
 
     @State private var viewModel: LibraryViewModel?
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         NavigationStack {
@@ -81,7 +82,7 @@ struct LibraryView: View {
     @MainActor
     private func loadLibraryIfNeeded() async {
         guard viewModel == nil else { return }
-        let viewModel = LibraryViewModel(apiClient: apiClient)
+        let viewModel = LibraryViewModel(apiClient: apiClient, modelContext: modelContext)
         self.viewModel = viewModel
         await viewModel.load()
     }

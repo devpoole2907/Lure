@@ -24,8 +24,14 @@ struct MediaSliderView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 12) {
-                        ForEach(items) { item in
-                            let destination = MediaDestination(mediaType: item.mediaType, tmdbId: item.tmdbId, title: item.title, posterURL: item.posterURL)
+                        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                            let destination = MediaDestination(
+                                mediaType: item.mediaType,
+                                tmdbId: item.tmdbId,
+                                title: item.title,
+                                posterURL: item.posterURL,
+                                sourceID: navigationSourceID(for: item, index: index)
+                            )
 
                             NavigationLink(value: destination) {
                                 titleCard(for: item, destination: destination)
@@ -71,6 +77,10 @@ struct MediaSliderView: View {
             TitleCardView(item: item)
         }
     }
+
+    private func navigationSourceID(for item: SeerrMediaItem, index: Int) -> String {
+        "\(title ?? "media-slider")-\(index)-\(item.id)"
+    }
 }
 
 /// Navigation value for media detail routing
@@ -79,4 +89,13 @@ struct MediaDestination: Hashable {
     let tmdbId: Int
     let title: String?
     let posterURL: URL?
+    let sourceID: String
+
+    init(mediaType: String, tmdbId: Int, title: String?, posterURL: URL?, sourceID: String? = nil) {
+        self.mediaType = mediaType
+        self.tmdbId = tmdbId
+        self.title = title
+        self.posterURL = posterURL
+        self.sourceID = sourceID ?? "\(mediaType)-\(tmdbId)"
+    }
 }

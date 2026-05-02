@@ -36,7 +36,7 @@ struct TVDetailView: View {
         Group {
             if let show = vm.show {
                 scrollContent(show)
-                    .background { artBackground(url: show.posterURL) }
+                    .background { artBackground(url: displayPosterURL(for: show)) }
                     .transition(.opacity)
             } else if vm.isLoading {
                 loadingContent
@@ -174,8 +174,10 @@ struct TVDetailView: View {
     // MARK: - Hero
 
     private func heroSection(_ show: SeerrTVDetail) -> some View {
-        VStack(spacing: 14) {
-            PosterImage(url: show.posterURL, width: 160, height: 240, cornerRadius: 16)
+        let badges = showBadges(show)
+
+        return VStack(spacing: 14) {
+            PosterImage(url: displayPosterURL(for: show), width: 160, height: 240, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.6), radius: 24, y: 10)
 
             VStack(spacing: 6) {
@@ -187,19 +189,12 @@ struct TVDetailView: View {
 
                 HStack(spacing: 4) {
                     if let year = show.year { Text(year) }
-                    if let cert = show.contentRatingText {
-                        if show.year != nil { Text("·") }
-                        Text(cert)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.5), lineWidth: 1))
-                    }
                     if let seasons = show.numberOfSeasons {
-                        if show.year != nil || show.contentRatingText != nil { Text("·") }
+                        if show.year != nil { Text("·") }
                         Text(seasons == 1 ? "1 season" : "\(seasons) seasons")
                     }
                     if let network = show.networks?.first?.name {
-                        if show.year != nil || show.contentRatingText != nil || show.numberOfSeasons != nil { Text("·") }
+                        if show.year != nil || show.numberOfSeasons != nil { Text("·") }
                         Text(network)
                     }
                 }
@@ -208,13 +203,45 @@ struct TVDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
-                if let status = show.mediaInfo?.mediaStatus, status.isUserVisible {
-                    pill(icon: status.systemImage, label: status.displayName, color: status.color)
-                }
+                badgeSection(badges)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 16)
+    }
+
+    private func displayPosterURL(for show: SeerrTVDetail) -> URL? {
+        initialPosterURL ?? show.posterURL
+    }
+
+    private func showBadges(_ show: SeerrTVDetail) -> [(String, String, Color)] {
+        var badges: [(String, String, Color)] = []
+        if let cert = show.contentRatingText {
+            badges.append(("shield", cert, Color.white.opacity(0.8)))
+        }
+        if let status = show.mediaInfo?.mediaStatus, status.isUserVisible {
+            badges.append((status.systemImage, status.displayName, status.color))
+        }
+        return badges
+    }
+
+    @ViewBuilder
+    private func badgeSection(_ badges: [(String, String, Color)]) -> some View {
+        if !badges.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+                VStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: - Cards Section
@@ -236,8 +263,9 @@ struct TVDetailView: View {
             }
         }
 
-        if let providers = show.usWatchProviders, let named = namedFlatrate(providers) {
+        if let providers = show.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let genres = show.genres, !genres.isEmpty {
@@ -246,6 +274,7 @@ struct TVDetailView: View {
 
         if let ratings = vm.ratings, ratings.hasAnyScore {
             ratingsCard(ratings)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let cast = show.credits?.cast, !cast.isEmpty {
@@ -263,7 +292,9 @@ struct TVDetailView: View {
 
         if !vm.recommendations.isEmpty {
             MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
-        }    }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
 
     // MARK: - Request Card
 
@@ -482,14 +513,14 @@ struct TVDetailView: View {
 
     // MARK: - Watch Providers Card
 
-    private func namedFlatrate(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
-        let named = (providers.flatrate ?? []).filter { $0.providerName != nil && !$0.providerName!.isEmpty }
+    private func namedProviders(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
+        let named = providers.namedAvailabilityProviders
         return named.isEmpty ? nil : named
     }
 
     private func watchProvidersCard(_ providers: SeerrWatchProviders, named: [SeerrWatchProvider]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Streaming", icon: "play.tv")
+            sectionLabel(providers.namedStreamingProviders.isEmpty ? "Available From" : "Streaming", icon: "play.tv")
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
             ScrollView(.horizontal, showsIndicators: false) {

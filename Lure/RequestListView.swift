@@ -6,6 +6,7 @@ struct RequestListView: View {
 
     @State private var vm: RequestListViewModel
     @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(\.modelContext) private var modelContext
 
     init(apiClient: SeerrAPIClient, currentUser: SeerrUser?) {
         self.apiClient = apiClient
@@ -23,7 +24,10 @@ struct RequestListView: View {
 #endif
                 .toolbar { toolbarContent }
                 .refreshable { await vm.loadRequests() }
-                .task { await vm.loadRequestsIfNeeded() }
+                .task {
+                    vm.setModelContext(modelContext)
+                    await vm.loadRequestsIfNeeded()
+                }
                 .animation(.default, value: vm.sortedRequests.map(\.id))
                 .onChange(of: vm.actionSuccessMessage) { _, message in
                     if let message {

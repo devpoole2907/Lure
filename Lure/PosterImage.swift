@@ -66,8 +66,12 @@ struct PosterImage: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 cachedImage = platformImage
             }
+        } catch is CancellationError {
+            return
         } catch {
-            cachedImage = nil
+            if cachedImage == nil {
+                isLoading = false
+            }
         }
     }
 }

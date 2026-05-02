@@ -24,12 +24,13 @@ struct DiscoverMediaGridView: View {
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 20) {
-                    ForEach(allItems) { item in
+                    ForEach(Array(allItems.enumerated()), id: \.offset) { index, item in
                         let destination = MediaDestination(
                             mediaType: item.mediaType,
                             tmdbId: item.tmdbId,
                             title: item.title,
-                            posterURL: item.posterURL
+                            posterURL: item.posterURL,
+                            sourceID: navigationSourceID(for: item, index: index)
                         )
 
                         NavigationLink(value: destination) {
@@ -107,5 +108,9 @@ struct DiscoverMediaGridView: View {
         } catch {
             loadError = error
         }
+    }
+
+    private func navigationSourceID(for item: SeerrMediaItem, index: Int) -> String {
+        "\(title)-grid-\(index)-\(item.id)"
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftData
 
 enum LibrarySortOrder: String, CaseIterable, Identifiable {
     case title = "Title"
@@ -16,6 +17,7 @@ struct LibrarySection: Identifiable {
     var id: String { indexLabel }
 }
 
+@MainActor
 @Observable
 final class LibraryViewModel {
     private(set) var items: [LibraryItem] = []
@@ -27,9 +29,15 @@ final class LibraryViewModel {
     var sortOrder: LibrarySortOrder = .title
 
     private let apiClient: SeerrAPIClient
+    private var modelContext: ModelContext?
 
-    init(apiClient: SeerrAPIClient) {
+    init(apiClient: SeerrAPIClient, modelContext: ModelContext? = nil) {
         self.apiClient = apiClient
+        self.modelContext = modelContext
+    }
+
+    func setModelContext(_ context: ModelContext) {
+        self.modelContext = context
     }
 
     var sectionedItems: [LibrarySection] {
@@ -69,9 +77,20 @@ final class LibraryViewModel {
         isLoading = true
         error = nil
 
-        if !didLoadInitialSnapshot, let cachedEntries = await LibrarySnapshotCache.shared.load(serverBaseURL: apiClient.baseURL), !cachedEntries.isEmpty {
-            items = cachedEntries
-            didLoadInitialSnapshot = true
+        if !didLoadInitialSnapshot {
+            if let context = modelContext {
+                let baseURL = apiClient.baseURL
+                let descriptor = FetchDescriptor<CachedLibraryItem>(
+                    predicate: #Predicate { $0.serverURL == baseURL }
+                )
+                if let cached = try? context.fetch(descriptor), !cached.isEmpty {
+                    items = cached.map { $0.toLibraryItem }
+                    didLoadInitialSnapshot = true
+                }
+            } else if let cachedEntries = await LibrarySnapshotCache.shared.load(serverBaseURL: apiClient.baseURL), !cachedEntries.isEmpty {
+                items = cachedEntries
+                didLoadInitialSnapshot = true
+            }
         }
 
         await refreshLibrary(showBlockingLoader: items.isEmpty)
@@ -97,7 +116,26 @@ final class LibraryViewModel {
             await applyRefreshedItems(refreshedItems)
             error = nil
             didLoadInitialSnapshot = true
-            await LibrarySnapshotCache.shared.store(refreshedItems.filter { $0.title != "Unknown" }, serverBaseURL: apiClient.baseURL)
+
+            let filteredItems = refreshedItems.filter { $0.title != "Unknown" }
+            if let context = modelContext {
+                let baseURL = apiClient.baseURL
+                let descriptor = FetchDescriptor<CachedLibraryItem>(
+                    predicate: #Predicate { $0.serverURL == baseURL }
+                )
+                if let existing = try? context.fetch(descriptor) {
+                    for item in existing {
+                        context.delete(item)
+                    }
+                }
+                for item in filteredItems {
+                    let cached = CachedLibraryItem(serverURL: baseURL, item: item)
+                    context.insert(cached)
+                }
+                try? context.save()
+            } else {
+                await LibrarySnapshotCache.shared.store(filteredItems, serverBaseURL: apiClient.baseURL)
+            }
         } catch {
             if items.isEmpty {
                 self.error = error.localizedDescription

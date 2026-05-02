@@ -36,7 +36,7 @@ struct MovieDetailView: View {
         Group {
             if let movie = vm.movie {
                 scrollContent(movie)
-                    .background { artBackground(url: movie.posterURL) }
+                    .background { artBackground(url: displayPosterURL(for: movie)) }
                     .transition(.opacity)
             } else if vm.isLoading {
                 loadingContent
@@ -184,8 +184,10 @@ struct MovieDetailView: View {
     // MARK: - Hero
 
     private func heroSection(_ movie: SeerrMovieDetail) -> some View {
-        VStack(spacing: 14) {
-            PosterImage(url: movie.posterURL, width: 160, height: 240, cornerRadius: 16)
+        let badges = movieBadges(movie)
+
+        return VStack(spacing: 14) {
+            PosterImage(url: displayPosterURL(for: movie), width: 160, height: 240, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.6), radius: 24, y: 10)
 
             VStack(spacing: 6) {
@@ -197,15 +199,8 @@ struct MovieDetailView: View {
 
                 HStack(spacing: 4) {
                     if let year = movie.year { Text(year) }
-                    if let cert = movie.certificationText {
-                        if movie.year != nil { Text("·") }
-                        Text(cert)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.5), lineWidth: 1))
-                    }
                     if let runtime = movie.runtime, runtime > 0 {
-                        if movie.year != nil || movie.certificationText != nil { Text("·") }
+                        if movie.year != nil { Text("·") }
                         Text("\(runtime)m")
                     }
                 }
@@ -214,13 +209,45 @@ struct MovieDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
-                if let status = movie.mediaInfo?.mediaStatus, status.isUserVisible {
-                    pill(icon: status.systemImage, label: status.displayName, color: status.color)
-                }
+                badgeSection(badges)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 16)
+    }
+
+    private func displayPosterURL(for movie: SeerrMovieDetail) -> URL? {
+        initialPosterURL ?? movie.posterURL
+    }
+
+    private func movieBadges(_ movie: SeerrMovieDetail) -> [(String, String, Color)] {
+        var badges: [(String, String, Color)] = []
+        if let cert = movie.certificationText {
+            badges.append(("shield", cert, Color.white.opacity(0.8)))
+        }
+        if let status = movie.mediaInfo?.mediaStatus, status.isUserVisible {
+            badges.append((status.systemImage, status.displayName, status.color))
+        }
+        return badges
+    }
+
+    @ViewBuilder
+    private func badgeSection(_ badges: [(String, String, Color)]) -> some View {
+        if !badges.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+                VStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: - Cards Section
@@ -235,8 +262,9 @@ struct MovieDetailView: View {
 
         statsCard(movie)
 
-        if let providers = movie.usWatchProviders, let named = namedFlatrate(providers) {
+        if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let genres = movie.genres, !genres.isEmpty {
@@ -245,6 +273,7 @@ struct MovieDetailView: View {
 
         if let ratings = vm.ratings, ratings.hasAnyScore {
             ratingsCard(ratings)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let cast = movie.credits?.cast, !cast.isEmpty {
@@ -259,10 +288,10 @@ struct MovieDetailView: View {
         if !infoRows.isEmpty {
             rowsCard(header: "Info", icon: "info.circle", rows: infoRows)
         }
-// Recommendations
-if !vm.recommendations.isEmpty {
-    MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
-}
+        if !vm.recommendations.isEmpty {
+            MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
     }
 
     // MARK: - Request Card
@@ -426,14 +455,14 @@ if !vm.recommendations.isEmpty {
 
     // MARK: - Watch Providers Card
 
-    private func namedFlatrate(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
-        let named = (providers.flatrate ?? []).filter { $0.providerName != nil && !$0.providerName!.isEmpty }
+    private func namedProviders(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
+        let named = providers.namedAvailabilityProviders
         return named.isEmpty ? nil : named
     }
 
     private func watchProvidersCard(_ providers: SeerrWatchProviders, named: [SeerrWatchProvider]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Streaming", icon: "play.tv")
+            sectionLabel(providers.namedStreamingProviders.isEmpty ? "Available From" : "Streaming", icon: "play.tv")
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
             ScrollView(.horizontal, showsIndicators: false) {

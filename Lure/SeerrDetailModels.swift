@@ -64,7 +64,28 @@ struct SeerrMovieDetail: Codable, Identifiable, Sendable {
 
     /// US watch providers (streaming). Falls back to first available region.
     var usWatchProviders: SeerrWatchProviders? {
-        watchProviders?.first(where: { $0.iso_3166_1 == "US" }) ?? watchProviders?.first
+        preferredWatchProviders
+    }
+
+    var preferredWatchProviders: SeerrWatchProviders? {
+        Self.preferredWatchProviders(from: watchProviders)
+    }
+
+    static func preferredWatchProviders(from providers: [SeerrWatchProviders]?) -> SeerrWatchProviders? {
+        guard let providers, !providers.isEmpty else { return nil }
+
+        let preferredRegions = [Locale.current.region?.identifier, "US"].compactMap(\.self)
+        for region in preferredRegions {
+            if let provider = providers.first(where: {
+                $0.iso_3166_1 == region && !$0.namedAvailabilityProviders.isEmpty
+            }) {
+                return provider
+            }
+        }
+
+        return providers.first(where: { !$0.namedStreamingProviders.isEmpty })
+            ?? providers.first(where: { !$0.namedAvailabilityProviders.isEmpty })
+            ?? providers.first
     }
 
     var releaseAvailabilityText: String? {
@@ -169,7 +190,11 @@ struct SeerrTVDetail: Codable, Identifiable, Sendable {
 
     /// US watch providers (streaming). Falls back to first available region.
     var usWatchProviders: SeerrWatchProviders? {
-        watchProviders?.first(where: { $0.iso_3166_1 == "US" }) ?? watchProviders?.first
+        preferredWatchProviders
+    }
+
+    var preferredWatchProviders: SeerrWatchProviders? {
+        SeerrMovieDetail.preferredWatchProviders(from: watchProviders)
     }
 
     /// Requestable seasons (non-specials, non-zero)
@@ -337,6 +362,27 @@ struct SeerrWatchProviders: Codable, Sendable {
     let link: String?
     let buy: [SeerrWatchProvider]?
     let flatrate: [SeerrWatchProvider]?
+    let rent: [SeerrWatchProvider]?
+    let free: [SeerrWatchProvider]?
+    let ads: [SeerrWatchProvider]?
+
+    var namedStreamingProviders: [SeerrWatchProvider] {
+        uniqueNamedProviders(from: (flatrate ?? []) + (free ?? []) + (ads ?? []))
+    }
+
+    var namedAvailabilityProviders: [SeerrWatchProvider] {
+        let streaming = namedStreamingProviders
+        if !streaming.isEmpty { return streaming }
+        return uniqueNamedProviders(from: (rent ?? []) + (buy ?? []))
+    }
+
+    private func uniqueNamedProviders(from providers: [SeerrWatchProvider]) -> [SeerrWatchProvider] {
+        var seen: Set<String> = []
+        return providers.filter { provider in
+            guard let name = provider.providerName, !name.isEmpty else { return false }
+            return seen.insert(provider.stableID).inserted
+        }
+    }
 }
 
 struct SeerrWatchProvider: Codable, Identifiable, Sendable {
