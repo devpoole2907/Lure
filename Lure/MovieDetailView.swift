@@ -5,17 +5,30 @@ struct MovieDetailView: View {
     let apiClient: SeerrAPIClient
     let initialTitle: String?
     let initialPosterURL: URL?
+    let currentUser: SeerrUser?
+    let onRequestUpdated: ((SeerrMediaRequest) -> Void)?
 
     @State private var vm: MovieDetailViewModel
     @State private var showRequestOptions = false
+    @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
+    @State private var isModeratingRequest = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
 
-    init(tmdbId: Int, apiClient: SeerrAPIClient, initialTitle: String? = nil, initialPosterURL: URL? = nil) {
+    init(
+        tmdbId: Int,
+        apiClient: SeerrAPIClient,
+        initialTitle: String? = nil,
+        initialPosterURL: URL? = nil,
+        currentUser: SeerrUser? = nil,
+        onRequestUpdated: ((SeerrMediaRequest) -> Void)? = nil
+    ) {
         self.tmdbId = tmdbId
         self.apiClient = apiClient
         self.initialTitle = initialTitle
         self.initialPosterURL = initialPosterURL
+        self.currentUser = currentUser
+        self.onRequestUpdated = onRequestUpdated
         self._vm = State(initialValue: MovieDetailViewModel(tmdbId: tmdbId, apiClient: apiClient))
     }
 
@@ -23,7 +36,7 @@ struct MovieDetailView: View {
         Group {
             if let movie = vm.movie {
                 scrollContent(movie)
-                    .background { artBackground(url: movie.posterURL) }
+                    .background { artBackground(url: displayPosterURL(for: movie)) }
                     .transition(.opacity)
             } else if vm.isLoading {
                 loadingContent
@@ -37,9 +50,32 @@ struct MovieDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
         .navigationTitle(vm.movie?.displayTitle ?? initialTitle ?? "Movie")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+#endif
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    Button {
+                        showReportSheet = true
+                    } label: {
+                        Label("Report an Issue", systemImage: "exclamationmark.triangle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
+        .sheet(isPresented: $showReportSheet) {
+            ReportIssueSheet(
+                mediaId: vm.movie?.mediaInfo?.id,
+                mediaTitle: vm.movie?.displayTitle ?? initialTitle,
+                apiClient: apiClient
+            )
+        }
         .errorAlert(item: Binding(
             get: { vm.error.map { ErrorAlertItem(title: "Error", message: $0) } },
             set: { _ in vm.error = nil }
@@ -148,8 +184,10 @@ struct MovieDetailView: View {
     // MARK: - Hero
 
     private func heroSection(_ movie: SeerrMovieDetail) -> some View {
-        VStack(spacing: 14) {
-            PosterImage(url: movie.posterURL, width: 160, height: 240, cornerRadius: 16)
+        let badges = movieBadges(movie)
+
+        return VStack(spacing: 14) {
+            PosterImage(url: displayPosterURL(for: movie), width: 160, height: 240, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.6), radius: 24, y: 10)
 
             VStack(spacing: 6) {
@@ -161,20 +199,55 @@ struct MovieDetailView: View {
 
                 HStack(spacing: 4) {
                     if let year = movie.year { Text(year) }
-                    if let runtime = movie.runtime, runtime > 0 { Text("·"); Text("\(runtime)m") }
+                    if let runtime = movie.runtime, runtime > 0 {
+                        if movie.year != nil { Text("·") }
+                        Text("\(runtime)m")
+                    }
                 }
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
-                if let status = movie.mediaInfo?.mediaStatus, status.isUserVisible {
-                    pill(icon: status.systemImage, label: status.displayName, color: status.color)
-                }
+                badgeSection(badges)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 16)
+    }
+
+    private func displayPosterURL(for movie: SeerrMovieDetail) -> URL? {
+        initialPosterURL ?? movie.posterURL
+    }
+
+    private func movieBadges(_ movie: SeerrMovieDetail) -> [(String, String, Color)] {
+        var badges: [(String, String, Color)] = []
+        if let cert = movie.certificationText {
+            badges.append(("shield", cert, Color.white.opacity(0.8)))
+        }
+        if let status = movie.mediaInfo?.mediaStatus, status.isUserVisible {
+            badges.append((status.systemImage, status.displayName, status.color))
+        }
+        return badges
+    }
+
+    @ViewBuilder
+    private func badgeSection(_ badges: [(String, String, Color)]) -> some View {
+        if !badges.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+                VStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: - Cards Section
@@ -189,12 +262,18 @@ struct MovieDetailView: View {
 
         statsCard(movie)
 
+        if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
+            watchProvidersCard(providers, named: named)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+
         if let genres = movie.genres, !genres.isEmpty {
             genreChips(genres.compactMap(\.name))
         }
 
         if let ratings = vm.ratings, ratings.hasAnyScore {
             ratingsCard(ratings)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let cast = movie.credits?.cast, !cast.isEmpty {
@@ -209,10 +288,10 @@ struct MovieDetailView: View {
         if !infoRows.isEmpty {
             rowsCard(header: "Info", icon: "info.circle", rows: infoRows)
         }
-// Recommendations
-if !vm.recommendations.isEmpty {
-    MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
-}
+        if !vm.recommendations.isEmpty {
+            MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
     }
 
     // MARK: - Request Card
@@ -227,29 +306,112 @@ if !vm.recommendations.isEmpty {
                 .padding(.vertical, 14)
                 .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
         } else {
-            Button {
-                showRequestOptions = true
-            } label: {
-                Group {
-                    if vm.isRequesting {
-                        ProgressView()
-                    } else {
-                        Label(movie.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: movie))
-                            .font(.subheadline.weight(.semibold))
+            let pendingRequest = pendingRequest(for: movie)
+
+            HStack(spacing: 12) {
+                Button {
+                    showRequestOptions = true
+                } label: {
+                    Group {
+                        if vm.isRequesting {
+                            ProgressView()
+                        } else {
+                            Label(movie.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: movie))
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+                .disabled(vm.isRequesting || isModeratingRequest)
+
+                if let pendingRequest, canModerateRequests {
+                    moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
+                        await moderateRequest(
+                            action: { try await apiClient.approveRequest(id: pendingRequest.id) },
+                            successTitle: "Request Approved",
+                            successMessage: "Approved \(movie.displayTitle)"
+                        )
+                    }
+
+                    moderationButton(title: "Decline", systemImage: "xmark", tint: .orange) {
+                        await moderateRequest(
+                            action: { try await apiClient.declineRequest(id: pendingRequest.id) },
+                            successTitle: "Request Declined",
+                            successMessage: "Declined \(movie.displayTitle)"
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-            .disabled(vm.isRequesting)
         }
     }
 
     private func requestButtonIcon(for movie: SeerrMovieDetail) -> String {
         movie.mediaInfo?.isRequested == true ? "clock.fill" : "plus.circle.fill"
+    }
+
+    private var canModerateRequests: Bool {
+        currentUser?.canManageRequests == true || currentUser?.isAdmin == true
+    }
+
+    private func pendingRequest(for movie: SeerrMovieDetail) -> SeerrMediaRequest? {
+        movie.mediaInfo?.activeRequests.first { $0.requestStatus == .pending }
+    }
+
+    private func moderationButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping @Sendable () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Group {
+                if isModeratingRequest {
+                    ProgressView()
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            .frame(width: 52, height: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .glassEffect(.regular.tint(tint.opacity(0.2)).interactive(), in: RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(tint)
+        .disabled(isModeratingRequest || vm.isRequesting)
+    }
+
+    private func moderateRequest(
+        action: @escaping @Sendable () async throws -> SeerrMediaRequest,
+        successTitle: String,
+        successMessage: String
+    ) async {
+        isModeratingRequest = true
+        defer { isModeratingRequest = false }
+
+        do {
+            let updatedRequest = try await action()
+            onRequestUpdated?(updatedRequest)
+            await vm.load()
+            notificationCenter.show(LureBannerItem(
+                title: successTitle,
+                message: successMessage,
+                style: .success
+            ))
+        } catch {
+            notificationCenter.show(LureBannerItem(
+                title: "Action Failed",
+                message: error.localizedDescription,
+                style: .error
+            ))
+        }
     }
 
     // MARK: - Overview Card
@@ -288,6 +450,46 @@ if !vm.recommendations.isEmpty {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Watch Providers Card
+
+    private func namedProviders(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
+        let named = providers.namedAvailabilityProviders
+        return named.isEmpty ? nil : named
+    }
+
+    private func watchProvidersCard(_ providers: SeerrWatchProviders, named: [SeerrWatchProvider]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(providers.namedStreamingProviders.isEmpty ? "Available From" : "Streaming", icon: "play.tv")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(named, id: \.stableID) { provider in
+                        VStack(spacing: 4) {
+                            AsyncImage(url: provider.logoURL) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Text(provider.providerName ?? "Unknown")
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .frame(width: 60)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+            .horizontalSoftEdges()
+        }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 

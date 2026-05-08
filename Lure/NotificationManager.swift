@@ -1,5 +1,6 @@
 import SwiftUI
 import CryptoKit
+import UserNotifications
 
 enum APNSConfig {
     static let appSecret = "YOUR_APP_SECRET_HERE" // The user will replace this
@@ -30,7 +31,8 @@ final class NotificationManager {
         self.currentWorkerURL = workerURL
         self.currentServerURL = serverURL
         self.currentUsername = username
-        
+
+#if os(iOS) || os(visionOS)
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if granted {
                 DispatchQueue.main.async {
@@ -40,6 +42,7 @@ final class NotificationManager {
                 print("Notification permission denied: \(String(describing: error))")
             }
         }
+#endif
     }
     
     func unregister(workerURL: String, serverURL: String, deviceToken: String) async {

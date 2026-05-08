@@ -298,3 +298,89 @@ struct SeerrGenre: Codable, Identifiable, Sendable {
     let id: Int?
     let name: String?
 }
+
+// MARK: - Media Library (available on server)
+
+struct SeerrMediaListResponse: Codable, Sendable {
+    let pageInfo: SeerrPageInfo
+    let results: [SeerrMediaEntry]
+}
+
+struct SeerrMediaEntry: Codable, Identifiable, Sendable {
+    let id: Int
+    let mediaType: String?
+    let tmdbId: Int?
+    let tvdbId: Int?
+    let status: Int?
+    let status4k: Int?
+    let createdAt: String?
+    let updatedAt: String?
+    let plexUrl: String?
+    let serviceUrl: String?
+    // TMDB metadata cached by Overseerr
+    let title: String?
+    let originalTitle: String?
+    let name: String?
+    let originalName: String?
+    let posterPath: String?
+    let backdropPath: String?
+    let releaseDate: String?
+    let firstAirDate: String?
+
+    var posterURL: URL? { ImageURL.poster(posterPath) }
+    var displayTitle: String { title ?? name ?? originalTitle ?? originalName ?? "Unknown" }
+    var displayYear: String? {
+        let dateStr = releaseDate ?? firstAirDate
+        guard let dateStr, dateStr.count >= 4 else { return nil }
+        return String(dateStr.prefix(4))
+    }
+    var mediaStatus: LureConstants.MediaStatus? {
+        guard let status else { return nil }
+        return LureConstants.MediaStatus(rawValue: status)
+    }
+    var isAvailable: Bool { mediaStatus == .available }
+
+    /// Convert to SeerrMediaItem for use with TitleCardView and navigation.
+    func toMediaItem() -> SeerrMediaItem? {
+        guard let tmdbId else { return nil }
+
+        let info = SeerrMediaInfo(
+            id: id, tmdbId: tmdbId, tvdbId: tvdbId, status: status,
+            requests: nil, seasons: nil, mediaType: mediaType,
+            plexUrl: plexUrl, serviceUrl: serviceUrl
+        )
+        switch mediaType {
+        case "movie":
+            return .movie(SeerrMovieResult(
+                id: tmdbId, mediaType: mediaType, popularity: nil,
+                posterPath: posterPath, backdropPath: backdropPath,
+                voteCount: nil, voteAverage: nil, genreIds: nil, overview: nil,
+                originalLanguage: nil, title: title, originalTitle: originalTitle,
+                releaseDate: releaseDate, adult: nil, mediaInfo: info
+            ))
+        case "tv":
+            return .tv(SeerrTvResult(
+                id: tmdbId, mediaType: mediaType, popularity: nil,
+                posterPath: posterPath, backdropPath: backdropPath,
+                voteCount: nil, voteAverage: nil, genreIds: nil, overview: nil,
+                originalLanguage: nil, name: name, originalName: originalName,
+                originCountry: nil, firstAirDate: firstAirDate, mediaInfo: info
+            ))
+        default:
+            return nil
+        }
+    }
+
+    func toLibraryItem() -> LibraryItem? {
+        guard let mediaType, let tmdbId, displayTitle != "Unknown" else { return nil }
+        return LibraryItem(
+            mediaType: mediaType,
+            tmdbId: tmdbId,
+            title: displayTitle,
+            year: displayYear,
+            voteAverage: nil,
+            posterURL: posterURL,
+            isAvailable: isAvailable
+        )
+    }
+}

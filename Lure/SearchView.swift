@@ -8,6 +8,10 @@ struct SearchView: View {
     @State private var isSearchPresented = false
     @State private var selectedFilter: SearchMediaFilter = .all
     @State private var showClearConfirmation = false
+    @State private var scope: SearchScope = .discover
+    @State private var libraryItems: [LibraryItem] = []
+    @State private var libraryItemsLoaded = false
+    @State private var libraryLoadTask: Task<Void, Never>?
     @Namespace private var genreTransitionNamespace
 
     @AppStorage("lure.search.recents") private var recentsStorage: String = "[]"
@@ -19,35 +23,70 @@ struct SearchView: View {
 
     var body: some View {
         NavigationStack {
-            content
-                .navigationTitle("Search")
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isSearchPresented)
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchText.isEmpty)
-                .navigationDestination(for: MediaDestination.self) { dest in
-                    if dest.mediaType == "movie" {
-                        MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
-                    } else {
-                        TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+            VStack(spacing: 0) {
+                if isSearchPresented && searchText.isEmpty {
+                    Picker("Scope", selection: $scope) {
+                        Text("Discover").tag(SearchScope.discover)
+                        Text("Library").tag(SearchScope.library)
                     }
+                    .pickerStyle(.segmented)
+                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .padding(.horizontal, 48)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                .navigationDestination(for: SearchGenreDestination.self) { destination in
-                    SearchGenreResultsView(destination: destination, apiClient: apiClient)
-                        .navigationTransition(.zoom(sourceID: destination, in: genreTransitionNamespace))
-                        .id(destination)
+                content
+            }
+            .navigationTitle("Search")
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isSearchPresented)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchText.isEmpty)
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: scope)
+            .navigationDestination(for: MediaDestination.self) { dest in
+                switch dest.mediaType {
+                case "movie":
+                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                case "tv":
+                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                case "person":
+                    EmptyView()
+                default:
+                    EmptyView()
                 }
+            }
+            .navigationDestination(for: SearchGenreDestination.self) { destination in
+                SearchGenreResultsView(destination: destination, apiClient: apiClient)
+#if os(iOS) || os(visionOS)
+                    .navigationTransition(.zoom(sourceID: destination, in: genreTransitionNamespace))
+#endif
+                    .id(destination)
+            }
         }
         .searchable(
             text: $searchText,
             isPresented: $isSearchPresented,
             placement: .automatic,
-            prompt: "Movies, TV shows..."
+            prompt: scope == .library ? "Your library" : "Movies, TV shows..."
         )
         .onSubmit(of: .search) {
             recordRecent(searchText)
         }
+        .onChange(of: scope) { _, newScope in
+            if newScope == .library, !libraryItemsLoaded, libraryLoadTask == nil {
+                libraryLoadTask = Task {
+                    await loadLibraryItems()
+                    libraryLoadTask = nil
+                }
+            } else if newScope != .library {
+                libraryLoadTask?.cancel()
+                libraryLoadTask = nil
+            }
+        }
         .onChange(of: searchText) { _, newValue in
-            vm.query = newValue
-            Task { await vm.search() }
+            if scope == .discover {
+                vm.query = newValue
+                Task { await vm.search() }
+            }
         }
         .task {
             await vm.loadBrowseGenresIfNeeded()
@@ -62,8 +101,67 @@ struct SearchView: View {
             recentSearchesContent
         } else if searchText.isEmpty {
             browseGenresContent
+        } else if scope == .library {
+            librarySearchResultsContent
         } else {
             searchResultsContent
+        }
+    }
+
+    // MARK: - Library Search
+
+    private var filteredLibraryItems: [LibraryItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return [] }
+        return libraryItems.filter {
+            $0.title.lowercased().contains(query)
+        }
+    }
+
+    @ViewBuilder
+    private var librarySearchResultsContent: some View {
+        if !libraryItemsLoaded {
+            ProgressView("Loading library...")
+        } else if filteredLibraryItems.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else {
+            List {
+                ForEach(filteredLibraryItems) { item in
+                    NavigationLink(value: MediaDestination(
+                        mediaType: item.mediaType,
+                        tmdbId: item.tmdbId,
+                        title: item.title,
+                        posterURL: item.posterURL
+                    )) {
+                        MediaListRow(item: item)
+                    }
+                }
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    private func loadLibraryItems() async {
+        guard libraryLoadTask != nil else { return }
+        do {
+            var allEntries: [SeerrMediaEntry] = []
+            let pageSize = 250
+
+            for filter in ["available", "partial"] {
+                var skip = 0
+                while true {
+                    let response = try await apiClient.getMedia(filter: filter, take: pageSize, skip: skip)
+                    allEntries.append(contentsOf: response.results)
+                    if response.results.count < pageSize { break }
+                    skip += pageSize
+                }
+            }
+
+            libraryItems = allEntries.compactMap { $0.toLibraryItem() }
+            libraryItemsLoaded = true
+        } catch {
+            // Don't set libraryItemsLoaded on failure
+            print("Failed to load library items: \(error.localizedDescription)")
         }
     }
 
@@ -116,7 +214,9 @@ struct SearchView: View {
                     }
                 }
             }
+#if os(iOS) || os(visionOS)
             .listStyle(.insetGrouped)
+#endif
             .alert("Clear Recent Searches?", isPresented: $showClearConfirmation) {
                 Button("Clear All", role: .destructive) { clearRecents() }
                 Button("Cancel", role: .cancel) {}
@@ -192,7 +292,7 @@ struct SearchView: View {
                 List {
                     ForEach(filteredResults) { item in
                         NavigationLink(value: MediaDestination(mediaType: item.mediaType, tmdbId: item.tmdbId, title: item.title, posterURL: item.posterURL)) {
-                            SearchResultRow(item: item)
+                            MediaListRow(item: item)
                         }
                     }
                     if vm.currentPage < vm.totalPages {
@@ -322,47 +422,6 @@ private enum SearchMediaFilter: Hashable {
     case all, movies, tv, people
 }
 
-struct SearchResultRow: View {
-    let item: SeerrMediaItem
-
-    var body: some View {
-        HStack(spacing: 12) {
-            PosterImage(url: item.posterURL, width: 50, height: 75, cornerRadius: 6)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    Text(searchDisplayType(for: item.mediaType))
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.quaternary)
-                        .clipShape(Capsule())
-
-                    if let year = item.year {
-                        Text(year)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                StatusBadge(mediaInfo: item.mediaInfo)
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func searchDisplayType(for mediaType: String) -> String {
-        mediaType == "tv" ? "TV" : mediaType.capitalized
-    }
-}
-
 private struct SearchGenreTileView: View {
     let genre: SearchGenreTile
     private let cornerRadius = LureDesign.CornerRadius.card
@@ -483,4 +542,9 @@ private extension SearchGenreTile {
             ]
         return palettes[abs(genreID) % palettes.count]
     }
+}
+
+enum SearchScope: Hashable {
+    case discover
+    case library
 }

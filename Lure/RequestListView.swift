@@ -6,6 +6,7 @@ struct RequestListView: View {
 
     @State private var vm: RequestListViewModel
     @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(\.modelContext) private var modelContext
 
     init(apiClient: SeerrAPIClient, currentUser: SeerrUser?) {
         self.apiClient = apiClient
@@ -18,10 +19,15 @@ struct RequestListView: View {
             content
                 .navigationTitle("Requests")
                 .navigationSubtitle(subtitleText)
+#if os(iOS) || os(visionOS)
                 .toolbarTitleDisplayMode(.large)
+#endif
                 .toolbar { toolbarContent }
                 .refreshable { await vm.loadRequests() }
-                .task { await vm.loadRequestsIfNeeded() }
+                .task {
+                    vm.setModelContext(modelContext)
+                    await vm.loadRequestsIfNeeded()
+                }
                 .animation(.default, value: vm.sortedRequests.map(\.id))
                 .onChange(of: vm.actionSuccessMessage) { _, message in
                     if let message {
@@ -57,17 +63,21 @@ struct RequestListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if vm.isLoading && vm.sortedRequests.isEmpty {
-            ProgressView("Loading requests...")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if vm.sortedRequests.isEmpty {
-            ContentUnavailableView {
-                Label("No Requests", systemImage: "tray")
-            } description: {
-                Text("No requests match the current filter.")
-            }
-        } else {
-            List {
+        List {
+            if vm.isLoading && vm.sortedRequests.isEmpty {
+                Section {
+                    ProgressView("Loading requests...")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            } else if vm.sortedRequests.isEmpty {
+                Section {
+                    ContentUnavailableView {
+                        Label("No Requests", systemImage: "tray")
+                    } description: {
+                        Text("No requests match the current filter.")
+                    }
+                }
+            } else {
                 ForEach(vm.sortedRequests) { request in
                     requestRow(request)
                 }
@@ -77,8 +87,8 @@ struct RequestListView: View {
                         .task { await vm.loadMore() }
                 }
             }
-            .listStyle(.plain)
         }
+        .listStyle(.plain)
     }
 
     // MARK: - Row
@@ -111,7 +121,7 @@ struct RequestListView: View {
 
     @ViewBuilder
     private func trailingActions(for request: SeerrMediaRequest) -> some View {
-        if currentUser?.isAdmin == true {
+        if canModerateRequests {
             Button(role: .destructive) {
                 Task { await vm.deleteRequest(request) }
             } label: {
@@ -131,7 +141,7 @@ struct RequestListView: View {
 
     @ViewBuilder
     private func leadingActions(for request: SeerrMediaRequest) -> some View {
-        if currentUser?.isAdmin == true {
+        if canModerateRequests {
             if request.requestStatus == .pending {
                 Button {
                     Task { await vm.approveRequest(request) }
@@ -156,7 +166,7 @@ struct RequestListView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarLeading) {
+        ToolbarItemGroup(placement: .automatic) {
             Menu {
                 ForEach(RequestFilter.allCases) { filter in
                     Button {
@@ -192,7 +202,7 @@ struct RequestListView: View {
             }
         }
 
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .automatic) {
             Menu {
                 ForEach(RequestSortOrder.allCases) { order in
                     Button {
@@ -235,6 +245,10 @@ struct RequestListView: View {
         case .movie: "film"
         case .tv:    "tv"
         }
+    }
+
+    private var canModerateRequests: Bool {
+        currentUser?.canManageRequests == true
     }
 }
 

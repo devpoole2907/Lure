@@ -111,9 +111,11 @@ struct CastPersonSheet: View {
                 .padding(16)
             }
             .navigationTitle(vm.person?.name ?? vm.fallbackName ?? "Cast")
+#if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .automatic) {
                     Button {
                         dismiss()
                     } label: {
@@ -129,8 +131,10 @@ struct CastPersonSheet: View {
                 }
             }
         }
+#if os(iOS) || os(visionOS)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+#endif
         .task { await vm.load() }
     }
 
@@ -177,6 +181,8 @@ private struct BiographyDetailView: View {
                 .padding(16)
         }
         .navigationTitle(title)
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
     }
 }

@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 
+import SwiftData
+
+@MainActor
 @Observable
 final class RequestListViewModel {
     private(set) var requests: [SeerrMediaRequest] = []
@@ -16,12 +19,18 @@ final class RequestListViewModel {
     var sortOrder: RequestSortOrder = .dateDesc
 
     private let apiClient: SeerrAPIClient
+    private var modelContext: ModelContext?
     private var currentSkip: Int = 0
     private let pageSize: Int = 20
     private var hasLoadedRequests = false
 
-    init(apiClient: SeerrAPIClient) {
+    init(apiClient: SeerrAPIClient, modelContext: ModelContext? = nil) {
         self.apiClient = apiClient
+        self.modelContext = modelContext
+    }
+
+    func setModelContext(_ context: ModelContext) {
+        self.modelContext = context
     }
 
     var sortedRequests: [SeerrMediaRequest] {
@@ -39,11 +48,26 @@ final class RequestListViewModel {
         currentSkip + pageSize < totalCount
     }
 
+    var pendingRequests: [SeerrMediaRequest] {
+        sortedRequests.filter { $0.requestStatus == .pending }
+    }
+
     func loadRequests() async {
         isLoading = true
         error = nil
         currentSkip = 0
         enrichments = []
+
+        if !hasLoadedRequests, let context = modelContext, selectedFilter == .all, selectedMediaType == .all {
+            let baseURL = apiClient.baseURL
+            let descriptor = FetchDescriptor<CachedRequestItem>(
+                predicate: #Predicate { $0.serverURL == baseURL }
+            )
+            if let cached = try? context.fetch(descriptor), !cached.isEmpty {
+                requests = cached.compactMap { $0.toRequest }
+                hasLoadedRequests = true
+            }
+        }
 
         do {
             async let requestsLoad = apiClient.getRequests(
@@ -55,13 +79,56 @@ final class RequestListViewModel {
             async let countLoad = apiClient.getRequestCount()
 
             let (response, count) = try await (requestsLoad, countLoad)
-            requests = response.results
+            
+            // Diffing for subtle update
+            let newRequests = response.results
+            if requests.isEmpty {
+                requests = newRequests
+            } else {
+                let existingIDs = Set(requests.map(\.id))
+                let newIDs = Set(newRequests.map(\.id))
+                
+                // If it's a completely new list (e.g. filter changed), just replace
+                if existingIDs.isDisjoint(with: newIDs) {
+                    requests = newRequests
+                } else {
+                    var updated = requests.filter { newIDs.contains($0.id) }
+                    for req in newRequests {
+                        if let idx = updated.firstIndex(where: { $0.id == req.id }) {
+                            updated[idx] = req
+                        } else {
+                            updated.append(req)
+                        }
+                    }
+                    requests = updated.sorted { $0.id > $1.id } // Basic sort initially
+                }
+            }
+            
             totalCount = response.pageInfo.results ?? 0
             requestCount = count
             await enrichMissingTitles(for: response.results)
             hasLoadedRequests = true
+            
+            if selectedFilter == .all, selectedMediaType == .all, let context = modelContext {
+                let baseURL = apiClient.baseURL
+                let descriptor = FetchDescriptor<CachedRequestItem>(
+                    predicate: #Predicate { $0.serverURL == baseURL }
+                )
+                if let existing = try? context.fetch(descriptor) {
+                    for item in existing {
+                        context.delete(item)
+                    }
+                }
+                for req in newRequests {
+                    if let data = try? JSONEncoder().encode(req) {
+                        let cached = CachedRequestItem(serverURL: baseURL, requestId: req.id, requestData: data)
+                        context.insert(cached)
+                    }
+                }
+                try? context.save()
+            }
         } catch {
-            self.error = error.localizedDescription
+            handleError(error)
         }
 
         isLoading = false
@@ -85,7 +152,7 @@ final class RequestListViewModel {
             currentSkip = nextSkip
             await enrichMissingTitles(for: response.results)
         } catch {
-            self.error = error.localizedDescription
+            handleError(error)
         }
     }
 
@@ -97,23 +164,27 @@ final class RequestListViewModel {
         request.media?.posterURL ?? enrichment(for: request.id)?.posterURL
     }
 
-    func approveRequest(_ request: SeerrMediaRequest) async {
+    func approveRequest(_ request: SeerrMediaRequest) async -> SeerrMediaRequest? {
         do {
-            _ = try await apiClient.approveRequest(id: request.id)
+            let updatedRequest = try await apiClient.approveRequest(id: request.id)
             actionSuccessMessage = "Approved \(request.displayTitle)"
             await loadRequests()
+            return updatedRequest
         } catch {
-            self.error = error.localizedDescription
+            handleError(error)
+            return nil
         }
     }
 
-    func declineRequest(_ request: SeerrMediaRequest) async {
+    func declineRequest(_ request: SeerrMediaRequest) async -> SeerrMediaRequest? {
         do {
-            _ = try await apiClient.declineRequest(id: request.id)
+            let updatedRequest = try await apiClient.declineRequest(id: request.id)
             actionSuccessMessage = "Declined \(request.displayTitle)"
             await loadRequests()
+            return updatedRequest
         } catch {
-            self.error = error.localizedDescription
+            handleError(error)
+            return nil
         }
     }
 
@@ -124,7 +195,7 @@ final class RequestListViewModel {
             if totalCount > 0 { totalCount -= 1 }
             actionSuccessMessage = "Deleted \(request.displayTitle)"
         } catch {
-            self.error = error.localizedDescription
+            handleError(error)
         }
     }
 
@@ -134,12 +205,84 @@ final class RequestListViewModel {
             actionSuccessMessage = "Retrying \(request.displayTitle)"
             await loadRequests()
         } catch {
-            self.error = error.localizedDescription
+            handleError(error)
+        }
+    }
+
+    func approveRequests(ids: Set<Int>) async {
+        guard !ids.isEmpty else { return }
+
+        var successfulIDs: [Int] = []
+        var failedIDs: [Int] = []
+
+        for requestID in ids {
+            do {
+                _ = try await apiClient.approveRequest(id: requestID)
+                successfulIDs.append(requestID)
+            } catch {
+                failedIDs.append(requestID)
+            }
+        }
+
+        if !successfulIDs.isEmpty {
+            actionSuccessMessage = successfulIDs.count == 1 ? "Approved 1 request" : "Approved \(successfulIDs.count) requests"
+            await loadRequests()
+        }
+
+        if !failedIDs.isEmpty {
+            self.error = failedIDs.count == 1
+                ? "Failed to approve 1 request"
+                : "Failed to approve \(failedIDs.count) of \(ids.count) requests"
+        }
+    }
+
+    func declineRequests(ids: Set<Int>) async {
+        guard !ids.isEmpty else { return }
+
+        var successfulIDs: [Int] = []
+        var failedIDs: [Int] = []
+
+        for requestID in ids {
+            do {
+                _ = try await apiClient.declineRequest(id: requestID)
+                successfulIDs.append(requestID)
+            } catch {
+                failedIDs.append(requestID)
+            }
+        }
+
+        if !successfulIDs.isEmpty {
+            actionSuccessMessage = successfulIDs.count == 1 ? "Declined 1 request" : "Declined \(successfulIDs.count) requests"
+            await loadRequests()
+        }
+
+        if !failedIDs.isEmpty {
+            self.error = failedIDs.count == 1
+                ? "Failed to decline 1 request"
+                : "Failed to decline \(failedIDs.count) of \(ids.count) requests"
+        }
+    }
+
+    func applyUpdatedRequest(_ request: SeerrMediaRequest) {
+        if let index = requests.firstIndex(where: { $0.id == request.id }) {
+            requests[index] = request
+        }
+    }
+
+    func removeRequest(id: Int) {
+        requests.removeAll { $0.id == id }
+        if totalCount > 0 {
+            totalCount -= 1
         }
     }
 
     func clearActionMessage() { actionSuccessMessage = nil }
     func clearError() { error = nil }
+
+    private func handleError(_ error: Error) {
+        guard !error.isCancellation else { return }
+        self.error = error.localizedDescription
+    }
 
     private func enrichMissingTitles(for requests: [SeerrMediaRequest]) async {
         let missingRequests = requests.filter { request in
@@ -268,4 +411,23 @@ enum RequestSortOrder: String, CaseIterable, Identifiable {
     case title    = "Title"
 
     var id: String { rawValue }
+}
+
+private extension Error {
+    var isCancellation: Bool {
+        if self is CancellationError {
+            return true
+        }
+
+        if let urlError = self as? URLError {
+            return urlError.code == .cancelled
+        }
+
+        if let lureError = self as? LureError,
+           case .networkError(let wrappedError) = lureError {
+            return wrappedError.isCancellation
+        }
+
+        return false
+    }
 }

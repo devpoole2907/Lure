@@ -33,6 +33,27 @@ struct SeerrMediaRequest: Codable, Identifiable, Sendable {
         guard let requestStatus else { return false }
         return requestStatus != .declined && requestStatus != .failed
     }
+
+    var createdAtRelativeText: String? {
+        Self.relativeDateText(from: createdAt)
+    }
+
+    var createdAtDisplayText: String? {
+        guard let createdAt, let date = Self.isoFormatter.date(from: createdAt) else { return nil }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private static func relativeDateText(from value: String?) -> String? {
+        guard let value, let date = isoFormatter.date(from: value) else { return nil }
+        return relativeFormatter.localizedString(for: date, relativeTo: .now)
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let relativeFormatter = RelativeDateTimeFormatter()
 }
 
 struct SeerrRequestMedia: Codable, Sendable {
@@ -100,6 +121,21 @@ struct SeerrCreateRequestBody: Codable, Sendable {
     let seasons: [Int]?            // Season numbers (TV only)
     let tags: [Int]?
     let userId: Int?               // Request on behalf of (admin only)
+}
+
+// MARK: - Issue Reporting
+
+struct SeerrCreateIssueBody: Codable, Sendable {
+    let issueType: Int      // 1=Video, 2=Audio, 3=Subtitle, 4=Other
+    let message: String
+    let mediaId: Int
+}
+
+struct SeerrIssueResponse: Codable, Sendable {
+    let id: Int?
+    let issueType: Int?
+    let status: Int?
+    let message: String?
 }
 
 // MARK: - Discover Slider Config

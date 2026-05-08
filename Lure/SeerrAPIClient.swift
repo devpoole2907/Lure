@@ -199,6 +199,78 @@ actor SeerrAPIClient {
         ])
     }
 
+    func getUsers(take: Int = 20, skip: Int = 0) async throws -> SeerrUserListResponse {
+        try await get("/api/v1/user", params: [
+            "take": String(take),
+            "skip": String(skip)
+        ])
+    }
+
+    func updateUser(id: Int, permissions: Int) async throws -> SeerrUser {
+        try await put("/api/v1/user/\(id)", body: SeerrUpdateUserBody(permissions: permissions))
+    }
+
+    func deleteUser(id: Int) async throws -> SeerrUser {
+        try await delete("/api/v1/user/\(id)")
+    }
+
+    func importUsersFromJellyfin(jellyfinUserIds: [String]? = nil) async throws -> [SeerrUser] {
+        if let jellyfinUserIds, !jellyfinUserIds.isEmpty {
+            return try await post(
+                "/api/v1/user/import-from-jellyfin",
+                body: SeerrImportJellyfinUsersBody(jellyfinUserIds: jellyfinUserIds)
+            )
+        }
+        return try await post("/api/v1/user/import-from-jellyfin", body: EmptyRequestBody())
+    }
+
+    // MARK: - Media Library
+
+    func getMedia(filter: String = "available", take: Int = 20, skip: Int = 0) async throws -> SeerrMediaListResponse {
+        let params: [String: String] = [
+            "take": String(take),
+            "skip": String(skip),
+            "filter": filter
+        ]
+        return try await get("/api/v1/media", params: params)
+    }
+
+    // MARK: - Issues
+
+    func createIssue(_ body: SeerrCreateIssueBody) async throws -> SeerrIssueResponse {
+        try await post("/api/v1/issue", body: body)
+    }
+
+    func getIssues(take: Int = 20, skip: Int = 0, sort: String = "added", filter: String = "open") async throws -> SeerrIssueListResponse {
+        try await get("/api/v1/issue", params: [
+            "take": String(take),
+            "skip": String(skip),
+            "sort": sort,
+            "filter": filter
+        ])
+    }
+
+    func getIssue(id: Int) async throws -> SeerrIssue {
+        try await get("/api/v1/issue/\(id)")
+    }
+
+    func getIssueComments(issueId: Int) async throws -> [SeerrIssueComment] {
+        let issue: SeerrIssue = try await get("/api/v1/issue/\(issueId)")
+        return issue.comments ?? []
+    }
+
+    func replyToIssue(issueId: Int, message: String) async throws -> SeerrIssue {
+        try await post("/api/v1/issue/\(issueId)/comment", body: SeerrIssueCommentBody(message: message))
+    }
+
+    func resolveIssue(issueId: Int) async throws -> SeerrIssue {
+        try await post("/api/v1/issue/\(issueId)/resolved", body: EmptyRequestBody())
+    }
+
+    func reopenIssue(issueId: Int) async throws -> SeerrIssue {
+        try await post("/api/v1/issue/\(issueId)/open", body: EmptyRequestBody())
+    }
+
     // MARK: - Genres
 
     func getMovieGenres() async throws -> [SeerrGenre] {
@@ -218,6 +290,13 @@ actor SeerrAPIClient {
 
     private func post<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
         var request = try buildRequest(path: path, method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        return try await perform(request)
+    }
+
+    private func put<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
+        var request = try buildRequest(path: path, method: "PUT")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
         return try await perform(request)
@@ -245,10 +324,12 @@ actor SeerrAPIClient {
 
     private func deleteHTTP(_ path: String) async throws {
         let request = try buildRequest(path: path, method: "DELETE")
-        let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<400).contains(http.statusCode) else {
-            throw LureError.invalidResponse
-        }
+        _ = try await performData(request)
+    }
+
+    private func delete<T: Decodable>(_ path: String) async throws -> T {
+        let request = try buildRequest(path: path, method: "DELETE")
+        return try await perform(request)
     }
 
     private func buildRequest(path: String, method: String, queryParams: [String: String] = [:]) throws -> URLRequest {
@@ -270,6 +351,16 @@ actor SeerrAPIClient {
     }
 
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let data = try await performData(request)
+
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw LureError.decodingError(error)
+        }
+    }
+
+    private func performData(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -289,11 +380,7 @@ actor SeerrAPIClient {
             throw LureError.serverError(statusCode: http.statusCode, message: body)
         }
 
-        do {
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            throw LureError.decodingError(error)
-        }
+        return data
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {

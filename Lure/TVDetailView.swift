@@ -5,17 +5,30 @@ struct TVDetailView: View {
     let apiClient: SeerrAPIClient
     let initialTitle: String?
     let initialPosterURL: URL?
+    let currentUser: SeerrUser?
+    let onRequestUpdated: ((SeerrMediaRequest) -> Void)?
 
     @State private var vm: TVDetailViewModel
     @State private var showRequestSheet = false
+    @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
+    @State private var isModeratingRequest = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
 
-    init(tmdbId: Int, apiClient: SeerrAPIClient, initialTitle: String? = nil, initialPosterURL: URL? = nil) {
+    init(
+        tmdbId: Int,
+        apiClient: SeerrAPIClient,
+        initialTitle: String? = nil,
+        initialPosterURL: URL? = nil,
+        currentUser: SeerrUser? = nil,
+        onRequestUpdated: ((SeerrMediaRequest) -> Void)? = nil
+    ) {
         self.tmdbId = tmdbId
         self.apiClient = apiClient
         self.initialTitle = initialTitle
         self.initialPosterURL = initialPosterURL
+        self.currentUser = currentUser
+        self.onRequestUpdated = onRequestUpdated
         self._vm = State(initialValue: TVDetailViewModel(tmdbId: tmdbId, apiClient: apiClient))
     }
 
@@ -23,7 +36,7 @@ struct TVDetailView: View {
         Group {
             if let show = vm.show {
                 scrollContent(show)
-                    .background { artBackground(url: show.posterURL) }
+                    .background { artBackground(url: displayPosterURL(for: show)) }
                     .transition(.opacity)
             } else if vm.isLoading {
                 loadingContent
@@ -37,9 +50,32 @@ struct TVDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
         .navigationTitle(vm.show?.displayTitle ?? initialTitle ?? "TV Show")
+#if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+#endif
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    Button {
+                        showReportSheet = true
+                    } label: {
+                        Label("Report an Issue", systemImage: "exclamationmark.triangle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
+        }
+        .sheet(isPresented: $showReportSheet) {
+            ReportIssueSheet(
+                mediaId: vm.show?.mediaInfo?.id,
+                mediaTitle: vm.show?.displayTitle ?? initialTitle,
+                apiClient: apiClient
+            )
+        }
         .errorAlert(item: Binding(
             get: { vm.error.map { ErrorAlertItem(title: "Error", message: $0) } },
             set: { _ in vm.error = nil }
@@ -138,8 +174,10 @@ struct TVDetailView: View {
     // MARK: - Hero
 
     private func heroSection(_ show: SeerrTVDetail) -> some View {
-        VStack(spacing: 14) {
-            PosterImage(url: show.posterURL, width: 160, height: 240, cornerRadius: 16)
+        let badges = showBadges(show)
+
+        return VStack(spacing: 14) {
+            PosterImage(url: displayPosterURL(for: show), width: 160, height: 240, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.6), radius: 24, y: 10)
 
             VStack(spacing: 6) {
@@ -152,11 +190,11 @@ struct TVDetailView: View {
                 HStack(spacing: 4) {
                     if let year = show.year { Text(year) }
                     if let seasons = show.numberOfSeasons {
-                        Text("·")
+                        if show.year != nil { Text("·") }
                         Text(seasons == 1 ? "1 season" : "\(seasons) seasons")
                     }
                     if let network = show.networks?.first?.name {
-                        Text("·")
+                        if show.year != nil || show.numberOfSeasons != nil { Text("·") }
                         Text(network)
                     }
                 }
@@ -165,13 +203,45 @@ struct TVDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
-                if let status = show.mediaInfo?.mediaStatus, status.isUserVisible {
-                    pill(icon: status.systemImage, label: status.displayName, color: status.color)
-                }
+                badgeSection(badges)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 16)
+    }
+
+    private func displayPosterURL(for show: SeerrTVDetail) -> URL? {
+        initialPosterURL ?? show.posterURL
+    }
+
+    private func showBadges(_ show: SeerrTVDetail) -> [(String, String, Color)] {
+        var badges: [(String, String, Color)] = []
+        if let cert = show.contentRatingText {
+            badges.append(("shield", cert, Color.white.opacity(0.8)))
+        }
+        if let status = show.mediaInfo?.mediaStatus, status.isUserVisible {
+            badges.append((status.systemImage, status.displayName, status.color))
+        }
+        return badges
+    }
+
+    @ViewBuilder
+    private func badgeSection(_ badges: [(String, String, Color)]) -> some View {
+        if !badges.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+                VStack(spacing: 8) {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                        pill(icon: badge.0, label: badge.1, color: badge.2)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     // MARK: - Cards Section
@@ -187,7 +257,15 @@ struct TVDetailView: View {
         statsCard(show)
 
         if !show.requestableSeasons.isEmpty {
-            seasonsCard(show)
+            ForEach(show.requestableSeasons) { season in
+                let statusSeason = show.mediaInfo?.seasons?.first { $0.seasonNumber == season.seasonNumber }
+                seasonNavCard(show: show, season: season, statusSeason: statusSeason)
+            }
+        }
+
+        if let providers = show.usWatchProviders, let named = namedProviders(providers) {
+            watchProvidersCard(providers, named: named)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let genres = show.genres, !genres.isEmpty {
@@ -196,6 +274,7 @@ struct TVDetailView: View {
 
         if let ratings = vm.ratings, ratings.hasAnyScore {
             ratingsCard(ratings)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
         if let cast = show.credits?.cast, !cast.isEmpty {
@@ -213,7 +292,9 @@ struct TVDetailView: View {
 
         if !vm.recommendations.isEmpty {
             MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
-        }    }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
 
     // MARK: - Request Card
 
@@ -227,20 +308,104 @@ struct TVDetailView: View {
                 .padding(.vertical, 14)
                 .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
         } else {
-            Button { showRequestSheet = true } label: {
-                Label(show.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: show))
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
+            let pendingRequest = pendingRequest(for: show)
+
+            HStack(spacing: 12) {
+                Button { showRequestSheet = true } label: {
+                    Label(show.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: show))
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+                .disabled(isModeratingRequest)
+
+                if let pendingRequest, canModerateRequests {
+                    moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
+                        await moderateRequest(
+                            action: { try await apiClient.approveRequest(id: pendingRequest.id) },
+                            successTitle: "Request Approved",
+                            successMessage: "Approved \(show.displayTitle)"
+                        )
+                    }
+
+                    moderationButton(title: "Decline", systemImage: "xmark", tint: .orange) {
+                        await moderateRequest(
+                            action: { try await apiClient.declineRequest(id: pendingRequest.id) },
+                            successTitle: "Request Declined",
+                            successMessage: "Declined \(show.displayTitle)"
+                        )
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
         }
     }
 
     private func requestButtonIcon(for show: SeerrTVDetail) -> String {
         show.mediaInfo?.isRequested == true ? "clock.fill" : "plus.circle.fill"
+    }
+
+    private var canModerateRequests: Bool {
+        currentUser?.canManageRequests == true || currentUser?.isAdmin == true
+    }
+
+    private func pendingRequest(for show: SeerrTVDetail) -> SeerrMediaRequest? {
+        show.mediaInfo?.activeRequests.first { $0.requestStatus == .pending }
+    }
+
+    private func moderationButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping @Sendable () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Group {
+                if isModeratingRequest {
+                    ProgressView()
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            .frame(width: 52, height: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .glassEffect(.regular.tint(tint.opacity(0.2)).interactive(), in: RoundedRectangle(cornerRadius: 16))
+        .foregroundStyle(tint)
+        .disabled(isModeratingRequest)
+    }
+
+    private func moderateRequest(
+        action: @escaping @Sendable () async throws -> SeerrMediaRequest,
+        successTitle: String,
+        successMessage: String
+    ) async {
+        isModeratingRequest = true
+        defer { isModeratingRequest = false }
+
+        do {
+            let updatedRequest = try await action()
+            onRequestUpdated?(updatedRequest)
+            await vm.load()
+            notificationCenter.show(LureBannerItem(
+                title: successTitle,
+                message: successMessage,
+                style: .success
+            ))
+        } catch {
+            notificationCenter.show(LureBannerItem(
+                title: "Action Failed",
+                message: error.localizedDescription,
+                style: .error
+            ))
+        }
     }
 
     // MARK: - Overview Card
@@ -283,46 +448,106 @@ struct TVDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Seasons Card
+    // MARK: - Season Nav Card
 
-    private func seasonsCard(_ show: SeerrTVDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Seasons", icon: "tv")
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+    private func seasonNavCard(show: SeerrTVDetail, season: SeerrTVSeason, statusSeason: SeerrSeasonStatus?) -> some View {
+        let totalCount = season.episodeCount ?? 0
+        let availableCount: Int
+        if let episodes = statusSeason?.episodes, !episodes.isEmpty {
+            availableCount = episodes.filter { $0.status == 5 }.count
+        } else if statusSeason?.status == 5, totalCount > 0 {
+            availableCount = totalCount
+        } else {
+            availableCount = 0
+        }
+        let allAvailable = totalCount > 0 && availableCount == totalCount
+        let hasEpisodeData = statusSeason?.episodes != nil && !(statusSeason?.episodes?.isEmpty ?? true)
 
-            ForEach(Array(show.requestableSeasons.enumerated()), id: \.element.id) { index, season in
-                let unavailable = vm.isSeasonUnavailableForRequest(season.seasonNumber)
+        let subtitleText: String
+        if hasEpisodeData {
+            subtitleText = "\(availableCount) of \(totalCount) available"
+        } else if statusSeason?.status == 5 {
+            subtitleText = "All \(totalCount) available"
+        } else {
+            subtitleText = "\(totalCount) episode\(totalCount == 1 ? "" : "s")"
+        }
 
-                HStack(spacing: 10) {
-                    Image(systemName: unavailable ? "checkmark.circle.fill" : "circle")
-                        .font(.caption)
-                        .foregroundStyle(unavailable ? AnyShapeStyle(Color.green) : AnyShapeStyle(Color.secondary))
-                        .frame(width: 16, alignment: .center)
-
+        return NavigationLink {
+            TVSeasonDetailView(show: show, season: season, statusSeason: statusSeason)
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(season.name ?? "Season \(season.seasonNumber)")
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text(totalCount > 0 ? subtitleText : "0 episodes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-                    Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-                    if let count = season.episodeCount {
-                        Text("\(count) eps")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.3))
+                        .frame(width: 48, height: 4)
+                    if totalCount > 0 {
+                        Capsule()
+                            .fill(allAvailable ? Color.green : Color.purple)
+                            .frame(width: 48 * CGFloat(availableCount) / CGFloat(totalCount), height: 4)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
 
-                if index < show.requestableSeasons.count - 1 {
-                    Divider().padding(.leading, 42)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
-
-            Color.clear.frame(height: 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Watch Providers Card
+
+    private func namedProviders(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
+        let named = providers.namedAvailabilityProviders
+        return named.isEmpty ? nil : named
+    }
+
+    private func watchProvidersCard(_ providers: SeerrWatchProviders, named: [SeerrWatchProvider]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(providers.namedStreamingProviders.isEmpty ? "Available From" : "Streaming", icon: "play.tv")
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(named, id: \.stableID) { provider in
+                        VStack(spacing: 4) {
+                            AsyncImage(url: provider.logoURL) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Text(provider.providerName ?? "")
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .frame(width: 60)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+            .horizontalSoftEdges()
+        }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
@@ -607,7 +832,9 @@ struct TVRequestSheet: View {
                 }
             }
             .navigationTitle("Request Seasons")
+#if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -623,7 +850,9 @@ struct TVRequestSheet: View {
                 }
             }
         }
+#if os(iOS) || os(visionOS)
         .presentationDetents([.medium, .large])
+#endif
         .onChange(of: requestIn4K) { _, is4k in
             viewModel.filterSelectedSeasons(for: is4k)
         }

@@ -1,9 +1,11 @@
 import SwiftUI
+#if os(iOS) || os(visionOS)
 import UIKit
-
-private enum PosterImageCache {
-    static let shared = NSCache<NSURL, UIImage>()
-}
+private typealias PlatformImage = UIImage
+#elseif os(macOS)
+import AppKit
+private typealias PlatformImage = NSImage
+#endif
 
 struct PosterImage: View {
     let url: URL?
@@ -11,13 +13,13 @@ struct PosterImage: View {
     var height: CGFloat = 180
     var cornerRadius: CGFloat = 10
 
-    @State private var cachedImage: UIImage?
+    @State private var cachedImage: PlatformImage?
     @State private var isLoading = false
 
     var body: some View {
         Group {
             if let cachedImage {
-                Image(uiImage: cachedImage)
+                Image(platformImage: cachedImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .transition(.opacity)
@@ -52,25 +54,34 @@ struct PosterImage: View {
             return
         }
 
-        if let image = PosterImageCache.shared.object(forKey: url as NSURL) {
-            cachedImage = image
-            isLoading = false
-            return
-        }
-
-        cachedImage = nil
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let image = UIImage(data: data) else { return }
-            PosterImageCache.shared.setObject(image, forKey: url as NSURL)
+            let data = try await LureImageCache.shared.imageData(for: url)
+            let platformImage = await Task.detached(priority: .userInitiated) {
+                PlatformImage(data: data)
+            }.value
+            guard let platformImage else { return }
             withAnimation(.easeInOut(duration: 0.2)) {
-                cachedImage = image
+                cachedImage = platformImage
             }
-        } catch {
+        } catch is CancellationError {
             return
+        } catch {
+            if cachedImage == nil {
+                isLoading = false
+            }
         }
+    }
+}
+
+private extension Image {
+    init(platformImage: PlatformImage) {
+        #if os(iOS) || os(visionOS)
+        self.init(uiImage: platformImage)
+        #elseif os(macOS)
+        self.init(nsImage: platformImage)
+        #endif
     }
 }
