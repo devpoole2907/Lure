@@ -13,6 +13,11 @@ struct SearchView: View {
     @State private var libraryItemsLoaded = false
     @State private var libraryLoadTask: Task<Void, Never>?
     @Namespace private var genreTransitionNamespace
+    @Environment(JellyfinService.self) private var jellyfinService
+
+    @State private var jellyfinResults: [JellyfinItem] = []
+    @State private var jellyfinSearchTask: Task<Void, Never>?
+    @State private var isJellyfinSearching = false
 
     @AppStorage("lure.search.recents") private var recentsStorage: String = "[]"
 
@@ -45,9 +50,9 @@ struct SearchView: View {
             .navigationDestination(for: MediaDestination.self) { dest in
                 switch dest.mediaType {
                 case "movie":
-                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
                 case "tv":
-                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
                 case "person":
                     EmptyView()
                 default:
@@ -72,20 +77,29 @@ struct SearchView: View {
             recordRecent(searchText)
         }
         .onChange(of: scope) { _, newScope in
-            if newScope == .library, !libraryItemsLoaded, libraryLoadTask == nil {
-                libraryLoadTask = Task {
-                    await loadLibraryItems()
-                    libraryLoadTask = nil
+            if newScope == .library {
+                if !jellyfinService.hasCredentials,
+                   !libraryItemsLoaded,
+                   libraryLoadTask == nil {
+                    libraryLoadTask = Task {
+                        await loadLibraryItems()
+                        libraryLoadTask = nil
+                    }
                 }
-            } else if newScope != .library {
+                triggerJellyfinSearch(for: searchText)
+            } else {
                 libraryLoadTask?.cancel()
                 libraryLoadTask = nil
+                jellyfinSearchTask?.cancel()
+                jellyfinSearchTask = nil
             }
         }
         .onChange(of: searchText) { _, newValue in
             if scope == .discover {
                 vm.query = newValue
                 Task { await vm.search() }
+            } else if scope == .library {
+                triggerJellyfinSearch(for: newValue)
             }
         }
         .task {
@@ -120,6 +134,15 @@ struct SearchView: View {
 
     @ViewBuilder
     private var librarySearchResultsContent: some View {
+        if jellyfinService.hasCredentials {
+            jellyfinSearchResultsContent
+        } else {
+            seerrLibrarySearchResultsContent
+        }
+    }
+
+    @ViewBuilder
+    private var seerrLibrarySearchResultsContent: some View {
         if !libraryItemsLoaded {
             ProgressView("Loading library...")
         } else if filteredLibraryItems.isEmpty {
@@ -138,6 +161,78 @@ struct SearchView: View {
                 }
             }
             .listStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var jellyfinSearchResultsContent: some View {
+        if isJellyfinSearching && jellyfinResults.isEmpty {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if jellyfinResults.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else {
+            List {
+                ForEach(jellyfinResults, id: \.id) { item in
+                    jellyfinResultRow(item)
+                }
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func jellyfinResultRow(_ item: JellyfinItem) -> some View {
+        let mediaType = item.type?.lowercased() == "series" ? "tv" : "movie"
+        if let tmdbId = item.tmdbId {
+            NavigationLink(value: MediaDestination(
+                mediaType: mediaType,
+                tmdbId: tmdbId,
+                title: item.name ?? "",
+                posterURL: nil
+            )) {
+                jellyfinResultLabel(item)
+            }
+        } else {
+            jellyfinResultLabel(item)
+        }
+    }
+
+    private func jellyfinResultLabel(_ item: JellyfinItem) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(item.name ?? "Untitled")
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+            HStack(spacing: 6) {
+                Text(item.type?.lowercased() == "series" ? "TV Show" : "Movie")
+                if let year = item.productionYear {
+                    Text("·")
+                    Text(String(year))
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func triggerJellyfinSearch(for query: String) {
+        guard scope == .library, jellyfinService.hasCredentials else { return }
+        jellyfinSearchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            jellyfinResults = []
+            isJellyfinSearching = false
+            return
+        }
+        isJellyfinSearching = true
+        jellyfinSearchTask = Task { [jellyfinService] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let client = jellyfinService.client else { return }
+            let results = (try? await client.searchItems(term: trimmed)) ?? []
+            guard !Task.isCancelled else { return }
+            jellyfinResults = results
+            isJellyfinSearching = false
         }
     }
 

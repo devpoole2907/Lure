@@ -4,6 +4,8 @@ import SwiftData
 
 @Observable
 final class AuthViewModel {
+    private static let savedServerURLKey = "LureSavedSeerrServerURL"
+
     var username: String = ""
     var password: String = ""
     var isAuthenticating: Bool = false
@@ -11,31 +13,68 @@ final class AuthViewModel {
     var currentUser: SeerrUser?
     var isLoggedIn: Bool = false
     var publicSettings: SeerrPublicSettings?
+    var serverURL: String = ""
 
     private(set) var apiClient: SeerrAPIClient?
 
+    var canShowCredentials: Bool {
+        apiClient != nil && !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    init() {
+        serverURL = Self.savedServerURL
+    }
+
     // MARK: - Server Validation (deep link or manual entry)
 
-    var serverURL: String = ""
-
     func validateServer() async -> Bool {
-        let url = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        await configureServer(url: serverURL, shouldSurfaceErrors: true)
+    }
+
+    func prepareSavedServerForLogin() async {
+        guard apiClient == nil, !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        _ = await configureServer(url: serverURL, shouldSurfaceErrors: false)
+    }
+
+    @discardableResult
+    private func configureServer(url rawURL: String, shouldSurfaceErrors: Bool) async -> Bool {
+        let url = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else {
-            error = "Server URL is required."
+            apiClient = nil
+            publicSettings = nil
+            if shouldSurfaceErrors {
+                error = "Server URL is required."
+            }
             return false
         }
+
         let client = SeerrAPIClient(baseURL: url)
         do {
-            publicSettings = try await client.getPublicSettings()
-            guard publicSettings?.initialized == true else {
-                error = "This Seerr instance has not been set up yet."
+            let settings = try await client.getPublicSettings()
+            guard settings.initialized == true else {
+                apiClient = nil
+                publicSettings = nil
+                if shouldSurfaceErrors {
+                    error = "This Seerr instance has not been set up yet."
+                }
                 return false
             }
+
+            serverURL = client.baseURL
+            publicSettings = settings
             apiClient = client
+            Self.saveServerURL(client.baseURL)
             error = nil
             return true
         } catch {
-            self.error = "Could not connect to Seerr at that URL."
+            apiClient = nil
+            publicSettings = nil
+            if shouldSurfaceErrors {
+                self.error = "Could not connect to Seerr at that URL."
+            }
             return false
         }
     }
@@ -54,53 +93,74 @@ final class AuthViewModel {
         }
 
         isAuthenticating = true
+        defer { isAuthenticating = false }
         error = nil
 
         do {
             let user = try await client.loginJellyfin(username: username, password: password)
-            currentUser = user
-            isLoggedIn = true
+            guard let cookie = await client.getSessionCookie() else {
+                throw LureError.invalidResponse
+            }
 
-            // Remove any existing profiles for this server URL to avoid duplicates
+            let normalizedServerURL = client.baseURL
+            let normalizedServerURLForComparison = normalizedServerURL.lowercased()
+
             let allProfiles = (try? modelContext.fetch(FetchDescriptor<LureServerProfile>())) ?? []
-            let normalizedURL = serverURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let stale = allProfiles.filter {
-                $0.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedURL
+            let matchingProfiles = allProfiles.filter {
+                $0.baseURL.lowercased() == normalizedServerURLForComparison
             }
-            
-            let existingWorkerURL = stale.compactMap(\.apnsWorkerURL).first
-            
-            for existing in stale {
-                try? await LureKeychain.shared.delete(key: existing.sessionCookieKey)
-                modelContext.delete(existing)
+            let existingWorkerURL = matchingProfiles.compactMap(\.apnsWorkerURL).first
+
+            let profile: LureServerProfile
+            if let existingProfile = matchingProfiles.first {
+                profile = existingProfile
+            } else {
+                profile = LureServerProfile(
+                    displayName: publicSettings?.applicationTitle ?? normalizedServerURL,
+                    serverURL: normalizedServerURL
+                )
+                modelContext.insert(profile)
             }
 
-            let profile = LureServerProfile(
-                displayName: publicSettings?.applicationTitle ?? serverURL,
-                serverURL: serverURL
-            )
-            profile.apnsWorkerURL = existingWorkerURL
-            modelContext.insert(profile)
+            profile.displayName = publicSettings?.applicationTitle ?? normalizedServerURL
+            profile.serverURL = normalizedServerURL
+            profile.isActive = true
+            profile.lastConnected = .now
+            if profile.apnsWorkerURL == nil {
+                profile.apnsWorkerURL = existingWorkerURL
+            }
 
-            if let cookie = await client.getSessionCookie() {
-                try await LureKeychain.shared.save(key: profile.sessionCookieKey, value: cookie)
+            for existing in allProfiles where existing.id != profile.id {
+                if existing.baseURL.lowercased() == normalizedServerURLForComparison {
+                    try? await LureKeychain.shared.delete(key: existing.sessionCookieKey)
+                    modelContext.delete(existing)
+                } else {
+                    existing.isActive = false
+                }
             }
 
             try modelContext.save()
-            
+            try await LureKeychain.shared.save(key: profile.sessionCookieKey, value: cookie)
+            Self.saveServerURL(normalizedServerURL)
+
+            serverURL = normalizedServerURL
+            currentUser = user
+            isLoggedIn = true
+
             if let workerURL = profile.apnsWorkerURL {
                 NotificationManager.shared.register(workerURL: workerURL, serverURL: profile.serverURL, username: user.displayName)
             }
 
-            isAuthenticating = false
             return true
         } catch let error as LureError {
             self.error = error.errorDescription
-            isAuthenticating = false
+            currentUser = nil
+            isLoggedIn = false
             return false
         } catch {
             self.error = error.localizedDescription
-            isAuthenticating = false
+            currentUser = nil
+            isLoggedIn = false
             return false
         }
     }
@@ -117,18 +177,20 @@ final class AuthViewModel {
         do {
             let user = try await client.getCurrentUser()
             apiClient = client
-            currentUser = user
-            serverURL = profile.baseURL
-            isLoggedIn = true
+            serverURL = client.baseURL
             publicSettings = try? await client.getPublicSettings()
-            
+            Self.saveServerURL(client.baseURL)
+            currentUser = user
+            isLoggedIn = true
+
             if let workerURL = profile.apnsWorkerURL {
                 NotificationManager.shared.register(workerURL: workerURL, serverURL: profile.serverURL, username: user.displayName)
             }
-            
+
             return true
         } catch {
-            // Cookie expired
+            // Cookie expired or server unreachable — leave VM state untouched
+            // so the caller can decide whether to surface a sign-in prompt.
             return false
         }
     }
@@ -150,5 +212,15 @@ final class AuthViewModel {
         isLoggedIn = false
         username = ""
         password = ""
+    }
+
+    private static var savedServerURL: String {
+        UserDefaults.standard.string(forKey: savedServerURLKey) ?? ""
+    }
+
+    private static func saveServerURL(_ url: String) {
+        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedURL.isEmpty else { return }
+        UserDefaults.standard.set(trimmedURL, forKey: savedServerURLKey)
     }
 }

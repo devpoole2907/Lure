@@ -165,9 +165,10 @@ final class RequestListViewModel {
     }
 
     func approveRequest(_ request: SeerrMediaRequest) async -> SeerrMediaRequest? {
+        let title = resolvedTitle(for: request)
         do {
             let updatedRequest = try await apiClient.approveRequest(id: request.id)
-            actionSuccessMessage = "Approved \(request.displayTitle)"
+            actionSuccessMessage = "Approved \(title)"
             await loadRequests()
             return updatedRequest
         } catch {
@@ -177,9 +178,10 @@ final class RequestListViewModel {
     }
 
     func declineRequest(_ request: SeerrMediaRequest) async -> SeerrMediaRequest? {
+        let title = resolvedTitle(for: request)
         do {
             let updatedRequest = try await apiClient.declineRequest(id: request.id)
-            actionSuccessMessage = "Declined \(request.displayTitle)"
+            actionSuccessMessage = "Declined \(title)"
             await loadRequests()
             return updatedRequest
         } catch {
@@ -189,20 +191,22 @@ final class RequestListViewModel {
     }
 
     func deleteRequest(_ request: SeerrMediaRequest) async {
+        let title = resolvedTitle(for: request)
         do {
             try await apiClient.deleteRequest(id: request.id)
             requests.removeAll { $0.id == request.id }
             if totalCount > 0 { totalCount -= 1 }
-            actionSuccessMessage = "Deleted \(request.displayTitle)"
+            actionSuccessMessage = "Deleted \(title)"
         } catch {
             handleError(error)
         }
     }
 
     func retryRequest(_ request: SeerrMediaRequest) async {
+        let title = resolvedTitle(for: request)
         do {
             _ = try await apiClient.retryRequest(id: request.id)
-            actionSuccessMessage = "Retrying \(request.displayTitle)"
+            actionSuccessMessage = "Retrying \(title)"
             await loadRequests()
         } catch {
             handleError(error)

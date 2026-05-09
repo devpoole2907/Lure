@@ -31,12 +31,8 @@ struct SeerrUser: Codable, Identifiable, Sendable {
     }
 
     // Permission bit flags
-    var isAdmin: Bool { hasPermission(SeerrPermission.admin.rawValue) }
-    var canManageUsers: Bool { hasPermission(SeerrPermission.manageUsers.rawValue) }
     var canManageRequests: Bool { hasPermission(SeerrPermission.manageRequests.rawValue) }
     var canRequest: Bool { hasPermission(SeerrPermission.request.rawValue) }
-    var canManageIssues: Bool { hasPermission(SeerrPermission.manageIssues.rawValue) }
-    var canViewIssues: Bool { hasPermission(SeerrPermission.viewIssues.rawValue) }
     var canCreateIssues: Bool { hasPermission(SeerrPermission.createIssues.rawValue) }
     var canAutoApprove: Bool { hasPermission(SeerrPermission.autoApprove.rawValue) }
     var permissionLevelLabel: String { SeerrPermission.permissionLevelLabel(for: permissions) }

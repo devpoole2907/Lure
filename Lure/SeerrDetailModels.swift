@@ -526,7 +526,7 @@ extension SeerrMovieDetail {
         ))
     }
 
-    func toLibraryItem() -> LibraryItem {
+    func toLibraryItem(addedAt: Date? = nil) -> LibraryItem {
         LibraryItem(
             mediaType: "movie",
             tmdbId: id,
@@ -534,7 +534,8 @@ extension SeerrMovieDetail {
             year: year,
             voteAverage: voteAverage,
             posterURL: posterURL,
-            isAvailable: mediaInfo?.isAvailable == true
+            isAvailable: mediaInfo?.isAvailable == true,
+            addedAt: addedAt
         )
     }
 }
@@ -552,7 +553,7 @@ extension SeerrTVDetail {
         ))
     }
 
-    func toLibraryItem() -> LibraryItem {
+    func toLibraryItem(addedAt: Date? = nil) -> LibraryItem {
         LibraryItem(
             mediaType: "tv",
             tmdbId: id,
@@ -560,7 +561,8 @@ extension SeerrTVDetail {
             year: year,
             voteAverage: voteAverage,
             posterURL: posterURL,
-            isAvailable: mediaInfo?.isAvailable == true
+            isAvailable: mediaInfo?.isAvailable == true,
+            addedAt: addedAt
         )
     }
 }

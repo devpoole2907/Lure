@@ -7,6 +7,7 @@ struct CollectionDetailView: View {
     @State private var fullCollection: SeerrCollection?
     @State private var isLoading = false
     @Namespace private var navigationTransitionNamespace
+    @Environment(JellyfinService.self) private var jellyfinService
 
     private var displayCollection: SeerrCollection { fullCollection ?? collection }
 
@@ -28,12 +29,12 @@ struct CollectionDetailView: View {
 #endif
         .navigationDestination(for: MediaDestination.self) { dest in
             if dest.mediaType == "movie" {
-                MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
 #if os(iOS) || os(visionOS)
                     .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
 #endif
             } else {
-                TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
 #if os(iOS) || os(visionOS)
                     .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
 #endif

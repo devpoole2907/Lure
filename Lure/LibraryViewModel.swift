@@ -6,6 +6,7 @@ enum LibrarySortOrder: String, CaseIterable, Identifiable {
     case title = "Title"
     case year = "Year"
     case rating = "Rating"
+    case added = "Recently Added"
 
     var id: String { rawValue }
 }
@@ -21,6 +22,7 @@ struct LibrarySection: Identifiable {
 @Observable
 final class LibraryViewModel {
     private(set) var items: [LibraryItem] = []
+    private(set) var continueWatching: [JellyfinItem] = []
     private(set) var isLoading = false
     private(set) var isRefreshing = false
     private(set) var error: String?
@@ -29,16 +31,39 @@ final class LibraryViewModel {
     var sortOrder: LibrarySortOrder = .title
 
     private let apiClient: SeerrAPIClient
+    private let jellyfinService: JellyfinService
     private var modelContext: ModelContext?
 
-    init(apiClient: SeerrAPIClient, modelContext: ModelContext? = nil) {
+    var jellyfinClient: JellyfinAPIClient? { jellyfinService.client }
+
+    init(apiClient: SeerrAPIClient, jellyfinService: JellyfinService, modelContext: ModelContext? = nil) {
         self.apiClient = apiClient
+        self.jellyfinService = jellyfinService
         self.modelContext = modelContext
     }
 
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
     }
+
+    // MARK: - Filtered views
+
+    var movies: [LibraryItem] {
+        items.filter { $0.mediaType == "movie" && $0.title != "Unknown" }
+            .sorted { $0.title.lowercased() < $1.title.lowercased() }
+    }
+
+    var tvShows: [LibraryItem] {
+        items.filter { $0.mediaType == "tv" && $0.title != "Unknown" }
+            .sorted { $0.title.lowercased() < $1.title.lowercased() }
+    }
+
+    var recentlyAdded: [LibraryItem] {
+        items.filter { $0.title != "Unknown" }
+            .sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
+    }
+
+    // MARK: - Sectioned (for category sub-views)
 
     var sectionedItems: [LibrarySection] {
         let filtered = items.filter { $0.title != "Unknown" }
@@ -50,6 +75,8 @@ final class LibraryViewModel {
             sorted = filtered.sorted { ($0.year ?? "") > ($1.year ?? "") }
         case .rating:
             sorted = filtered.sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
+        case .added:
+            sorted = filtered.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         }
 
         if sortOrder == .title {
@@ -72,6 +99,8 @@ final class LibraryViewModel {
         return label.range(of: "[A-Z]", options: .regularExpression) != nil ? label : "#"
     }
 
+    // MARK: - Load
+
     func load() async {
         guard !isLoading else { return }
         isLoading = true
@@ -93,13 +122,24 @@ final class LibraryViewModel {
             }
         }
 
-        await refreshLibrary(showBlockingLoader: items.isEmpty)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.refreshLibrary(showBlockingLoader: self.items.isEmpty) }
+            group.addTask { await self.loadContinueWatching() }
+        }
+
         isLoading = false
     }
 
     func refresh() async {
         guard !isLoading else { return }
-        await refreshLibrary(showBlockingLoader: false)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.refreshLibrary(showBlockingLoader: false) }
+            group.addTask { await self.loadContinueWatching() }
+        }
+    }
+
+    private func loadContinueWatching() async {
+        continueWatching = await jellyfinService.resumeItems()
     }
 
     private func refreshLibrary(showBlockingLoader: Bool) async {
@@ -111,8 +151,13 @@ final class LibraryViewModel {
         defer { isRefreshing = false }
 
         do {
-            let allEntries = try await fetchAllAvailableEntries()
-            let refreshedItems = await resolveLibraryItems(from: allEntries)
+            let refreshedItems: [LibraryItem]
+            if jellyfinService.hasCredentials {
+                refreshedItems = await loadFromJellyfin()
+            } else {
+                let allEntries = try await fetchAllAvailableEntries()
+                refreshedItems = await resolveLibraryItems(from: allEntries)
+            }
             await applyRefreshedItems(refreshedItems)
             error = nil
             didLoadInitialSnapshot = true
@@ -140,6 +185,43 @@ final class LibraryViewModel {
             if items.isEmpty {
                 self.error = error.localizedDescription
             }
+        }
+    }
+
+    private static let jellyfinDateCreatedFormatter = ISO8601DateFormatter()
+
+    private func loadFromJellyfin() async -> [LibraryItem] {
+        guard let client = jellyfinService.client else { return [] }
+        let raw = await jellyfinService.allLibraryItems()
+        return raw.compactMap { item -> LibraryItem? in
+            // Need a tmdbId so taps can route into MovieDetailView/TVDetailView
+            // and the existing Seerr-keyed detail pages keep working. Items
+            // with no TMDB metadata are skipped (no graceful detail target).
+            guard let tmdbId = item.tmdbId,
+                  let name = item.name,
+                  let type = item.type
+            else { return nil }
+            let mediaType: String
+            switch type.lowercased() {
+            case "series": mediaType = "tv"
+            case "movie":  mediaType = "movie"
+            default:       return nil
+            }
+            let year = item.productionYear.map(String.init)
+            let posterURL = item.id.flatMap { client.primaryImageURL(itemId: $0) }
+            let addedAt = item.dateCreated.flatMap {
+                Self.jellyfinDateCreatedFormatter.date(from: $0)
+            }
+            return LibraryItem(
+                mediaType: mediaType,
+                tmdbId: tmdbId,
+                title: name,
+                year: year,
+                voteAverage: item.communityRating,
+                posterURL: posterURL,
+                isAvailable: true,
+                addedAt: addedAt
+            )
         }
     }
 
@@ -177,11 +259,11 @@ final class LibraryViewModel {
                         for attempt in 1...3 {
                             do {
                                 if mediaType == "movie" {
-                                    let detail = try await apiClient.getMovieDetail(tmdbId: tmdbId)
-                                    return (entry.id, detail.toLibraryItem())
+                                    let item = try await apiClient.getMovieDetail(tmdbId: tmdbId).toLibraryItem(addedAt: entry.createdAtDate)
+                                    return (entry.id, item)
                                 } else if mediaType == "tv" {
-                                    let detail = try await apiClient.getTVDetail(tmdbId: tmdbId)
-                                    return (entry.id, detail.toLibraryItem())
+                                    let item = try await apiClient.getTVDetail(tmdbId: tmdbId).toLibraryItem(addedAt: entry.createdAtDate)
+                                    return (entry.id, item)
                                 }
                                 break
                             } catch {

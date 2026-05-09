@@ -9,6 +9,7 @@ struct LibraryItem: Identifiable, Codable, Sendable, Equatable, Hashable {
     let voteAverage: Double?
     let posterURL: URL?
     let isAvailable: Bool
+    var addedAt: Date?
 
     var id: String { "\(mediaType)-\(tmdbId)" }
 }

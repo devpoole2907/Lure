@@ -5,24 +5,25 @@ struct LibraryView: View {
 
     @State private var viewModel: LibraryViewModel?
     @Environment(\.modelContext) private var modelContext
+    @Environment(JellyfinService.self) private var jellyfinService
 
     var body: some View {
         NavigationStack {
             Group {
                 if let viewModel {
-                    LibraryContentView(viewModel: viewModel)
+                    LibraryContentView(viewModel: viewModel, apiClient: apiClient)
                 } else {
                     ProgressView()
                 }
             }
             .navigationTitle("Library")
-            .navigationSubtitle(subtitleText(for: viewModel))
             .navigationDestination(for: MediaDestination.self) { destination in
                 switch destination.mediaType {
                 case "movie":
                     MovieDetailView(
                         tmdbId: destination.tmdbId,
                         apiClient: apiClient,
+                        jellyfinService: jellyfinService,
                         initialTitle: destination.title,
                         initialPosterURL: destination.posterURL
                     )
@@ -30,35 +31,12 @@ struct LibraryView: View {
                     TVDetailView(
                         tmdbId: destination.tmdbId,
                         apiClient: apiClient,
+                        jellyfinService: jellyfinService,
                         initialTitle: destination.title,
                         initialPosterURL: destination.posterURL
                     )
                 default:
                     Text("Unsupported media type: \(destination.mediaType)")
-                        .onAppear {
-                            assertionFailure("Unexpected mediaType in LibraryView: \(destination.mediaType)")
-                        }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .automatic) {
-                    if let viewModel {
-                        Menu {
-                            ForEach(LibrarySortOrder.allCases) { order in
-                                Button {
-                                    withAnimation { viewModel.sortOrder = order }
-                                } label: {
-                                    if viewModel.sortOrder == order {
-                                        Label(order.rawValue, systemImage: "checkmark")
-                                    } else {
-                                        Text(order.rawValue)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label("Sort", systemImage: "arrow.up.arrow.down")
-                        }
-                    }
                 }
             }
             .refreshable {
@@ -73,16 +51,14 @@ struct LibraryView: View {
         }
     }
 
-    private func subtitleText(for viewModel: LibraryViewModel?) -> String {
-        guard let vm = viewModel, !vm.isLoading else { return "" }
-        let count = vm.items.filter { $0.title != "Unknown" }.count
-        return count == 1 ? "1 item" : "\(count) items"
-    }
-
     @MainActor
     private func loadLibraryIfNeeded() async {
         guard viewModel == nil else { return }
-        let viewModel = LibraryViewModel(apiClient: apiClient, modelContext: modelContext)
+        let viewModel = LibraryViewModel(
+            apiClient: apiClient,
+            jellyfinService: jellyfinService,
+            modelContext: modelContext
+        )
         self.viewModel = viewModel
         await viewModel.load()
     }
