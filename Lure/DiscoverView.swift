@@ -3,7 +3,11 @@ import SwiftUI
 struct DiscoverView: View {
     let apiClient: SeerrAPIClient
     @State private var viewModel: DiscoverViewModel?
+    @State private var heroVerticalOffset: CGFloat = 0
     @Namespace private var navigationTransitionNamespace
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(JellyfinService.self) private var jellyfinService
+    @Environment(PlayerCoordinator.self) private var playerCoordinator
 
     var body: some View {
         NavigationStack {
@@ -45,6 +49,15 @@ struct DiscoverView: View {
                             let response = try await apiClient.getDiscoverTV(page: page, sortBy: "popularity.desc")
                             return response.results.map { $0.toMediaItem() }
                         }
+                    case .newReleases:
+                        DiscoverMediaGridView(
+                            title: "New Releases",
+                            initialItems: vm.newReleases,
+                            transitionNamespace: navigationTransitionNamespace
+                        ) { page in
+                            let response = try await apiClient.getDiscoverMoviesNewReleases(page: page)
+                            return response.results.map { $0.toMediaItem() }
+                        }
                     case .upcoming:
                         DiscoverMediaGridView(
                             title: "Upcoming",
@@ -64,12 +77,12 @@ struct DiscoverView: View {
             }
             .navigationDestination(for: MediaDestination.self) { dest in
                 if dest.mediaType == "movie" {
-                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
 #if os(iOS) || os(visionOS)
                         .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
 #endif
                 } else {
-                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
 #if os(iOS) || os(visionOS)
                         .navigationTransition(.zoom(sourceID: dest, in: navigationTransitionNamespace))
 #endif
@@ -78,13 +91,14 @@ struct DiscoverView: View {
             .refreshable { await viewModel?.refresh() }
             .task {
                 if viewModel == nil {
-                    let vm = DiscoverViewModel(apiClient: apiClient)
+                    let vm = DiscoverViewModel(apiClient: apiClient, jellyfinService: jellyfinService)
                     viewModel = vm
                     await vm.loadInitialData()
                 }
             }
 #if os(iOS) || os(visionOS)
-            .toolbarTitleDisplayMode(.large)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbarBackground(.hidden, for: .navigationBar)
 #endif
         }
     }
@@ -100,6 +114,18 @@ struct DiscoverView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
+                    DiscoverHeroCarouselView(
+                        items: vm.trending,
+                        transitionNamespace: navigationTransitionNamespace,
+                        verticalOffset: heroVerticalOffset
+                    )
+                    if !vm.continueWatching.isEmpty {
+                        ContinueWatchingShelf(
+                            items: vm.continueWatching,
+                            jellyfinClient: vm.jellyfinClient,
+                            onPlay: playResumeItem
+                        )
+                    }
                     MediaSliderView(
                         title: "Trending",
                         icon: "flame",
@@ -125,6 +151,14 @@ struct DiscoverView: View {
                         headerValue: .popularTV
                     )
                     MediaSliderView(
+                        title: "New Releases",
+                        icon: "sparkles.tv",
+                        items: vm.newReleases,
+                        apiClient: apiClient,
+                        transitionNamespace: navigationTransitionNamespace,
+                        headerValue: .newReleases
+                    )
+                    MediaSliderView(
                         title: "Upcoming",
                         icon: "calendar",
                         items: vm.upcomingMovies,
@@ -136,9 +170,19 @@ struct DiscoverView: View {
                         collectionSlider(vm.collections)
                     }
                 }
-                .padding(.vertical)
+                .padding(.bottom)
+            }
+            .ignoresSafeArea(edges: .top)
+            .onScrollGeometryChange(for: CGFloat.self) {
+                $0.contentOffset.y + $0.contentInsets.top
+            } action: { _, newValue in
+                heroVerticalOffset = max(-newValue, 0)
             }
         }
+    }
+
+    private func playResumeItem(_ item: JellyfinItem) {
+        playerCoordinator.presentResume(item)
     }
 
     @ViewBuilder

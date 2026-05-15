@@ -13,15 +13,18 @@ final class TVDetailViewModel {
     private(set) var isRequesting: Bool = false
     var error: String?
     private(set) var requestSuccess: Bool = false
+    private(set) var playbackAvailability: PlaybackAvailability = .unknown
 
     // Season selection for requests
     var selectedSeasons: Set<Int> = []
 
     private let apiClient: SeerrAPIClient
+    private let jellyfinService: JellyfinService
 
-    init(tmdbId: Int, apiClient: SeerrAPIClient) {
+    init(tmdbId: Int, apiClient: SeerrAPIClient, jellyfinService: JellyfinService) {
         self.tmdbId = tmdbId
         self.apiClient = apiClient
+        self.jellyfinService = jellyfinService
     }
 
     func load() async {
@@ -35,6 +38,7 @@ final class TVDetailViewModel {
             withAnimation(.smooth(duration: 0.35)) {
                 show = loadedShow
             }
+            await resolvePlaybackAvailability(for: loadedShow)
         } catch {
             withAnimation(.smooth(duration: 0.25)) {
                 self.error = error.localizedDescription
@@ -141,6 +145,9 @@ final class TVDetailViewModel {
             _ = try await apiClient.createRequest(body)
             requestSuccess = true
             show = try await apiClient.getTVDetail(tmdbId: tmdbId)
+            if let show {
+                await resolvePlaybackAvailability(for: show)
+            }
             selectedSeasons.removeAll()
         } catch {
             self.error = error.localizedDescription
@@ -163,5 +170,25 @@ final class TVDetailViewModel {
                 recommendations = loadedRecommendations
             }
         }
+    }
+
+    func refreshPlaybackAvailability() async {
+        guard let show else { return }
+        await resolvePlaybackAvailability(for: show)
+    }
+
+    private func resolvePlaybackAvailability(for show: SeerrTVDetail) async {
+        guard show.mediaInfo?.isAvailable == true else {
+            playbackAvailability = .unknown
+            return
+        }
+        playbackAvailability = .checking
+        playbackAvailability = await jellyfinService.resolvePlaybackAvailability(
+            tmdbId: tmdbId,
+            mediaType: "tv",
+            title: show.displayTitle,
+            releaseYear: show.year.flatMap(Int.init),
+            serviceUrl: show.mediaInfo?.serviceUrl
+        )
     }
 }

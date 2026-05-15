@@ -50,6 +50,17 @@ struct SeerrMediaInfo: Codable, Sendable {
             return "Requested"
         }
     }
+
+    /// The latest failed request when there is no active (pending/approved)
+    /// request to take its place. Used to surface a "Request Failed" state on
+    /// the detail view, since the media's own `MediaStatus` has no failure
+    /// case and otherwise shows nothing.
+    var mostRecentFailedRequest: SeerrMediaRequest? {
+        guard activeRequests.isEmpty else { return nil }
+        return (requests ?? [])
+            .filter { $0.requestStatus == .failed }
+            .max(by: { ($0.createdAt ?? "") < ($1.createdAt ?? "") })
+    }
 }
 
 struct SeerrSeasonStatus: Codable, Sendable {
@@ -340,6 +351,12 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
     }
     var isAvailable: Bool { mediaStatus == .available }
 
+    private static let createdAtFormatter = ISO8601DateFormatter()
+
+    var createdAtDate: Date? {
+        createdAt.flatMap { Self.createdAtFormatter.date(from: $0) }
+    }
+
     /// Convert to SeerrMediaItem for use with TitleCardView and navigation.
     func toMediaItem() -> SeerrMediaItem? {
         guard let tmdbId else { return nil }
@@ -380,7 +397,8 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
             year: displayYear,
             voteAverage: nil,
             posterURL: posterURL,
-            isAvailable: isAvailable
+            isAvailable: isAvailable,
+            addedAt: createdAtDate
         )
     }
 }

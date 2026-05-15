@@ -22,6 +22,14 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Playback") {
+                NavigationLink {
+                    JellyfinSetupView()
+                } label: {
+                    Label("Jellyfin Playback", systemImage: "play.tv")
+                }
+            }
+
             Section {
                 Button(role: .destructive) {
                     onLogout()
@@ -34,6 +42,11 @@ struct SettingsView: View {
                 LabeledContent("App", value: "Lure")
                 if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
                     LabeledContent("Version", value: version)
+                }
+                NavigationLink {
+                    LicensesView()
+                } label: {
+                    Label("Open Source Licenses", systemImage: "doc.text")
                 }
             }
         }

@@ -12,6 +12,7 @@ final class CachedLibraryItem {
     var voteAverage: Double?
     var posterURLString: String?
     var isAvailable: Bool
+    var addedAt: Date?
 
     init(serverURL: String, item: LibraryItem) {
         self.id = "\(serverURL)-\(item.mediaType)-\(item.tmdbId)"
@@ -23,6 +24,7 @@ final class CachedLibraryItem {
         self.voteAverage = item.voteAverage
         self.posterURLString = item.posterURL?.absoluteString
         self.isAvailable = item.isAvailable
+        self.addedAt = item.addedAt
     }
 
     var toLibraryItem: LibraryItem {
@@ -33,7 +35,8 @@ final class CachedLibraryItem {
             year: year,
             voteAverage: voteAverage,
             posterURL: posterURLString.flatMap { URL(string: $0) },
-            isAvailable: isAvailable
+            isAvailable: isAvailable,
+            addedAt: addedAt
         )
     }
 }

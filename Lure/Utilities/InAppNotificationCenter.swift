@@ -1,16 +1,29 @@
 import SwiftUI
 
 @Observable
+@MainActor
 final class InAppNotificationCenter {
     var currentBanner: LureBannerItem?
 
+    private static let autoDismissDelay: Duration = .seconds(4)
+    private var dismissTask: Task<Void, Never>?
+
     func show(_ item: LureBannerItem) {
+        dismissTask?.cancel()
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             currentBanner = item
+        }
+        let id = item.id
+        dismissTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.autoDismissDelay)
+            guard let self, !Task.isCancelled, currentBanner?.id == id else { return }
+            dismiss()
         }
     }
 
     func dismiss() {
+        dismissTask?.cancel()
+        dismissTask = nil
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             currentBanner = nil
         }
@@ -66,7 +79,12 @@ struct LureNotificationBanner: View {
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundStyle(.secondary)
+                    .padding(8)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .tint(.secondary)
+            .accessibilityLabel("Dismiss notification")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

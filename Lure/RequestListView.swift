@@ -7,6 +7,8 @@ struct RequestListView: View {
     @State private var vm: RequestListViewModel
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(\.modelContext) private var modelContext
+    @Environment(JellyfinService.self) private var jellyfinService
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     init(apiClient: SeerrAPIClient, currentUser: SeerrUser?) {
         self.apiClient = apiClient
@@ -29,6 +31,9 @@ struct RequestListView: View {
                     await vm.loadRequestsIfNeeded()
                 }
                 .animation(.default, value: vm.sortedRequests.map(\.id))
+                .onChange(of: requestsCoordinator.lastChange) { _, _ in
+                    Task { await vm.loadRequests() }
+                }
                 .onChange(of: vm.actionSuccessMessage) { _, message in
                     if let message {
                         notificationCenter.show(LureBannerItem(
@@ -51,9 +56,9 @@ struct RequestListView: View {
                 }
                 .navigationDestination(for: MediaDestination.self) { dest in
                     if dest.mediaType == "movie" {
-                        MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                        MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
                     } else {
-                        TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                        TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
                     }
                 }
         }
@@ -136,6 +141,17 @@ struct RequestListView: View {
                 }
                 .tint(.orange)
             }
+
+            Button {
+                if let url = URL(string: "trawl://seerr-issue") {
+                    #if os(iOS)
+                    UIApplication.shared.open(url)
+                    #endif
+                }
+            } label: {
+                Label("Trawl", systemImage: "arrow.up.forward.app")
+            }
+            .tint(.purple)
         }
     }
 
@@ -282,7 +298,7 @@ private struct RequestItemContent: View {
                         .padding(.vertical, 2)
                         .background(.quaternary)
                         .clipShape(Capsule())
-                    if let status = request.requestStatus {
+                    if let status = effectiveStatus {
                         Text("· \(status.displayName)")
                             .font(.caption2)
                             .fontWeight(.medium)
@@ -305,8 +321,8 @@ private struct RequestItemContent: View {
 
             Spacer()
 
-            if let status = request.requestStatus {
-                Image(systemName: statusIcon(for: status))
+            if let status = effectiveStatus {
+                Image(systemName: status.systemImage)
                     .font(.caption)
                     .foregroundStyle(status.color)
             }
@@ -314,13 +330,54 @@ private struct RequestItemContent: View {
         .padding(.vertical, 2)
     }
 
-    private func statusIcon(for status: LureConstants.RequestStatus) -> String {
-        switch status {
-        case .pending:   "clock"
-        case .approved:  "checkmark.circle"
-        case .declined:  "xmark.circle"
-        case .failed:    "exclamationmark.circle"
-        case .completed: "checkmark.circle.fill"
+    /// Promotes the request's media status (e.g. Processing, Available) over
+    /// the bare RequestStatus once Radarr/Sonarr has picked the request up.
+    /// Only kicks in for approved requests so we don't override Pending /
+    /// Declined / Failed states.
+    private var effectiveStatus: RequestRowStatus? {
+        if request.requestStatus == .approved,
+           let mediaStatus = request.media?.mediaStatus,
+           mediaStatus.isUserVisible,
+           mediaStatus != .pending {
+            return .media(mediaStatus)
+        }
+        if let status = request.requestStatus {
+            return .request(status)
+        }
+        return nil
+    }
+
+    private enum RequestRowStatus {
+        case request(LureConstants.RequestStatus)
+        case media(LureConstants.MediaStatus)
+
+        var displayName: String {
+            switch self {
+            case .request(let status): status.displayName
+            case .media(let status): status.displayName
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .request(let status): status.color
+            case .media(let status): status.color
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .request(let status):
+                switch status {
+                case .pending:   "clock"
+                case .approved:  "checkmark.circle"
+                case .declined:  "xmark.circle"
+                case .failed:    "exclamationmark.circle"
+                case .completed: "checkmark.circle.fill"
+                }
+            case .media(let status):
+                status.systemImage
+            }
         }
     }
 }

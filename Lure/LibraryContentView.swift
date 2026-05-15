@@ -2,10 +2,13 @@ import SwiftUI
 
 struct LibraryContentView: View {
     let viewModel: LibraryViewModel
+    let apiClient: SeerrAPIClient
+
+    @Environment(PlayerCoordinator.self) private var playerCoordinator
 
     var body: some View {
-        if viewModel.isLoading && viewModel.items.isEmpty {
-            ProgressView("Loading Library...")
+        if viewModel.isLoading && viewModel.items.isEmpty && viewModel.continueWatching.isEmpty {
+            ProgressView("Loading Library…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = viewModel.error, viewModel.items.isEmpty {
             ContentUnavailableView(
@@ -13,83 +16,159 @@ struct LibraryContentView: View {
                 systemImage: "exclamationmark.triangle",
                 description: Text(error)
             )
-        } else if viewModel.items.isEmpty {
+        } else if viewModel.items.isEmpty && viewModel.continueWatching.isEmpty {
             ContentUnavailableView(
                 "Nothing Available",
                 systemImage: "film",
                 description: Text("No media is currently available on your server.")
             )
         } else {
-            LibraryListView(viewModel: viewModel)
+            libraryHome
         }
     }
-}
 
-private struct LibraryListView: View {
-    let viewModel: LibraryViewModel
+    // MARK: - Library Home
 
-    var body: some View {
-        let sections = viewModel.sectionedItems
-#if os(iOS)
-        if #available(iOS 26.0, *), viewModel.isIndexed {
-            List {
-                librarySections(sections)
-            }
-            .listSectionIndexVisibility(.visible)
-        } else {
-            List {
-                librarySections(sections)
-            }
-        }
-#else
-        List {
-            librarySections(sections)
-        }
-#endif
-    }
+    private var libraryHome: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 28) {
+                categoryNavLinks
 
-    @ViewBuilder
-    private func librarySections(_ sections: [LibrarySection]) -> some View {
-        ForEach(sections) { section in
-            Section(section.title) {
-                ForEach(section.items) { item in
-                    NavigationLink(value: destination(for: item)) {
-                        MediaListRow(item: item)
-                    }
+                if !viewModel.continueWatching.isEmpty {
+                    ContinueWatchingShelf(
+                        items: viewModel.continueWatching,
+                        jellyfinClient: viewModel.jellyfinClient,
+                        onPlay: { playerCoordinator.presentResume($0) }
+                    )
+                }
+
+                if !viewModel.recentlyAdded.isEmpty {
+                    recentlyAddedSection
                 }
             }
-            .modifier(SectionIndexModifier(label: section.indexLabel, isIndexed: viewModel.isIndexed))
-        }
-
-        if viewModel.isRefreshing {
-            HStack {
-                Spacer()
-                ProgressView()
-                Spacer()
-            }
-            .listRowSeparator(.hidden)
+            .padding(.vertical, 8)
         }
     }
 
-    private func destination(for item: LibraryItem) -> MediaDestination {
-        MediaDestination(
-            mediaType: item.mediaType,
-            tmdbId: item.tmdbId,
-            title: item.title,
-            posterURL: item.posterURL
-        )
+    // MARK: - Category Nav Links
+
+    private var categoryNavLinks: some View {
+        VStack(spacing: 0) {
+            NavigationLink {
+                MediaCategoryView(title: "Movies", items: viewModel.movies, apiClient: apiClient)
+            } label: {
+                navRowLabel(icon: "film", label: "Movies", color: .pink, count: viewModel.movies.count)
+            }
+
+            Divider().padding(.leading, 58)
+
+            NavigationLink {
+                MediaCategoryView(title: "TV Shows", items: viewModel.tvShows, apiClient: apiClient)
+            } label: {
+                navRowLabel(icon: "tv", label: "TV Shows", color: .blue, count: viewModel.tvShows.count)
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 16)
+    }
+
+    private func navRowLabel(icon: String, label: String, color: Color, count: Int) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: icon)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(color, in: RoundedRectangle(cornerRadius: 7))
+
+            Text(label)
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            if count > 0 {
+                Text("\(count)")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 52)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Recently Added
+
+    private var recentlyAddedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Recently Added")
+                    .font(.title3.bold())
+
+                Spacer()
+
+                NavigationLink {
+                    MediaCategoryView(
+                        title: "Recently Added",
+                        items: viewModel.recentlyAdded,
+                        apiClient: apiClient,
+                        initialSortOrder: .added
+                    )
+                } label: {
+                    Text("See All")
+                        .font(.subheadline)
+                }
+            }
+            .padding(.horizontal, 16)
+
+            let recentItems = Array(viewModel.recentlyAdded.prefix(12))
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                spacing: 12
+            ) {
+                ForEach(recentItems) { item in
+                    NavigationLink(value: MediaDestination(
+                        mediaType: item.mediaType,
+                        tmdbId: item.tmdbId,
+                        title: item.title,
+                        posterURL: item.posterURL
+                    )) {
+                        LibraryPosterCell(item: item)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
     }
 }
 
-private struct SectionIndexModifier: ViewModifier {
-    let label: String
-    let isIndexed: Bool
+// MARK: - Poster cell for the Recently Added grid
 
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *), isIndexed {
-            content.sectionIndexLabel(Text(label))
-        } else {
-            content
+struct LibraryPosterCell: View {
+    let item: LibraryItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Color.clear
+                .aspectRatio(2 / 3, contentMode: .fit)
+                .overlay {
+                    GeometryReader { geo in
+                        PosterImage(
+                            url: item.posterURL,
+                            width: geo.size.width,
+                            height: geo.size.height,
+                            cornerRadius: 8
+                        )
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            Text(item.title)
+                .font(.caption2)
+                .fontWeight(.medium)
+                .lineLimit(2)
+                .foregroundStyle(.primary)
         }
     }
 }

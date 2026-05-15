@@ -50,6 +50,7 @@ final class CastPersonSheetViewModel {
 
 struct CastPersonSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(JellyfinService.self) private var jellyfinService
     let apiClient: SeerrAPIClient
 
     @State private var vm: CastPersonSheetViewModel
@@ -125,9 +126,9 @@ struct CastPersonSheet: View {
             }
             .navigationDestination(for: MediaDestination.self) { dest in
                 if dest.mediaType == "movie" {
-                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                    MovieDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
                 } else {
-                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, initialTitle: dest.title, initialPosterURL: dest.posterURL)
+                    TVDetailView(tmdbId: dest.tmdbId, apiClient: apiClient, jellyfinService: jellyfinService, initialTitle: dest.title, initialPosterURL: dest.posterURL)
                 }
             }
         }

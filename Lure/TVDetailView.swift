@@ -13,11 +13,15 @@ struct TVDetailView: View {
     @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
     @State private var isModeratingRequest = false
+    @State private var showEpisodePicker = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(PlayerCoordinator.self) private var playerCoordinator
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     init(
         tmdbId: Int,
         apiClient: SeerrAPIClient,
+        jellyfinService: JellyfinService,
         initialTitle: String? = nil,
         initialPosterURL: URL? = nil,
         currentUser: SeerrUser? = nil,
@@ -29,7 +33,7 @@ struct TVDetailView: View {
         self.initialPosterURL = initialPosterURL
         self.currentUser = currentUser
         self.onRequestUpdated = onRequestUpdated
-        self._vm = State(initialValue: TVDetailViewModel(tmdbId: tmdbId, apiClient: apiClient))
+        self._vm = State(initialValue: TVDetailViewModel(tmdbId: tmdbId, apiClient: apiClient, jellyfinService: jellyfinService))
     }
 
     var body: some View {
@@ -94,11 +98,13 @@ struct TVDetailView: View {
         .task { await vm.load() }
         .onChange(of: vm.requestSuccess) { _, success in
             if success {
+                let title = vm.show?.displayTitle ?? initialTitle ?? "your request"
                 notificationCenter.show(LureBannerItem(
                     title: "Request Submitted",
-                    message: vm.show?.displayTitle ?? initialTitle,
+                    message: "We'll let you know when \(title) is ready to watch.",
                     style: .success
                 ))
+                requestsCoordinator.markStale()
             }
         }
         .onChange(of: vm.error) { _, error in
@@ -108,6 +114,24 @@ struct TVDetailView: View {
                     message: error,
                     style: .error
                 ))
+            }
+        }
+        .sheet(isPresented: $showEpisodePicker) {
+            if let show = vm.show {
+                EpisodePickerView(
+                    tmdbId: tmdbId,
+                    seriesTitle: show.displayTitle,
+                    serviceUrl: nil,
+                    jellyfinSeriesId: vm.playbackAvailability.playableItemId
+                ) { episodeId, episodeLabel, title in
+                    showEpisodePicker = false
+                    playerCoordinator.present(
+                        itemId: episodeId,
+                        title: title,
+                        episodeLabel: episodeLabel,
+                        mediaType: "tv"
+                    )
+                }
             }
         }
     }
@@ -301,12 +325,34 @@ struct TVDetailView: View {
     @ViewBuilder
     private func requestCard(_ show: SeerrTVDetail) -> some View {
         if show.mediaInfo?.isAvailable == true {
-            Label("Available", systemImage: "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.green)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    Label("Available in Seerr", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
+
+                    playbackButton
+                }
+
+                if let message = playbackAvailabilityMessage {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle")
+                        Text(message)
+                        Spacer()
+                        Button("Refresh") {
+                            Task { await vm.refreshPlaybackAvailability() }
+                        }
+                        .font(.caption.weight(.semibold))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        } else if let failedRequest = show.mediaInfo?.mostRecentFailedRequest {
+            failedRequestCard(failedRequest, mediaTitle: show.displayTitle)
         } else {
             let pendingRequest = pendingRequest(for: show)
 
@@ -339,7 +385,124 @@ struct TVDetailView: View {
                         )
                     }
                 }
+                
+                if canModerateRequests {
+                    Button {
+                        if let url = URL(string: "trawl://seerr-issue") {
+                            #if os(iOS)
+                            UIApplication.shared.open(url)
+                            #endif
+                        }
+                    } label: {
+                        Label("Open in Trawl", systemImage: "arrow.up.forward.app")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.purple)
+                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func failedRequestCard(_ failedRequest: SeerrMediaRequest, mediaTitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Request Failed")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Seerr couldn't process the previous request. Try again or check your Seerr server logs for details.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 12) {
+                if canModerateRequests {
+                    Button {
+                        Task {
+                            await moderateRequest(
+                                action: { try await apiClient.retryRequest(id: failedRequest.id) },
+                                successTitle: "Retrying Request",
+                                successMessage: "Retrying \(mediaTitle)"
+                            )
+                        }
+                    } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
+                    .disabled(isModeratingRequest)
+                }
+
+                Button {
+                    showRequestSheet = true
+                } label: {
+                    Label("Request Again", systemImage: "plus.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
+                .disabled(isModeratingRequest)
+            }
+        }
+        .padding(14)
+        .glassEffect(.regular.tint(Color.red.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    @ViewBuilder
+    private var playbackButton: some View {
+        switch vm.playbackAvailability {
+        case .checking:
+            Label("Checking", systemImage: "hourglass")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .glassEffect(.regular.tint(Color.gray.opacity(0.16)), in: RoundedRectangle(cornerRadius: 16))
+        case .playable:
+            Button {
+                showEpisodePicker = true
+            } label: {
+                Label("Watch", systemImage: "play.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+        default:
+            Label("Not in Jellyfin", systemImage: "exclamationmark.triangle")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .glassEffect(.regular.tint(Color.orange.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private var playbackAvailabilityMessage: String? {
+        switch vm.playbackAvailability {
+        case .unknown, .checking, .playable:
+            nil
+        case .missingInJellyfin:
+            "Seerr says this is available, but Jellyfin does not have a matching playable series."
+        case .notConfigured:
+            "Jellyfin playback is not configured."
+        case .failed(let message):
+            "Jellyfin lookup failed: \(message)"
         }
     }
 
@@ -348,7 +511,7 @@ struct TVDetailView: View {
     }
 
     private var canModerateRequests: Bool {
-        currentUser?.canManageRequests == true || currentUser?.isAdmin == true
+        currentUser?.canManageRequests == true
     }
 
     private func pendingRequest(for show: SeerrTVDetail) -> SeerrMediaRequest? {

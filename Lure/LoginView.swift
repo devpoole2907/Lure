@@ -4,146 +4,88 @@ import SwiftData
 struct LoginView: View {
     @Environment(\.modelContext) private var modelContext
     @Bindable var authViewModel: AuthViewModel
-    @State private var step: LoginStep = .server
+    
+    var isModal: Bool = false
+    var onComplete: (() -> Void)? = nil
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 32) {
-                Spacer()
-
-                // App icon and title
-                VStack(spacing: 12) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 56))
-                        .foregroundStyle(.blue)
-                    Text("Lure")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    Text("Request and discover media")
+            Form {
+                Section {
+                    Text("Connect Lure to your Seerr instance.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-
-                // Form
-                VStack(spacing: 16) {
-                    switch step {
-                    case .server:
-                        VStack(spacing: 16) {
-                            serverForm
-                        }
-                        .padding()
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-                    case .credentials:
-                        credentialsForm
+                
+                Section("Server") {
+                    TextField("Seerr URL (e.g. http://192.168.1.50:5055)", text: $authViewModel.serverURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                
+                if let settings = authViewModel.publicSettings {
+                    Section("Connected Server") {
+                        LabeledContent("App", value: settings.applicationTitle ?? "Seerr")
                     }
                 }
-                .padding(.horizontal, 24)
-
-                // Error
+                
+                Section("Credentials") {
+                    TextField("Username", text: $authViewModel.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Password", text: $authViewModel.password)
+                }
+                
                 if let error = authViewModel.error {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.footnote)
+                    }
                 }
-
-                Spacer()
-                Spacer()
+                
+                Section {
+                    Button {
+                        Task {
+                            if !authViewModel.canShowCredentials {
+                                _ = await authViewModel.validateServer()
+                            } else {
+                                let success = await authViewModel.login(modelContext: modelContext)
+                                if success {
+                                    onComplete?()
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            if authViewModel.isAuthenticating {
+                                ProgressView()
+                                    .padding(.trailing, 4)
+                                Text("Connecting…")
+                            } else {
+                                Text(authViewModel.canShowCredentials ? "Sign In" : "Connect")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .disabled(authViewModel.serverURL.isEmpty || authViewModel.isAuthenticating || (authViewModel.canShowCredentials && (authViewModel.username.isEmpty || authViewModel.password.isEmpty)))
+                }
             }
-            .lureGradientBackground(.blue)
-#if os(iOS) || os(visionOS)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Add Seerr")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .listStyle(.insetGrouped)
 #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    if isModal {
+                        Button("Cancel") {
+                            onComplete?()
+                        }
+                    }
+                }
+            }
         }
     }
-
-    @ViewBuilder
-    private var serverForm: some View {
-        TextField("Seerr URL (e.g. http://192.168.1.50:5055)", text: $authViewModel.serverURL)
-#if os(iOS) || os(visionOS)
-            .keyboardType(.URL)
-            .textInputAutocapitalization(.never)
-#endif
-            .autocorrectionDisabled()
-#if os(iOS) || os(visionOS)
-            .textFieldStyle(.roundedBorder)
-#endif
-
-        Button {
-            Task {
-                if await authViewModel.validateServer() {
-                    step = .credentials
-                }
-            }
-        } label: {
-            Text("Connect")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .glassEffect(.regular.interactive(), in: Capsule())
-        .disabled(authViewModel.serverURL.isEmpty)
-    }
-
-    @ViewBuilder
-    private var credentialsForm: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 4) {
-                if let settings = authViewModel.publicSettings {
-                    Text(settings.applicationTitle ?? "Seerr")
-                        .font(.headline)
-                    Text(authViewModel.serverURL)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            TextField("Username", text: $authViewModel.username)
-#if os(iOS) || os(visionOS)
-                .textInputAutocapitalization(.never)
-#endif
-                .autocorrectionDisabled()
-#if os(iOS) || os(visionOS)
-                .textFieldStyle(.roundedBorder)
-#endif
-
-            SecureField("Password", text: $authViewModel.password)
-#if os(iOS) || os(visionOS)
-                .textFieldStyle(.roundedBorder)
-#endif
-
-            Button {
-                Task {
-                    _ = await authViewModel.login(modelContext: modelContext)
-                }
-            } label: {
-                if authViewModel.isAuthenticating {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Text("Sign In")
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .glassEffect(.regular.interactive(), in: Capsule())
-            .disabled(authViewModel.username.isEmpty || authViewModel.password.isEmpty || authViewModel.isAuthenticating)
-
-            Button("Back") {
-                step = .server
-                authViewModel.error = nil
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .glassEffect(.regular.interactive(), in: Capsule())
-        }
-        .padding()
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-private enum LoginStep {
-    case server, credentials
 }

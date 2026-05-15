@@ -7,6 +7,17 @@ struct ContentView: View {
     @State private var authViewModel = AuthViewModel()
     @State private var isRestoringSession = true
     @State private var notificationCenter = InAppNotificationCenter()
+    @State private var jellyfinService: JellyfinService
+    @State private var playerCoordinator: PlayerCoordinator
+    @State private var requestsCoordinator = RequestsCoordinator()
+    @State private var showSignIn = false
+    @AppStorage("hasFinishedOnboarding") private var hasFinishedOnboarding = false
+
+    init() {
+        let service = JellyfinService()
+        _jellyfinService = State(wrappedValue: service)
+        _playerCoordinator = State(wrappedValue: PlayerCoordinator(jellyfinService: service))
+    }
 
     var body: some View {
         ZStack {
@@ -18,6 +29,9 @@ struct ContentView: View {
                         Text("Connecting...")
                             .foregroundStyle(.secondary)
                     }
+                } else if !hasFinishedOnboarding {
+                    SetupWizardView(authViewModel: authViewModel)
+                        .environment(jellyfinService)
                 } else if authViewModel.isLoggedIn, let client = authViewModel.apiClient, let user = authViewModel.currentUser {
                     LureTabView(
                         apiClient: client,
@@ -25,12 +39,17 @@ struct ContentView: View {
                         onLogout: {
                             Task {
                                 await authViewModel.logout(profile: servers.first(where: \.isActive), modelContext: modelContext)
+                                await jellyfinService.clearCredentials()
                             }
                         }
                     )
+                    .playerPresentation()
                     .environment(notificationCenter)
+                    .environment(jellyfinService)
+                    .environment(playerCoordinator)
+                    .environment(requestsCoordinator)
                 } else {
-                    LoginView(authViewModel: authViewModel)
+                    signInPrompt
                 }
             }
             .task {
@@ -54,14 +73,45 @@ struct ContentView: View {
         }
     }
 
+    private var signInPrompt: some View {
+        ContentUnavailableView {
+            Label("Sign In", systemImage: "person.crop.circle.badge.exclamationmark")
+        } description: {
+            Text("Your Seerr session has expired. Sign in again to continue.")
+        } actions: {
+            Button("Sign In") {
+                showSignIn = true
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button("Reconfigure Services") {
+                hasFinishedOnboarding = false
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .sheet(isPresented: $showSignIn) {
+            LoginView(authViewModel: authViewModel, isModal: true) {
+                showSignIn = false
+            }
+            .environment(jellyfinService)
+        }
+    }
+
     private func restoreSession() async {
+        async let jellyfinReload: Void = jellyfinService.reload()
+
         if let activeServer = servers.first(where: \.isActive) {
             let success = await authViewModel.restoreSession(from: activeServer)
             if success {
                 activeServer.lastConnected = .now
                 try? modelContext.save()
             }
+        } else {
+            await authViewModel.prepareSavedServerForLogin()
         }
+
+        await jellyfinReload
         isRestoringSession = false
     }
 

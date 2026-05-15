@@ -5,6 +5,13 @@ actor SeerrAPIClient {
     let baseURL: String
     private let session: URLSession
     private var sessionCookie: String?
+    private static let discoverDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 
     init(baseURL: String, sessionCookie: String? = nil) {
         var url = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -70,11 +77,42 @@ actor SeerrAPIClient {
         try await get("/api/v1/discover/trending", params: ["page": String(page)])
     }
 
-    func getDiscoverMovies(page: Int = 1, genre: Int? = nil, sortBy: String? = nil) async throws -> SeerrDiscoverResponse {
+    func getDiscoverMovies(
+        page: Int = 1,
+        genre: Int? = nil,
+        sortBy: String? = nil,
+        primaryReleaseDateGte: String? = nil,
+        primaryReleaseDateLte: String? = nil,
+        voteCountGte: Int? = nil,
+        voteAverageGte: Double? = nil
+    ) async throws -> SeerrDiscoverResponse {
         var params: [String: String] = ["page": String(page)]
         if let genre { params["genre"] = String(genre) }
         if let sortBy { params["sortBy"] = sortBy }
+        if let primaryReleaseDateGte { params["primaryReleaseDateGte"] = primaryReleaseDateGte }
+        if let primaryReleaseDateLte { params["primaryReleaseDateLte"] = primaryReleaseDateLte }
+        if let voteCountGte { params["voteCountGte"] = String(voteCountGte) }
+        if let voteAverageGte { params["voteAverageGte"] = String(format: "%.1f", voteAverageGte) }
         return try await get("/api/v1/discover/movies", params: params)
+    }
+
+    func getDiscoverMoviesNewReleases(page: Int = 1) async throws -> SeerrDiscoverResponse {
+        // Goal: titles likely to be on digital/streaming *now*. The first
+        // weeks after a theatrical release are filtered out by requiring a
+        // high vote-count threshold (which only accumulates after a wide
+        // audience can actually watch — i.e. once digital/streaming is up).
+        let formatter = Self.discoverDateFormatter
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date()
+        let startDate = calendar.date(byAdding: .day, value: -180, to: now) ?? now
+        return try await getDiscoverMovies(
+            page: page,
+            sortBy: "popularity.desc",
+            primaryReleaseDateGte: formatter.string(from: startDate),
+            primaryReleaseDateLte: formatter.string(from: now),
+            voteCountGte: 1000,
+            voteAverageGte: 5.5
+        )
     }
 
     func getDiscoverTV(page: Int = 1, genre: Int? = nil, sortBy: String? = nil) async throws -> SeerrDiscoverResponse {
@@ -199,31 +237,6 @@ actor SeerrAPIClient {
         ])
     }
 
-    func getUsers(take: Int = 20, skip: Int = 0) async throws -> SeerrUserListResponse {
-        try await get("/api/v1/user", params: [
-            "take": String(take),
-            "skip": String(skip)
-        ])
-    }
-
-    func updateUser(id: Int, permissions: Int) async throws -> SeerrUser {
-        try await put("/api/v1/user/\(id)", body: SeerrUpdateUserBody(permissions: permissions))
-    }
-
-    func deleteUser(id: Int) async throws -> SeerrUser {
-        try await delete("/api/v1/user/\(id)")
-    }
-
-    func importUsersFromJellyfin(jellyfinUserIds: [String]? = nil) async throws -> [SeerrUser] {
-        if let jellyfinUserIds, !jellyfinUserIds.isEmpty {
-            return try await post(
-                "/api/v1/user/import-from-jellyfin",
-                body: SeerrImportJellyfinUsersBody(jellyfinUserIds: jellyfinUserIds)
-            )
-        }
-        return try await post("/api/v1/user/import-from-jellyfin", body: EmptyRequestBody())
-    }
-
     // MARK: - Media Library
 
     func getMedia(filter: String = "available", take: Int = 20, skip: Int = 0) async throws -> SeerrMediaListResponse {
@@ -239,36 +252,6 @@ actor SeerrAPIClient {
 
     func createIssue(_ body: SeerrCreateIssueBody) async throws -> SeerrIssueResponse {
         try await post("/api/v1/issue", body: body)
-    }
-
-    func getIssues(take: Int = 20, skip: Int = 0, sort: String = "added", filter: String = "open") async throws -> SeerrIssueListResponse {
-        try await get("/api/v1/issue", params: [
-            "take": String(take),
-            "skip": String(skip),
-            "sort": sort,
-            "filter": filter
-        ])
-    }
-
-    func getIssue(id: Int) async throws -> SeerrIssue {
-        try await get("/api/v1/issue/\(id)")
-    }
-
-    func getIssueComments(issueId: Int) async throws -> [SeerrIssueComment] {
-        let issue: SeerrIssue = try await get("/api/v1/issue/\(issueId)")
-        return issue.comments ?? []
-    }
-
-    func replyToIssue(issueId: Int, message: String) async throws -> SeerrIssue {
-        try await post("/api/v1/issue/\(issueId)/comment", body: SeerrIssueCommentBody(message: message))
-    }
-
-    func resolveIssue(issueId: Int) async throws -> SeerrIssue {
-        try await post("/api/v1/issue/\(issueId)/resolved", body: EmptyRequestBody())
-    }
-
-    func reopenIssue(issueId: Int) async throws -> SeerrIssue {
-        try await post("/api/v1/issue/\(issueId)/open", body: EmptyRequestBody())
     }
 
     // MARK: - Genres

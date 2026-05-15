@@ -13,12 +13,15 @@ final class MovieDetailViewModel {
     private(set) var isRequesting: Bool = false
     var error: String?
     private(set) var requestSuccess: Bool = false
+    private(set) var playbackAvailability: PlaybackAvailability = .unknown
 
     private let apiClient: SeerrAPIClient
+    private let jellyfinService: JellyfinService
 
-    init(tmdbId: Int, apiClient: SeerrAPIClient) {
+    init(tmdbId: Int, apiClient: SeerrAPIClient, jellyfinService: JellyfinService) {
         self.tmdbId = tmdbId
         self.apiClient = apiClient
+        self.jellyfinService = jellyfinService
     }
 
     func load() async {
@@ -32,6 +35,7 @@ final class MovieDetailViewModel {
             withAnimation(.smooth(duration: 0.35)) {
                 movie = loadedMovie
             }
+            await resolvePlaybackAvailability(for: loadedMovie)
         } catch {
             withAnimation(.smooth(duration: 0.25)) {
                 self.error = error.localizedDescription
@@ -69,6 +73,9 @@ final class MovieDetailViewModel {
             requestSuccess = true
             // Reload to get updated mediaInfo
             movie = try await apiClient.getMovieDetail(tmdbId: tmdbId)
+            if let movie {
+                await resolvePlaybackAvailability(for: movie)
+            }
         } catch {
             self.error = error.localizedDescription
         }
@@ -90,5 +97,25 @@ final class MovieDetailViewModel {
                 recommendations = loadedRecommendations
             }
         }
+    }
+
+    func refreshPlaybackAvailability() async {
+        guard let movie else { return }
+        await resolvePlaybackAvailability(for: movie)
+    }
+
+    private func resolvePlaybackAvailability(for movie: SeerrMovieDetail) async {
+        guard movie.mediaInfo?.isAvailable == true else {
+            playbackAvailability = .unknown
+            return
+        }
+        playbackAvailability = .checking
+        playbackAvailability = await jellyfinService.resolvePlaybackAvailability(
+            tmdbId: tmdbId,
+            mediaType: "movie",
+            title: movie.displayTitle,
+            releaseYear: movie.year.flatMap(Int.init),
+            serviceUrl: movie.mediaInfo?.serviceUrl
+        )
     }
 }

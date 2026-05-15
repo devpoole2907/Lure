@@ -53,16 +53,6 @@ struct UserProfileView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        if currentUser.isAdmin {
-                            Text("Admin")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(.blue.opacity(0.15))
-                                .foregroundStyle(.blue)
-                                .clipShape(Capsule())
-                        }
                     }
                 }
             }
