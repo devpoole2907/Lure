@@ -14,6 +14,12 @@ final class MovieDetailViewModel {
     var error: String?
     private(set) var requestSuccess: Bool = false
     private(set) var playbackAvailability: PlaybackAvailability = .unknown
+    private(set) var mediaQuality: MediaQualityInfo?
+    private(set) var resumePositionSeconds: Double = 0
+
+    /// True when Jellyfin has a saved playback position partway through the film,
+    /// so the Watch button should offer to continue instead of restart.
+    var canResume: Bool { resumePositionSeconds > 30 }
 
     private let apiClient: SeerrAPIClient
     private let jellyfinService: JellyfinService
@@ -107,9 +113,13 @@ final class MovieDetailViewModel {
     private func resolvePlaybackAvailability(for movie: SeerrMovieDetail) async {
         guard movie.mediaInfo?.isAvailable == true else {
             playbackAvailability = .unknown
+            mediaQuality = nil
+            resumePositionSeconds = 0
             return
         }
         playbackAvailability = .checking
+        mediaQuality = nil
+        resumePositionSeconds = 0
         playbackAvailability = await jellyfinService.resolvePlaybackAvailability(
             tmdbId: tmdbId,
             mediaType: "movie",
@@ -117,5 +127,23 @@ final class MovieDetailViewModel {
             releaseYear: movie.year.flatMap(Int.init),
             serviceUrl: movie.mediaInfo?.serviceUrl
         )
+        if let itemId = playbackAvailability.playableItemId {
+            await loadPlayableDetails(itemId: itemId)
+        }
+    }
+
+    private func loadPlayableDetails(itemId: String) async {
+        guard let client = jellyfinService.client else { return }
+        async let infoTask = client.getPlaybackInfo(itemId: itemId)
+        async let itemTask = client.getItem(itemId: itemId)
+        let info = try? await infoTask
+        let item = try? await itemTask
+
+        let quality = MediaQualityInfo(mediaSources: info?.mediaSources)
+        let resume = item?.resumePositionSeconds ?? 0
+        withAnimation(.smooth(duration: 0.3)) {
+            mediaQuality = quality
+            resumePositionSeconds = resume
+        }
     }
 }

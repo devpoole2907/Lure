@@ -4,6 +4,19 @@ import UserNotifications
 
 #if os(iOS) || os(visionOS)
 class AppDelegate: NSObject, UIApplicationDelegate {
+    /// The app's resting orientation: portrait-only on iPhone, free on iPad.
+    static let defaultOrientationMask: UIInterfaceOrientationMask =
+        UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
+
+    /// Drives which interface orientations UIKit permits. The player locks this to
+    /// landscape while it's on screen (see `PlayerOrientationController`); the rest
+    /// of the app runs in `defaultOrientationMask`.
+    static var orientationLock: UIInterfaceOrientationMask = AppDelegate.defaultOrientationMask
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        AppDelegate.orientationLock
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
         let token = tokenParts.joined()

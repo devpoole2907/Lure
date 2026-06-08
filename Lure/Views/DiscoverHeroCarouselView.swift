@@ -2,13 +2,14 @@ import SwiftUI
 
 struct DiscoverHeroCarouselView: View {
     let items: [SeerrMediaItem]
+    @Binding var activeIndex: Int
+    @Binding var scrollTargetID: String?
     var transitionNamespace: Namespace.ID? = nil
     var verticalOffset: CGFloat = 0
+    var isActive: Bool = true
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var activeIndex = 0
-    @State private var scrollTargetID: String?
     @State private var scrollPhase: ScrollPhase = .idle
 
     private var heroItems: [SeerrMediaItem] {
@@ -48,11 +49,15 @@ struct DiscoverHeroCarouselView: View {
             }
             .frame(height: carouselHeight + verticalOffset)
             .offset(y: -verticalOffset)
-            .task(id: heroItems.map(\.id).joined(separator: "|")) {
-                scrollTargetID = heroItems.first?.id
-                await preloadHeroImages()
+            .onAppear { restoreScrollPosition() }
+            .onChange(of: isActive) { _, nowActive in
+                if nowActive { restoreScrollPosition() }
             }
             .task(id: heroItems.map(\.id).joined(separator: "|")) {
+                syncCarouselSelection()
+                await preloadHeroImages()
+            }
+            .task(id: "\(heroItems.map(\.id).joined(separator: "|"))|\(isActive)") {
                 await autoAdvanceCarousel()
             }
         }
@@ -188,13 +193,52 @@ struct DiscoverHeroCarouselView: View {
         }
     }
 
+    /// Re-assert the saved scroll position. When the carousel is re-added after a
+    /// navigation pop, the underlying `ScrollView` snaps back to offset 0 while the
+    /// bound id stays unchanged, so `.scrollPosition(id:)` never re-applies it.
+    /// Bouncing the binding through `nil` forces the scroll view back to the item
+    /// the user last had open.
+    @MainActor
+    private func restoreScrollPosition() {
+        guard let target = scrollTargetID,
+              heroItems.contains(where: { $0.id == target }) else { return }
+
+        // When the carousel is re-added after a pop, the ScrollView resets its
+        // offset to 0 and `.scrollPosition(id:)` writes that back into the bound
+        // id — clobbering the saved item. The exact frame that happens on is
+        // non-deterministic, so re-assert the target across several frames
+        // (bouncing through nil each time so the position actually re-applies)
+        // to reliably win that race. If the position is already correct these
+        // bounces are no-ops, so there's no visible flicker.
+        Task { @MainActor in
+            for _ in 0..<5 {
+                scrollTargetID = nil
+                try? await Task.sleep(for: .milliseconds(40))
+                scrollTargetID = target
+                try? await Task.sleep(for: .milliseconds(110))
+            }
+        }
+    }
+
+    @MainActor
+    private func syncCarouselSelection() {
+        if let scrollTargetID,
+           let currentIndex = heroItems.firstIndex(where: { $0.id == scrollTargetID }) {
+            activeIndex = currentIndex
+            return
+        }
+
+        activeIndex = 0
+        scrollTargetID = heroItems.first?.id
+    }
+
     @MainActor
     private func autoAdvanceCarousel() async {
         guard heroItems.count > 1, !reduceMotion else { return }
 
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled, scrollPhase == .idle else { continue }
+            guard !Task.isCancelled, isActive, scrollPhase == .idle else { continue }
 
             let nextIndex = (activeIndex + 1) % heroItems.count
             withAnimation(.smooth(duration: 0.55)) {

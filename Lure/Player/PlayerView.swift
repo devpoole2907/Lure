@@ -71,6 +71,10 @@ struct PlayerView: View {
 
     private func stop() async {
         await vm.stop()
+        // Rotate back to portrait *before* tearing down the cover, otherwise the
+        // detail view underneath flashes in landscape and snaps round afterwards.
+        PlayerOrientationController.unlock()
+        try? await Task.sleep(for: .milliseconds(350))
         dismiss()
     }
 

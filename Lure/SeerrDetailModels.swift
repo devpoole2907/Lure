@@ -495,7 +495,11 @@ struct SeerrPersonCredit: Codable, Identifiable, Sendable {
     }
 }
 
-struct SeerrRatingsCombined: Codable, Sendable {
+/// Ratings for a movie/TV title. Seerr exposes two different JSON shapes:
+/// the movie `ratingscombined` endpoint nests Rotten Tomatoes + IMDb under
+/// `rt`/`imdb`, while the TV `ratings` endpoint returns the RT fields flat at
+/// the top level. The custom decoder accepts either so both views work.
+struct SeerrRatingsCombined: Sendable {
     let criticsRating: String?     // "Certified Fresh", "Fresh", "Rotten"
     let criticsScore: Int?
     let audienceRating: String?
@@ -508,6 +512,65 @@ struct SeerrRatingsCombined: Codable, Sendable {
         tmdbRating != nil ||
         criticsScore != nil ||
         audienceScore != nil
+    }
+
+    init(
+        criticsRating: String? = nil,
+        criticsScore: Int? = nil,
+        audienceRating: String? = nil,
+        audienceScore: Int? = nil,
+        imdbRating: Double? = nil,
+        tmdbRating: Double? = nil
+    ) {
+        self.criticsRating = criticsRating
+        self.criticsScore = criticsScore
+        self.audienceRating = audienceRating
+        self.audienceScore = audienceScore
+        self.imdbRating = imdbRating
+        self.tmdbRating = tmdbRating
+    }
+}
+
+extension SeerrRatingsCombined: Decodable {
+    private struct RTBlock: Decodable {
+        let criticsRating: String?
+        let criticsScore: Int?
+        let audienceRating: String?
+        let audienceScore: Int?
+    }
+
+    private struct IMDBBlock: Decodable {
+        let criticsScore: Double?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rt, imdb
+        case criticsRating, criticsScore, audienceRating, audienceScore
+        case imdbRating, tmdbRating
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let rt = try? container.decodeIfPresent(RTBlock.self, forKey: .rt) {
+            criticsRating = rt.criticsRating
+            criticsScore = rt.criticsScore
+            audienceRating = rt.audienceRating
+            audienceScore = rt.audienceScore
+        } else {
+            criticsRating = try? container.decodeIfPresent(String.self, forKey: .criticsRating)
+            criticsScore = try? container.decodeIfPresent(Int.self, forKey: .criticsScore)
+            audienceRating = try? container.decodeIfPresent(String.self, forKey: .audienceRating)
+            audienceScore = try? container.decodeIfPresent(Int.self, forKey: .audienceScore)
+        }
+
+        if let imdb = try? container.decodeIfPresent(IMDBBlock.self, forKey: .imdb) {
+            imdbRating = imdb.criticsScore
+        } else {
+            imdbRating = try? container.decodeIfPresent(Double.self, forKey: .imdbRating)
+        }
+
+        tmdbRating = try? container.decodeIfPresent(Double.self, forKey: .tmdbRating)
     }
 }
 

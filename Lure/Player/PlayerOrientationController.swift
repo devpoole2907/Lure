@@ -8,10 +8,13 @@ enum PlayerOrientationController {
     }
 
     static func unlock() {
-        setOrientations(.allButUpsideDown)
+        setOrientations(AppDelegate.defaultOrientationMask)
     }
 
     private static func setOrientations(_ orientations: UIInterfaceOrientationMask) {
+        // Gate UIKit's permitted orientations first, otherwise the geometry update
+        // below is immediately reverted by `supportedInterfaceOrientationsFor`.
+        AppDelegate.orientationLock = orientations
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .forEach { scene in

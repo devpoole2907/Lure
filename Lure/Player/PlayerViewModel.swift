@@ -205,10 +205,9 @@ final class PlayerViewModel {
                 throw JellyfinError.noPlayableSource
             }
 
-            // Load into engine — layer is recreated here, so PlayerLayerView handles via onVideoLayerReplaced.
-            // Force HDR sources through VideoToolbox's SDR tone-map path. Without this,
-            // AVSampleBufferDisplayLayer can accept frames but present a black image on
-            // displays/routes that are not currently in HDR mode.
+            // Load into engine. The engine owns its display surface and attaches the
+            // appropriate layer to the bound AetherPlayerView; HDR presentation is now
+            // handled internally via display-criteria matching (LoadOptions defaults).
             let startPosition = resumePosition > 0 ? resumePosition : nil
             var lastLoadError: Error?
             for candidate in streamCandidates {
@@ -218,7 +217,7 @@ final class PlayerViewModel {
                 #endif
                 startStartupDiagnostics(streamURL: candidate.url, startPosition: startPosition)
                 do {
-                    try await engine.load(url: candidate.url, startPosition: startPosition, tonemapHDRToSDR: true)
+                    try await engine.load(url: candidate.url, startPosition: startPosition)
                     isDirect = candidate.isDirect
                     #if DEBUG
                     print("[PlayerViewModel] Loaded via \(candidate.label)")
@@ -319,17 +318,9 @@ final class PlayerViewModel {
     }
 
     private func displayLayerStatus() -> String {
-        guard let displayLayer = engine.videoLayer as? AVSampleBufferDisplayLayer else {
-            return "nonSampleBufferLayer frame=\(engine.videoLayer.frame)"
-        }
-        let status: String
-        switch displayLayer.status {
-        case .unknown: status = "unknown"
-        case .rendering: status = "rendering"
-        case .failed: status = "failed"
-        @unknown default: status = "?"
-        }
-        return "frame=\(displayLayer.frame) bounds=\(displayLayer.bounds) status=\(status) ready=\(displayLayer.isReadyForMoreMediaData) error=\(displayLayer.error?.localizedDescription ?? "nil") superlayer=\(displayLayer.superlayer != nil)"
+        // The engine no longer exposes its display layer; report the active backend
+        // and decoders instead, which is what we actually want to diagnose now.
+        return "backend=\(engine.playbackBackend) videoDecoder=\(engine.activeVideoDecoder ?? "nil") audioDecoder=\(engine.activeAudioDecoder ?? "nil")"
     }
     #endif
 

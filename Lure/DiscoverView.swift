@@ -3,6 +3,9 @@ import SwiftUI
 struct DiscoverView: View {
     let apiClient: SeerrAPIClient
     @State private var viewModel: DiscoverViewModel?
+    @State private var navigationPath = NavigationPath()
+    @State private var heroActiveIndex = 0
+    @State private var heroScrollTargetID: String?
     @State private var heroVerticalOffset: CGFloat = 0
     @Namespace private var navigationTransitionNamespace
     @Environment(InAppNotificationCenter.self) private var notificationCenter
@@ -10,7 +13,7 @@ struct DiscoverView: View {
     @Environment(PlayerCoordinator.self) private var playerCoordinator
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if let vm = viewModel {
                     discoverContent(vm: vm)
@@ -116,8 +119,11 @@ struct DiscoverView: View {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     DiscoverHeroCarouselView(
                         items: vm.trending,
+                        activeIndex: $heroActiveIndex,
+                        scrollTargetID: $heroScrollTargetID,
                         transitionNamespace: navigationTransitionNamespace,
-                        verticalOffset: heroVerticalOffset
+                        verticalOffset: heroVerticalOffset,
+                        isActive: navigationPath.isEmpty
                     )
                     if !vm.continueWatching.isEmpty {
                         ContinueWatchingShelf(

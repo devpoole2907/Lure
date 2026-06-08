@@ -81,6 +81,15 @@ final class AuthViewModel {
 
     // MARK: - Login
 
+    /// Configure the server (if not already validated) and then sign in, in one
+    /// step. Used by the single-screen Seerr setup sheet and invite redemption.
+    func connectAndLogin(modelContext: ModelContext) async -> Bool {
+        if !canShowCredentials {
+            guard await validateServer() else { return false }
+        }
+        return await login(modelContext: modelContext)
+    }
+
     func login(modelContext: ModelContext) async -> Bool {
         guard let client = apiClient else {
             error = "No server configured."

@@ -196,15 +196,14 @@ struct MovieDetailView: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
+        .refreshable { await vm.load() }
         .environment(\.colorScheme, .dark)
     }
 
     // MARK: - Hero
 
     private func heroSection(_ movie: SeerrMovieDetail) -> some View {
-        let badges = movieBadges(movie)
-
-        return VStack(spacing: 14) {
+        VStack(spacing: 14) {
             PosterImage(url: displayPosterURL(for: movie), width: 160, height: 240, cornerRadius: 16)
                 .shadow(color: .black.opacity(0.6), radius: 24, y: 10)
 
@@ -227,7 +226,12 @@ struct MovieDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
-                badgeSection(badges)
+                DetailBadgeSection(badges: movieBadges(movie))
+
+                if let genres = movie.genres?.compactMap(\.name), !genres.isEmpty {
+                    DetailGenreChips(genres: genres)
+                        .padding(.top, 2)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -238,34 +242,22 @@ struct MovieDetailView: View {
         initialPosterURL ?? movie.posterURL
     }
 
-    private func movieBadges(_ movie: SeerrMovieDetail) -> [(String, String, Color)] {
-        var badges: [(String, String, Color)] = []
+    /// Content rating + availability status + (when in the Jellyfin library) the
+    /// file's quality, combined into one colored, icon-prefixed badge row.
+    private func movieBadges(_ movie: SeerrMovieDetail) -> [DetailBadge] {
+        var badges: [DetailBadge] = []
         if let cert = movie.certificationText {
-            badges.append(("shield", cert, Color.white.opacity(0.8)))
+            badges.append(DetailBadge(icon: "shield", label: cert, color: .yellow))
         }
         if let status = movie.mediaInfo?.mediaStatus, status.isUserVisible {
-            badges.append((status.systemImage, status.displayName, status.color))
+            badges.append(DetailBadge(icon: status.systemImage, label: status.displayName, color: status.color))
+        }
+        if let quality = vm.mediaQuality {
+            for badge in quality.badges {
+                badges.append(DetailBadge(icon: badge.icon, label: badge.label, color: badge.tint))
+            }
         }
         return badges
-    }
-
-    @ViewBuilder
-    private func badgeSection(_ badges: [(String, String, Color)]) -> some View {
-        if !badges.isEmpty {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
-                        pill(icon: badge.0, label: badge.1, color: badge.2)
-                    }
-                }
-                VStack(spacing: 8) {
-                    ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
-                        pill(icon: badge.0, label: badge.1, color: badge.2)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
-        }
     }
 
     // MARK: - Cards Section
@@ -273,6 +265,9 @@ struct MovieDetailView: View {
     @ViewBuilder
     private func cardsSection(_ movie: SeerrMovieDetail) -> some View {
         requestCard(movie)
+
+        ratingsCard(vm.ratings, movie: movie)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
 
         if let overview = movie.overview, !overview.isEmpty {
             overviewCard(overview)
@@ -282,15 +277,6 @@ struct MovieDetailView: View {
 
         if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-        }
-
-        if let genres = movie.genres, !genres.isEmpty {
-            genreChips(genres.compactMap(\.name))
-        }
-
-        if let ratings = vm.ratings, ratings.hasAnyScore {
-            ratingsCard(ratings)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
@@ -318,15 +304,21 @@ struct MovieDetailView: View {
     private func requestCard(_ movie: SeerrMovieDetail) -> some View {
         if movie.mediaInfo?.isAvailable == true {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    Label("Available in Seerr", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.green)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
-
+                if vm.playbackAvailability.playableItemId != nil {
+                    // In the Jellyfin library — the Watch button already conveys
+                    // availability, so the separate "Available in Seerr" pill is redundant.
                     playbackButton(movie)
+                } else {
+                    HStack(spacing: 12) {
+                        Label("Available in Seerr", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
+
+                        playbackButton(movie)
+                    }
                 }
 
                 if let message = playbackAvailabilityMessage {
@@ -440,6 +432,7 @@ struct MovieDetailView: View {
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
@@ -453,6 +446,7 @@ struct MovieDetailView: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
@@ -476,10 +470,11 @@ struct MovieDetailView: View {
             Button {
                 watchMovie(movie)
             } label: {
-                Label("Watch", systemImage: "play.fill")
+                Label(vm.canResume ? "Continue Watching" : "Watch", systemImage: vm.canResume ? "play.circle.fill" : "play.fill")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
@@ -650,44 +645,55 @@ struct MovieDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Genre Chips
-
-    private func genreChips(_ genres: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(genres.prefix(8), id: \.self) { genre in
-                    Text(genre)
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .glassEffect(.regular, in: Capsule())
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-        .horizontalSoftEdges()
-        .frame(maxWidth: .infinity)
-    }
-
     // MARK: - Ratings Card
 
-    private func ratingsCard(_ ratings: SeerrRatingsCombined) -> some View {
+    @ViewBuilder
+    private func ratingsCard(_ ratings: SeerrRatingsCombined?, movie: SeerrMovieDetail) -> some View {
+        let imdbId = movie.imdbId ?? movie.externalIds?.imdbId
         let items: [(String, String)] = [
-            ratings.imdbRating.map { ("IMDb", String(format: "%.1f", $0)) },
-            ratings.tmdbRating.map { ("TMDb", String(format: "%.0f%%", $0 * 10)) },
-            ratings.criticsScore.map { ("RT", "\($0)%") },
-            ratings.audienceScore.map { ("Audience", "\($0)%") }
+            ratings?.imdbRating.map { ("IMDb", String(format: "%.1f", $0)) },
+            movie.voteAverage.flatMap { $0 > 0 ? ("TMDb", String(format: "%.0f%%", $0 * 10)) : nil },
+            ratings?.criticsScore.map { ("RT", "\($0)%") },
+            ratings?.audienceScore.map { ("Audience", "\($0)%") }
         ].compactMap { $0 }
 
-        return HStack(spacing: 0) {
+        if !items.isEmpty {
+            HStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                statCell(value: item.1, label: item.0)
+                Group {
+                    if item.0 == "IMDb", let imdbId, !imdbId.isEmpty,
+                       let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                        Link(destination: url) {
+                            VStack(spacing: 2) {
+                                Text(item.1)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                HStack(spacing: 3) {
+                                    Text(item.0)
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 8))
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        statCell(value: item.1, label: item.0)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
                 if index < items.count - 1 { cardDivider }
             }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Cast Card
@@ -723,6 +729,7 @@ struct MovieDetailView: View {
                                     .lineLimit(1)
                                     .frame(width: 70)
                             }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -756,6 +763,7 @@ struct MovieDetailView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
@@ -805,15 +813,6 @@ struct MovieDetailView: View {
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private func pill(icon: String, label: String, color: Color) -> some View {
-        Label(label, systemImage: icon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .glassEffect(.regular, in: Capsule())
     }
 
     private func rowsCard(header: String, icon: String, rows: [(String, String, String)]) -> some View {

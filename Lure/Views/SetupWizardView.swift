@@ -3,20 +3,32 @@ import SwiftData
 
 struct SetupWizardView: View {
     @Bindable var authViewModel: AuthViewModel
+    /// Called when the user redeems an invite (pasted on the intro screen).
+    /// The parent owns invite presentation so deep-link and pasted invites share
+    /// one redemption flow.
+    var onInvite: (LureInvite) -> Void
+
     @State private var welcomePath: [WelcomeStep] = []
-    
+    @State private var showInvitePaste = false
+
     var body: some View {
         NavigationStack(path: $welcomePath) {
             welcomeIntroScreen
                 .navigationDestination(for: WelcomeStep.self) { step in
                     switch step {
                     case .services:
-                        ServiceSelectionScreen(authViewModel: authViewModel, welcomePath: $welcomePath)
+                        ServiceSelectionScreen(authViewModel: authViewModel)
                     }
                 }
         }
+        .sheet(isPresented: $showInvitePaste) {
+            InvitePasteSheet { invite in
+                showInvitePaste = false
+                onInvite(invite)
+            }
+        }
     }
-    
+
     private var welcomeIntroScreen: some View {
         VStack(spacing: 32) {
             VStack(spacing: 12) {
@@ -35,40 +47,41 @@ struct SetupWizardView: View {
             }
 
             VStack(alignment: .leading, spacing: 16) {
-                featureRow(icon: "arrow.down.circle.fill", color: .blue,
-                           title: "Seerr",
-                           description: "Discover and request movies and TV shows")
-                featureRow(icon: "play.tv.fill", color: .purple,
-                           title: "Jellyfin",
-                           description: "Watch your media library directly")
+                ForEach(LureServiceIdentity.allCases, id: \.self) { service in
+                    featureRow(service)
+                }
             }
             .padding(.horizontal, 8)
 
-            NavigationLink(value: WelcomeStep.services) {
-                Text("Get Started")
-                    .frame(maxWidth: .infinity)
+            Button {
+                showInvitePaste = true
+            } label: {
+                Label("Have an invite link?", systemImage: "envelope.fill")
+                    .font(.subheadline.weight(.medium))
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .glassEffect(.regular.interactive(), in: Capsule())
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
         }
         .padding(32)
         .frame(maxWidth: 440)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .prominentBottomButton("Get Started") {
+            welcomePath.append(.services)
+        }
     }
-    
-    private func featureRow(icon: String, color: Color, title: String, description: String) -> some View {
+
+    private func featureRow(_ service: LureServiceIdentity) -> some View {
         HStack(spacing: 14) {
-            Image(systemName: icon)
+            Image(systemName: service.systemImage)
                 .font(.title2)
-                .foregroundStyle(color)
+                .foregroundStyle(service.brandColor)
                 .frame(width: 36)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(service.displayName)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                Text(description)
+                Text(service.tagline)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -76,124 +89,85 @@ struct SetupWizardView: View {
     }
 }
 
-private enum WelcomeStep: Hashable {
+enum WelcomeStep: Hashable {
     case services
 }
 
 private struct ServiceSelectionScreen: View {
     @Environment(JellyfinService.self) private var jellyfinService
     @Bindable var authViewModel: AuthViewModel
-    @Binding var welcomePath: [WelcomeStep]
     @State private var showSeerrSetup = false
     @State private var showJellyfinSetup = false
     @AppStorage("hasFinishedOnboarding") private var hasFinishedOnboarding = false
 
-    var isSeerrConfigured: Bool {
-        authViewModel.isLoggedIn
-    }
-
-    var hasJellyfinConfigured: Bool {
-        jellyfinService.hasCredentials
-    }
+    private var isSeerrConfigured: Bool { authViewModel.isLoggedIn }
+    private var isJellyfinConfigured: Bool { jellyfinService.hasCredentials }
 
     var body: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 10) {
-                Text("Choose Your Services")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 10) {
+                    Text("Choose Your Services")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
 
-                Text("Set up the services you want to use, then continue into the app.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            VStack(spacing: 12) {
-                setupRow(
-                    icon: "arrow.down.circle.fill",
-                    color: .blue,
-                    title: "Seerr",
-                    description: "Required — discover and request media",
-                    isConfigured: isSeerrConfigured
-                ) {
-                    showSeerrSetup = true
+                    Text("Set up the services you want to use, then continue into the app.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
 
-                setupRow(
-                    icon: "play.tv.fill",
-                    color: .purple,
-                    title: "Jellyfin",
-                    description: "Optional — adds in-app playback",
-                    isConfigured: hasJellyfinConfigured
-                ) {
-                    showJellyfinSetup = true
+                VStack(spacing: 12) {
+                    setupRow(
+                        .seerr,
+                        description: "Required — discover and request media",
+                        isConfigured: isSeerrConfigured
+                    ) { showSeerrSetup = true }
+
+                    setupRow(
+                        .jellyfin,
+                        description: "Optional — adds in-app playback",
+                        isConfigured: isJellyfinConfigured
+                    ) { showJellyfinSetup = true }
                 }
             }
-
-            Spacer(minLength: 0)
-
-            VStack(spacing: 10) {
-                Button("Go") {
-                    hasFinishedOnboarding = true
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!isSeerrConfigured)
-                .frame(maxWidth: .infinity)
-                .glassEffect(.regular.interactive(), in: Capsule())
-
-                Button("Back") {
-                    welcomePath.removeAll()
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
+            .padding(32)
+            .frame(maxWidth: 440)
+            .frame(maxWidth: .infinity)
         }
-        .padding(32)
-        .frame(maxWidth: 440)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Choose Services")
-#if os(iOS)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-#endif
+        #endif
+        .prominentBottomButton("Go", isDisabled: !isSeerrConfigured) {
+            hasFinishedOnboarding = true
+        }
         .sheet(isPresented: $showSeerrSetup) {
-            LoginView(authViewModel: authViewModel, isModal: true) {
-                showSeerrSetup = false
-            }
+            SeerrSetupSheet(authViewModel: authViewModel)
         }
         .sheet(isPresented: $showJellyfinSetup) {
-            NavigationStack {
-                JellyfinSetupView()
-                    .environment(jellyfinService)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") {
-                                showJellyfinSetup = false
-                            }
-                        }
-                    }
-            }
+            JellyfinSetupSheet()
+                .environment(jellyfinService)
         }
     }
 
     private func setupRow(
-        icon: String,
-        color: Color,
-        title: String,
+        _ service: LureServiceIdentity,
         description: String,
         isConfigured: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: icon)
+                Image(systemName: service.systemImage)
                     .font(.title2)
-                    .foregroundStyle(color)
+                    .foregroundStyle(service.brandColor)
                     .frame(width: 36)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text(service.displayName)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
@@ -210,8 +184,71 @@ private struct ServiceSelectionScreen: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(Rectangle())
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Paste box for an invite link sent over text/email. Accepts a `lure://invite`
+/// (or legacy `lure://connect`) URL and hands a parsed `LureInvite` back.
+private struct InvitePasteSheet: View {
+    var onInvite: (LureInvite) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var error: String?
+
+    var body: some View {
+        AppSheetShell(
+            title: "Enter Invite",
+            detents: [.medium, .large],
+            dragIndicator: .visible
+        ) {
+            Form {
+                Section {
+                    Text("Paste the invite link you were sent. It sets up your servers automatically.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Invite Link") {
+                    TextField("lure://invite?…", text: $text, axis: .vertical)
+                        #if os(iOS)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .autocorrectionDisabled()
+                        .lineLimit(1...4)
+                }
+
+                if let error {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.footnote)
+                    }
+                }
+
+                Section {
+                    Button {
+                        if let invite = LureInvite.parse(pasted: text) {
+                            dismiss()
+                            onInvite(invite)
+                        } else {
+                            error = "That doesn't look like a valid invite link."
+                        }
+                    } label: {
+                        Text("Continue")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            #if os(iOS)
+            .listStyle(.insetGrouped)
+            #endif
+        }
     }
 }

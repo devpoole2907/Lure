@@ -192,6 +192,7 @@ struct TVDetailView: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
+        .refreshable { await vm.load() }
         .environment(\.colorScheme, .dark)
     }
 

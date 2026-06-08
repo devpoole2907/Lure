@@ -54,6 +54,7 @@ struct CastPersonSheet: View {
     let apiClient: SeerrAPIClient
 
     @State private var vm: CastPersonSheetViewModel
+    @State private var libraryIDs: Set<String> = []
 
     init(personId: Int?, fallbackName: String?, fallbackProfileURL: URL?, apiClient: SeerrAPIClient) {
         self.apiClient = apiClient
@@ -105,8 +106,14 @@ struct CastPersonSheet: View {
                         }
                     }
 
-                    if !vm.credits.isEmpty {
-                        MediaSliderView(title: nil, items: vm.credits, apiClient: apiClient)
+                    let inLibrary = inLibraryCredits
+                    let other = otherCredits
+
+                    if !inLibrary.isEmpty {
+                        MediaSliderView(title: "In Your Library", icon: "checkmark.circle", items: inLibrary, apiClient: apiClient)
+                    }
+                    if !other.isEmpty {
+                        MediaSliderView(title: inLibrary.isEmpty ? nil : "More", items: other, apiClient: apiClient)
                     }
                 }
                 .padding(16)
@@ -136,7 +143,20 @@ struct CastPersonSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
 #endif
-        .task { await vm.load() }
+        .task {
+            await vm.load()
+            libraryIDs = await jellyfinService.libraryMediaIDs()
+        }
+    }
+
+    private var inLibraryCredits: [SeerrMediaItem] {
+        guard !libraryIDs.isEmpty else { return [] }
+        return vm.credits.filter { libraryIDs.contains($0.id) }
+    }
+
+    private var otherCredits: [SeerrMediaItem] {
+        guard !libraryIDs.isEmpty else { return vm.credits }
+        return vm.credits.filter { !libraryIDs.contains($0.id) }
     }
 
     @ViewBuilder
