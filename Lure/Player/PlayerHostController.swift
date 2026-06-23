@@ -22,14 +22,16 @@ import AetherEngine
 /// subtitle-track selection — are surfaced by `PlayerView` as native SwiftUI
 /// `Menu`s overlaid on the player.
 @MainActor
-final class PlayerHostController: AVPlayerViewController {
+final class PlayerHostController: AVPlayerViewController, AVPlayerViewControllerDelegate {
     private let vm: PlayerViewModel
+    private let onClose: () -> Void
     private let aetherView = AetherPlayerView()
     private var aetherViewMounted = false
     private var subscriptions: Set<AnyCancellable> = []
 
-    init(vm: PlayerViewModel) {
+    init(vm: PlayerViewModel, onClose: @escaping () -> Void) {
         self.vm = vm
+        self.onClose = onClose
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -40,6 +42,7 @@ final class PlayerHostController: AVPlayerViewController {
         view.backgroundColor = .black
         videoGravity = .resizeAspect
         allowsPictureInPicturePlayback = true
+        delegate = self
 
         // The engine republishes its native AVPlayer on every internal reload
         // (an audio-track switch rebuilds the native host), so re-bind each time.
@@ -92,6 +95,27 @@ final class PlayerHostController: AVPlayerViewController {
         aetherView.removeFromSuperview()
         aetherViewMounted = false
     }
+
+    // MARK: - AVPlayerViewControllerDelegate
+
+    /// AVKit's own close control collapses the full-screen player; route it to the
+    /// host so the engine stops and the cover dismisses (no duplicate close button).
+    ///
+    /// AVKit also emits this during initial setup — before playback starts — as it
+    /// settles its presentation. Honoring that spurious fire tore the player down
+    /// before it ever played, so we ignore any close until real playback is under
+    /// way (currentTime past the first second).
+    func playerViewController(
+        _ playerViewController: AVPlayerViewController,
+        willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        guard vm.currentTime > 1.0 else { return }
+        let close = onClose
+        coordinator.animate(alongsideTransition: nil) { context in
+            guard !context.isCancelled else { return }
+            close()
+        }
+    }
 }
 
 extension TrackInfo {
@@ -125,9 +149,10 @@ extension TrackInfo {
 /// surrounding `PlayerView`; this view only owns the native presentation surface.
 struct AVPlayerHostView: UIViewControllerRepresentable {
     let vm: PlayerViewModel
+    let onClose: () -> Void
 
     func makeUIViewController(context: Context) -> PlayerHostController {
-        PlayerHostController(vm: vm)
+        PlayerHostController(vm: vm, onClose: onClose)
     }
 
     func updateUIViewController(_ controller: PlayerHostController, context: Context) {}

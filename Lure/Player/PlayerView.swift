@@ -60,8 +60,10 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
 
             #if canImport(UIKit)
-            AVPlayerHostView(vm: vm)
-                .ignoresSafeArea()
+            AVPlayerHostView(vm: vm) {
+                Task { await stop() }
+            }
+            .ignoresSafeArea()
 
             SubtitleOverlay(vm: vm)
                 .ignoresSafeArea()
@@ -108,7 +110,7 @@ struct PlayerView: View {
             .font(.title3.weight(.semibold))
             .foregroundStyle(.white)
             .frame(width: 44, height: 44)
-            .background(.ultraThinMaterial, in: Circle())
+            .glassEffect(.regular.interactive(), in: Circle())
     }
 
     /// Slim custom strip over AVKit's native chrome on the native backend. AVKit
@@ -120,23 +122,6 @@ struct PlayerView: View {
     @ViewBuilder
     private var nativeAuxOverlay: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button {
-                    Task { await stop() }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .accessibilityLabel("Close player")
-
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-
             Spacer()
 
             if hasTrackChoices {
