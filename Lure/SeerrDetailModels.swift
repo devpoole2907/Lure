@@ -34,6 +34,8 @@ struct SeerrMovieDetail: Codable, Identifiable, Sendable {
 
     var displayTitle: String { title ?? originalTitle ?? "Unknown" }
     var posterURL: URL? { ImageURL.poster(posterPath, size: .large) }
+    /// Full-resolution poster for the full-bleed detail hero (w500 looks soft there).
+    var heroPosterURL: URL? { ImageURL.poster(posterPath, size: .original) }
     var backdropURL: URL? { ImageURL.backdrop(backdropPath) }
 
     var year: String? {
@@ -169,6 +171,8 @@ struct SeerrTVDetail: Codable, Identifiable, Sendable {
 
     var displayTitle: String { name ?? originalName ?? "Unknown" }
     var posterURL: URL? { ImageURL.poster(posterPath, size: .large) }
+    /// Full-resolution poster for the full-bleed detail hero (w500 looks soft there).
+    var heroPosterURL: URL? { ImageURL.poster(posterPath, size: .original) }
     var backdropURL: URL? { ImageURL.backdrop(backdropPath) }
 
     var year: String? {

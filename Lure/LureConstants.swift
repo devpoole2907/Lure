@@ -8,6 +8,8 @@ enum LureConstants {
         static let posterSmall = imageBaseURL + "w185"
         static let posterMedium = imageBaseURL + "w342"
         static let posterLarge = imageBaseURL + "w500"
+        static let posterXLarge = imageBaseURL + "w780"
+        static let posterOriginal = imageBaseURL + "original"
         static let backdropSmall = imageBaseURL + "w300"
         static let backdropLarge = imageBaseURL + "w1280"
         static let profileMedium = imageBaseURL + "w185"

@@ -13,6 +13,7 @@ struct MovieDetailView: View {
     @State private var showReportSheet = false
     @State private var selectedCastMember: SeerrCastMember?
     @State private var isModeratingRequest = false
+    @State private var heroVerticalOffset: CGFloat = 0
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(PlayerCoordinator.self) private var playerCoordinator
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
@@ -187,14 +188,26 @@ struct MovieDetailView: View {
 
     private func scrollContent(_ movie: SeerrMovieDetail) -> some View {
         ScrollView {
-            VStack(alignment: .center, spacing: 20) {
+            LazyVStack(alignment: .center, spacing: 20) {
                 heroSection(movie)
-                cardsSection(movie)
+
+                VStack(alignment: .center, spacing: 20) {
+                    cardsSection(movie)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 44)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 44)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity)
+        }
+#if os(iOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
+        .ignoresSafeArea(edges: .top)
+        .onScrollGeometryChange(for: CGFloat.self) {
+            $0.contentOffset.y + $0.contentInsets.top
+        } action: { _, newValue in
+            heroVerticalOffset = max(-newValue, 0)
         }
         .refreshable { await vm.load() }
         .environment(\.colorScheme, .dark)
@@ -203,43 +216,47 @@ struct MovieDetailView: View {
     // MARK: - Hero
 
     private func heroSection(_ movie: SeerrMovieDetail) -> some View {
-        VStack(spacing: 14) {
-            PosterImage(url: displayPosterURL(for: movie), width: 160, height: 240, cornerRadius: 16)
-                .shadow(color: .black.opacity(0.6), radius: 24, y: 10)
+        DetailPosterHeroView(
+            title: movie.displayTitle,
+            posterURL: heroPosterURL(for: movie),
+            mediaTypeLabel: "Movie",
+            year: movie.year,
+            rating: movie.voteAverage,
+            badges: movieBadges(movie),
+            genres: movie.genres?.compactMap(\.name) ?? [],
+            verticalOffset: heroVerticalOffset,
+            primaryAction: heroAction(for: movie)
+        )
+    }
 
-            VStack(spacing: 6) {
-                Text(movie.displayTitle)
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 4) {
-                    if let year = movie.year { Text(year) }
-                    if let runtime = movie.runtime, runtime > 0 {
-                        if movie.year != nil { Text("·") }
-                        Text("\(runtime)m")
-                    }
-                }
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.7))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-                DetailBadgeSection(badges: movieBadges(movie))
-
-                if let genres = movie.genres?.compactMap(\.name), !genres.isEmpty {
-                    DetailGenreChips(genres: genres)
-                        .padding(.top, 2)
-                }
+    private func heroAction(for movie: SeerrMovieDetail) -> DetailPosterHeroAction {
+        if movie.mediaInfo?.isAvailable == true {
+            return DetailPosterHeroAction(
+                title: vm.canResume ? "Continue Watching" : "Play",
+                systemImage: vm.canResume ? "play.circle.fill" : "play.fill",
+                isEnabled: vm.playbackAvailability.playableItemId != nil
+            ) {
+                watchMovie(movie)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 16)
+
+        return DetailPosterHeroAction(
+            title: "Request",
+            systemImage: requestButtonIcon(for: movie),
+            isEnabled: !vm.isRequesting && !isModeratingRequest
+        ) {
+            showRequestOptions = true
+        }
     }
 
     private func displayPosterURL(for movie: SeerrMovieDetail) -> URL? {
         initialPosterURL ?? movie.posterURL
+    }
+
+    /// The hero is full-bleed, so prefer the original-resolution poster from the
+    /// loaded movie; only fall back to the low-res list thumbnail before it lands.
+    private func heroPosterURL(for movie: SeerrMovieDetail) -> URL? {
+        movie.heroPosterURL ?? initialPosterURL
     }
 
     /// Content rating + availability status + (when in the Jellyfin library) the
@@ -300,67 +317,22 @@ struct MovieDetailView: View {
 
     // MARK: - Request Card
 
+    /// Play / Request now live in the hero, so this card only surfaces what the hero
+    /// can't: Jellyfin availability diagnostics, failed-request recovery, and the
+    /// moderator-only approve / decline / open-in-Trawl actions.
     @ViewBuilder
     private func requestCard(_ movie: SeerrMovieDetail) -> some View {
         if movie.mediaInfo?.isAvailable == true {
-            VStack(alignment: .leading, spacing: 10) {
-                if vm.playbackAvailability.playableItemId != nil {
-                    // In the Jellyfin library — the Watch button already conveys
-                    // availability, so the separate "Available in Seerr" pill is redundant.
-                    playbackButton(movie)
-                } else {
-                    HStack(spacing: 12) {
-                        availabilityLabel("Available in Seerr", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.green)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
-
-                        playbackButton(movie)
-                    }
-                }
-
-                if let message = playbackAvailabilityMessage {
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle")
-                        Text(message)
-                        Spacer()
-                        Button("Refresh") {
-                            Task { await vm.refreshPlaybackAvailability() }
-                        }
-                        .font(.caption.weight(.semibold))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+            if let message = playbackAvailabilityMessage {
+                availabilityDiagnostic(message)
             }
         } else if let failedRequest = movie.mediaInfo?.mostRecentFailedRequest {
             failedRequestCard(failedRequest, mediaTitle: movie.displayTitle)
-        } else {
+        } else if canModerateRequests {
             let pendingRequest = pendingRequest(for: movie)
 
             HStack(spacing: 12) {
-                Button {
-                    showRequestOptions = true
-                } label: {
-                    Group {
-                        if vm.isRequesting {
-                            ProgressView()
-                        } else {
-                            Label(movie.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: movie))
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-                .disabled(vm.isRequesting || isModeratingRequest)
-
-                if let pendingRequest, canModerateRequests {
+                if let pendingRequest {
                     moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
                         await moderateRequest(
                             action: { try await apiClient.approveRequest(id: pendingRequest.id) },
@@ -377,27 +349,42 @@ struct MovieDetailView: View {
                         )
                     }
                 }
-                
-                if canModerateRequests {
-                    Button {
-                        if let url = URL(string: "trawl://seerr-issue") {
-                            #if os(iOS)
-                            UIApplication.shared.open(url)
-                            #endif
-                        }
-                    } label: {
-                        Label("Open in Trawl", systemImage: "arrow.up.forward.app")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .contentShape(Rectangle())
+
+                Button {
+                    if let url = URL(string: "trawl://seerr-issue") {
+                        #if os(iOS)
+                        UIApplication.shared.open(url)
+                        #endif
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.purple)
-                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+                } label: {
+                    Label("Open in Trawl", systemImage: "arrow.up.forward.app")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.purple)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
             }
         }
+    }
+
+    private func availabilityDiagnostic(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle")
+            Text(message)
+            Spacer()
+            Button("Refresh") {
+                Task { await vm.refreshPlaybackAvailability() }
+            }
+            .font(.caption.weight(.semibold))
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.tint(Color.orange.opacity(0.16)), in: RoundedRectangle(cornerRadius: 16))
     }
 
     @ViewBuilder
@@ -455,47 +442,6 @@ struct MovieDetailView: View {
         }
         .padding(14)
         .glassEffect(.regular.tint(Color.red.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    @ViewBuilder
-    private func playbackButton(_ movie: SeerrMovieDetail) -> some View {
-        switch vm.playbackAvailability {
-        case .checking:
-            availabilityLabel("Checking", systemImage: "hourglass")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .glassEffect(.regular.tint(Color.gray.opacity(0.16)), in: RoundedRectangle(cornerRadius: 16))
-        case .playable:
-            Button {
-                watchMovie(movie)
-            } label: {
-                availabilityLabel(
-                    vm.canResume ? "Continue Watching" : "Watch",
-                    systemImage: vm.canResume ? "play.circle.fill" : "play.fill"
-                )
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-        default:
-            availabilityLabel("Not in Jellyfin", systemImage: "exclamationmark.triangle")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .glassEffect(.regular.tint(Color.orange.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
-        }
-    }
-
-    private func availabilityLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-            Text(title)
-        }
     }
 
     private var playbackAvailabilityMessage: String? {

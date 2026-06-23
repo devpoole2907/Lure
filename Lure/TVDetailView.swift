@@ -137,6 +137,17 @@ struct TVDetailView: View {
         }
     }
 
+    // MARK: - Watch
+
+    private func playEpisodeFromShelf(_ episode: JellyfinItem?) {
+        guard let episode, episode.id != nil else {
+            showEpisodePicker = true
+            return
+        }
+
+        playerCoordinator.presentResume(episode)
+    }
+
     // MARK: - Background
 
     @ViewBuilder
@@ -212,15 +223,47 @@ struct TVDetailView: View {
     // MARK: - Hero
 
     private func heroSection(_ show: SeerrTVDetail) -> some View {
-        TVDetailPosterHeroView(
-            show: show,
-            posterURL: displayPosterURL(for: show),
-            verticalOffset: heroVerticalOffset
+        DetailPosterHeroView(
+            title: show.displayTitle,
+            posterURL: heroPosterURL(for: show),
+            mediaTypeLabel: "TV Show",
+            year: show.year,
+            rating: show.voteAverage,
+            badges: [],
+            genres: [],
+            verticalOffset: heroVerticalOffset,
+            primaryAction: heroAction(for: show)
         )
+    }
+
+    private func heroAction(for show: SeerrTVDetail) -> DetailPosterHeroAction {
+        if show.mediaInfo?.isAvailable == true {
+            return DetailPosterHeroAction(
+                title: "Play",
+                systemImage: "play.fill",
+                isEnabled: vm.playbackAvailability.playableItemId != nil
+            ) {
+                showEpisodePicker = true
+            }
+        }
+
+        return DetailPosterHeroAction(
+            title: "Request",
+            systemImage: requestButtonIcon(for: show),
+            isEnabled: !vm.isRequesting && !isModeratingRequest
+        ) {
+            showRequestSheet = true
+        }
     }
 
     private func displayPosterURL(for show: SeerrTVDetail) -> URL? {
         initialPosterURL ?? show.posterURL
+    }
+
+    /// The hero is full-bleed, so prefer the original-resolution poster from the
+    /// loaded show; only fall back to the low-res list thumbnail before it lands.
+    private func heroPosterURL(for show: SeerrTVDetail) -> URL? {
+        show.heroPosterURL ?? initialPosterURL
     }
 
     // MARK: - Cards Section
@@ -233,7 +276,9 @@ struct TVDetailView: View {
             TVSeasonEpisodeShelf(
                 show: show,
                 jellyfinClient: vm.jellyfinClient,
-                jellyfinSeriesId: vm.playbackAvailability.playableItemId
+                jellyfinSeriesId: vm.playbackAvailability.playableItemId,
+                onPlayEpisode: playEpisodeFromShelf,
+                onOpenEpisodePicker: { showEpisodePicker = true }
             )
         }
 
@@ -278,53 +323,22 @@ struct TVDetailView: View {
 
     // MARK: - Request Card
 
+    /// Play / Request now live in the hero, so this card only surfaces what the hero
+    /// can't: Jellyfin availability diagnostics, failed-request recovery, and the
+    /// moderator-only approve / decline / open-in-Trawl actions.
     @ViewBuilder
     private func requestCard(_ show: SeerrTVDetail) -> some View {
         if show.mediaInfo?.isAvailable == true {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    availabilityLabel("Available in Seerr", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.green)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .glassEffect(.regular.tint(Color.green.opacity(0.2)), in: RoundedRectangle(cornerRadius: 16))
-
-                    playbackButton
-                }
-
-                if let message = playbackAvailabilityMessage {
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle")
-                        Text(message)
-                        Spacer()
-                        Button("Refresh") {
-                            Task { await vm.refreshPlaybackAvailability() }
-                        }
-                        .font(.caption.weight(.semibold))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+            if let message = playbackAvailabilityMessage {
+                availabilityDiagnostic(message)
             }
         } else if let failedRequest = show.mediaInfo?.mostRecentFailedRequest {
             failedRequestCard(failedRequest, mediaTitle: show.displayTitle)
-        } else {
+        } else if canModerateRequests {
             let pendingRequest = pendingRequest(for: show)
 
             HStack(spacing: 12) {
-                Button { showRequestSheet = true } label: {
-                    Label(show.mediaInfo?.requestStatusLabel ?? "Request", systemImage: requestButtonIcon(for: show))
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-                .disabled(isModeratingRequest)
-
-                if let pendingRequest, canModerateRequests {
+                if let pendingRequest {
                     moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
                         await moderateRequest(
                             action: { try await apiClient.approveRequest(id: pendingRequest.id) },
@@ -341,27 +355,42 @@ struct TVDetailView: View {
                         )
                     }
                 }
-                
-                if canModerateRequests {
-                    Button {
-                        if let url = URL(string: "trawl://seerr-issue") {
-                            #if os(iOS)
-                            UIApplication.shared.open(url)
-                            #endif
-                        }
-                    } label: {
-                        Label("Open in Trawl", systemImage: "arrow.up.forward.app")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .contentShape(Rectangle())
+
+                Button {
+                    if let url = URL(string: "trawl://seerr-issue") {
+                        #if os(iOS)
+                        UIApplication.shared.open(url)
+                        #endif
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.purple)
-                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+                } label: {
+                    Label("Open in Trawl", systemImage: "arrow.up.forward.app")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.purple)
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
             }
         }
+    }
+
+    private func availabilityDiagnostic(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle")
+            Text(message)
+            Spacer()
+            Button("Refresh") {
+                Task { await vm.refreshPlaybackAvailability() }
+            }
+            .font(.caption.weight(.semibold))
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.tint(Color.orange.opacity(0.16)), in: RoundedRectangle(cornerRadius: 16))
     }
 
     @ViewBuilder
@@ -417,43 +446,6 @@ struct TVDetailView: View {
         }
         .padding(14)
         .glassEffect(.regular.tint(Color.red.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    @ViewBuilder
-    private var playbackButton: some View {
-        switch vm.playbackAvailability {
-        case .checking:
-            availabilityLabel("Checking", systemImage: "hourglass")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .glassEffect(.regular.tint(Color.gray.opacity(0.16)), in: RoundedRectangle(cornerRadius: 16))
-        case .playable:
-            Button {
-                showEpisodePicker = true
-            } label: {
-                availabilityLabel("Watch", systemImage: "play.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-        default:
-            availabilityLabel("Not in Jellyfin", systemImage: "exclamationmark.triangle")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .glassEffect(.regular.tint(Color.orange.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
-        }
-    }
-
-    private func availabilityLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: systemImage)
-            Text(title)
-        }
     }
 
     private var playbackAvailabilityMessage: String? {

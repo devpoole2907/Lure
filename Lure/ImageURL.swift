@@ -17,13 +17,15 @@ enum ImageURL {
     }
 
     enum PosterSize {
-        case small, medium, large
+        case small, medium, large, xlarge, original
 
         var baseURL: String {
             switch self {
             case .small: LureConstants.TMDB.posterSmall
             case .medium: LureConstants.TMDB.posterMedium
             case .large: LureConstants.TMDB.posterLarge
+            case .xlarge: LureConstants.TMDB.posterXLarge
+            case .original: LureConstants.TMDB.posterOriginal
             }
         }
     }

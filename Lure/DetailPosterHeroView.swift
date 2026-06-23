@@ -1,9 +1,15 @@
 import SwiftUI
 
-struct TVDetailPosterHeroView: View {
-    let show: SeerrTVDetail
+struct DetailPosterHeroView: View {
+    let title: String
     let posterURL: URL?
-    var verticalOffset: CGFloat = 0
+    let mediaTypeLabel: String
+    let year: String?
+    let rating: Double?
+    let badges: [DetailBadge]
+    let genres: [String]
+    let verticalOffset: CGFloat
+    let primaryAction: DetailPosterHeroAction
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -15,12 +21,15 @@ struct TVDetailPosterHeroView: View {
                 heroImage
                     .frame(width: size.width, height: size.height)
                     .clipped()
+                    .accessibilityHidden(true)
 
                 LinearGradient(
-                    colors: [
-                        .clear,
-                        .black.opacity(0.3),
-                        .black.opacity(0.86)
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black.opacity(0.20), location: 0.45),
+                        .init(color: .black.opacity(0.65), location: 0.72),
+                        .init(color: .black.opacity(0.92), location: 0.88),
+                        .init(color: .black, location: 1.0)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -33,8 +42,6 @@ struct TVDetailPosterHeroView: View {
         }
         .frame(height: carouselHeight + verticalOffset)
         .offset(y: -verticalOffset)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
     }
 
     private var heroImage: some View {
@@ -55,22 +62,38 @@ struct TVDetailPosterHeroView: View {
 
     private var bottomContent: some View {
         VStack(spacing: 10) {
-            Text(show.displayTitle)
+            Text(title)
                 .font(.largeTitle.weight(.black))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
-                .minimumScaleFactor(0.68)
+                .minimumScaleFactor(0.7)
 
             metadataRow
 
-            Label("Details", systemImage: "info.circle.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.black)
-                .padding(.horizontal, 22)
-                .frame(height: 42)
-                .background(.white, in: Capsule())
-                .padding(.top, 4)
+            Button(action: primaryAction.action) {
+                Label(primaryAction.title, systemImage: primaryAction.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 22)
+                    .frame(height: 42)
+                    .background(.white, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!primaryAction.isEnabled)
+            .opacity(primaryAction.isEnabled ? 1 : 0.55)
+            .padding(.top, 4)
+
+            if !badges.isEmpty || !genres.isEmpty {
+                VStack(spacing: 8) {
+                    DetailBadgeSection(badges: badges)
+
+                    if !genres.isEmpty {
+                        DetailGenreChips(genres: genres)
+                    }
+                }
+                .padding(.top, 2)
+            }
         }
         .foregroundStyle(.white)
         .frame(maxWidth: 520)
@@ -81,12 +104,12 @@ struct TVDetailPosterHeroView: View {
     @ViewBuilder
     private var metadataRow: some View {
         HStack(spacing: 8) {
-            Text("TV Show")
-            if let year = show.year {
+            Text(mediaTypeLabel)
+            if let year {
                 Text("·")
                 Text(year)
             }
-            if let rating = show.voteAverage, rating > 0 {
+            if let rating, rating > 0 {
                 Text("·")
                 Label(String(format: "%.1f", rating), systemImage: "star.fill")
                     .labelStyle(.titleAndIcon)
@@ -96,14 +119,7 @@ struct TVDetailPosterHeroView: View {
         .foregroundStyle(.white.opacity(0.82))
         .lineLimit(1)
         .minimumScaleFactor(0.75)
-    }
-
-    private var accessibilityLabel: String {
-        var components = [show.displayTitle, "TV Show"]
-        if let year = show.year {
-            components.append(year)
-        }
-        return components.joined(separator: ", ")
+        .accessibilityElement(children: .combine)
     }
 
     private var carouselHeight: CGFloat {
@@ -112,10 +128,17 @@ struct TVDetailPosterHeroView: View {
 }
 
 #if DEBUG
-#Preview("TV Poster Hero") {
-    TVDetailPosterHeroView(
-        show: .previewShow,
-        posterURL: nil
+#Preview("Detail Poster Hero") {
+    DetailPosterHeroView(
+        title: SeerrTVDetail.previewShow.displayTitle,
+        posterURL: nil,
+        mediaTypeLabel: "TV Show",
+        year: SeerrTVDetail.previewShow.year,
+        rating: SeerrTVDetail.previewShow.voteAverage,
+        badges: [],
+        genres: [],
+        verticalOffset: 0,
+        primaryAction: DetailPosterHeroAction(title: "Play", systemImage: "play.fill") {}
     )
     .background(Color.black)
 }

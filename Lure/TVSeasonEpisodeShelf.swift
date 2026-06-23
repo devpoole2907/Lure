@@ -4,6 +4,8 @@ struct TVSeasonEpisodeShelf: View {
     let show: SeerrTVDetail
     let jellyfinClient: JellyfinAPIClient?
     let jellyfinSeriesId: String?
+    let onPlayEpisode: (JellyfinItem?) -> Void
+    let onOpenEpisodePicker: () -> Void
 
     @State private var selectedSeasonNumber: Int
     @State private var jellyfinEpisodesBySeasonNumber: [Int: [JellyfinItem]] = [:]
@@ -11,11 +13,15 @@ struct TVSeasonEpisodeShelf: View {
     init(
         show: SeerrTVDetail,
         jellyfinClient: JellyfinAPIClient? = nil,
-        jellyfinSeriesId: String? = nil
+        jellyfinSeriesId: String? = nil,
+        onPlayEpisode: @escaping (JellyfinItem?) -> Void = { _ in },
+        onOpenEpisodePicker: @escaping () -> Void = {}
     ) {
         self.show = show
         self.jellyfinClient = jellyfinClient
         self.jellyfinSeriesId = jellyfinSeriesId
+        self.onPlayEpisode = onPlayEpisode
+        self.onOpenEpisodePicker = onOpenEpisodePicker
         self._selectedSeasonNumber = State(initialValue: show.requestableSeasons.first?.seasonNumber ?? 1)
     }
 
@@ -50,7 +56,9 @@ struct TVSeasonEpisodeShelf: View {
                                 episodeNumber: episodeNumber,
                                 status: status(for: episodeNumber),
                                 jellyfinClient: jellyfinClient,
-                                jellyfinEpisode: jellyfinEpisode(for: episodeNumber)
+                                jellyfinEpisode: jellyfinEpisode(for: episodeNumber),
+                                onPlay: onPlayEpisode,
+                                onOpenEpisodePicker: onOpenEpisodePicker
                             )
                         }
                     }
@@ -166,6 +174,8 @@ private struct TVSeasonEpisodeCard: View {
     let status: LureConstants.MediaStatus?
     let jellyfinClient: JellyfinAPIClient?
     let jellyfinEpisode: JellyfinItem?
+    let onPlay: (JellyfinItem?) -> Void
+    let onOpenEpisodePicker: () -> Void
 
     private static let cardWidth: CGFloat = 320
     private static let cardHeight: CGFloat = 300
@@ -181,6 +191,24 @@ private struct TVSeasonEpisodeCard: View {
     }
 
     var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Button {
+                onPlay(jellyfinEpisode)
+            } label: {
+                cardVisual
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityHint("Opens the player for this episode.")
+
+            episodeMenu
+                .padding(.trailing, 10)
+                .padding(.bottom, 10)
+        }
+        .frame(width: Self.cardWidth, height: Self.cardHeight)
+    }
+
+    private var cardVisual: some View {
         ZStack(alignment: .bottomLeading) {
             PosterImage(
                 url: imageURL,
@@ -204,15 +232,12 @@ private struct TVSeasonEpisodeCard: View {
 
             cardText
         }
-        .frame(width: Self.cardWidth)
-        .frame(height: Self.cardHeight)
+        .frame(width: Self.cardWidth, height: Self.cardHeight)
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius)
                 .strokeBorder(.white.opacity(0.16), lineWidth: 0.7)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
     }
 
     private var cardText: some View {
@@ -248,16 +273,34 @@ private struct TVSeasonEpisodeCard: View {
                 }
 
                 Spacer(minLength: 16)
-
-                Image(systemName: "ellipsis")
-                    .font(.title3.weight(.bold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.white.opacity(0.58))
-                    .accessibilityHidden(true)
             }
             .padding(.top, 2)
         }
         .padding(22)
+        .padding(.trailing, 34)
+    }
+
+    private var episodeMenu: some View {
+        Menu {
+            if let jellyfinEpisode {
+                Button("Play Episode", systemImage: "play.fill") {
+                    onPlay(jellyfinEpisode)
+                }
+            }
+
+            Button("Choose Episode", systemImage: "list.bullet") {
+                onOpenEpisodePicker()
+            }
+        } label: {
+            Label("Episode Options", systemImage: "ellipsis")
+                .labelStyle(.iconOnly)
+                .font(.title3.weight(.bold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white.opacity(0.62))
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
     }
 
     private var episodeTitle: String {
