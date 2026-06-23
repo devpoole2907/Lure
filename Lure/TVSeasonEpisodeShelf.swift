@@ -63,7 +63,6 @@ struct TVSeasonEpisodeShelf: View {
                         }
                     }
                 }
-                .horizontalSoftEdges()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .onAppear(perform: validateSelection)
@@ -97,6 +96,7 @@ struct TVSeasonEpisodeShelf: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .pickerStyle(.menu)
+        .tint(.primary)
     }
 
     private func episodeNumbers(for season: SeerrTVSeason) -> [Int] {
@@ -182,9 +182,11 @@ private struct TVSeasonEpisodeCard: View {
     private static let cornerRadius: CGFloat = 24
 
     private var imageURL: URL? {
+        // An episode's still is its Primary image. The Thumb endpoint always builds a
+        // valid URL but, for episodes that have no Thumb, Jellyfin serves the *series*
+        // artwork instead — which is why every card was showing the show poster.
         if let jellyfinClient, let itemID = jellyfinEpisode?.id {
-            return jellyfinClient.thumbImageURL(itemId: itemID, width: 500)
-                ?? jellyfinClient.primaryImageURL(itemId: itemID, width: 500)
+            return jellyfinClient.primaryImageURL(itemId: itemID, width: 500)
         }
 
         return season.posterURL ?? show.posterURL

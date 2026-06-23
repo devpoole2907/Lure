@@ -14,6 +14,7 @@ struct MovieDetailView: View {
     @State private var selectedCastMember: SeerrCastMember?
     @State private var isModeratingRequest = false
     @State private var heroVerticalOffset: CGFloat = 0
+    @State private var showNavTitle = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(PlayerCoordinator.self) private var playerCoordinator
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
@@ -53,7 +54,15 @@ struct MovieDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.movie?.id)
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
-        .navigationTitle(vm.movie?.displayTitle ?? initialTitle ?? "Movie")
+        .navigationTitle(showNavTitle ? (vm.movie?.displayTitle ?? initialTitle ?? "Movie") : "")
+        .onPreferenceChange(HeroTitleBottomKey.self) { maxY in
+            // Ignore the default sentinel emitted when the hero is recycled off-screen
+            // (LazyVStack) so the title stays put once we've scrolled well past it.
+            guard maxY != .greatestFiniteMagnitude else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showNavTitle = maxY < heroTitleRevealThreshold
+            }
+        }
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -258,6 +267,11 @@ struct MovieDetailView: View {
     private func heroPosterURL(for movie: SeerrMovieDetail) -> URL? {
         movie.heroPosterURL ?? initialPosterURL
     }
+
+    /// Global-Y below which the hero title is considered tucked behind the status +
+    /// inline nav bar (≈ Dynamic Island height + bar); a few px off on other devices
+    /// is imperceptible.
+    private var heroTitleRevealThreshold: CGFloat { 100 }
 
     /// Content rating + availability status + (when in the Jellyfin library) the
     /// file's quality, combined into one colored, icon-prefixed badge row.

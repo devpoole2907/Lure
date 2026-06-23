@@ -15,6 +15,7 @@ struct TVDetailView: View {
     @State private var isModeratingRequest = false
     @State private var showEpisodePicker = false
     @State private var heroVerticalOffset: CGFloat = 0
+    @State private var showNavTitle = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(PlayerCoordinator.self) private var playerCoordinator
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
@@ -54,7 +55,15 @@ struct TVDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.show?.id)
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
-        .navigationTitle(vm.show?.displayTitle ?? initialTitle ?? "TV Show")
+        .navigationTitle(showNavTitle ? (vm.show?.displayTitle ?? initialTitle ?? "TV Show") : "")
+        .onPreferenceChange(HeroTitleBottomKey.self) { maxY in
+            // Ignore the default sentinel emitted when the hero is recycled off-screen
+            // (LazyVStack) so the title stays put once we've scrolled well past it.
+            guard maxY != .greatestFiniteMagnitude else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showNavTitle = maxY < heroTitleRevealThreshold
+            }
+        }
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -265,6 +274,11 @@ struct TVDetailView: View {
     private func heroPosterURL(for show: SeerrTVDetail) -> URL? {
         show.heroPosterURL ?? initialPosterURL
     }
+
+    /// Global-Y below which the hero title is considered tucked behind the status +
+    /// inline nav bar (≈ Dynamic Island height + bar); a few px off on other devices
+    /// is imperceptible.
+    private var heroTitleRevealThreshold: CGFloat { 100 }
 
     // MARK: - Cards Section
 

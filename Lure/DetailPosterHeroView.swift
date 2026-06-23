@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// Reports the global maxY of the hero's big title so the detail view can reveal
+/// the navigation-bar title only once the hero title has scrolled up behind the bar.
+struct HeroTitleBottomKey: PreferenceKey {
+    static let defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = min(value, nextValue())
+    }
+}
+
 struct DetailPosterHeroView: View {
     let title: String
     let posterURL: URL?
@@ -68,6 +77,14 @@ struct DetailPosterHeroView: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: HeroTitleBottomKey.self,
+                            value: geo.frame(in: .global).maxY
+                        )
+                    }
+                )
 
             metadataRow
 
