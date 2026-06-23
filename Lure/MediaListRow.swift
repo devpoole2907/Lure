@@ -55,7 +55,10 @@ struct MediaListRow: View {
                 }
 
                 if let status = mediaStatus {
-                    Label(status.displayName, systemImage: status.systemImage)
+                    HStack(spacing: 4) {
+                        Image(systemName: status.systemImage)
+                        Text(status.displayName)
+                    }
                         .font(.caption2)
                         .fontWeight(.medium)
                         .padding(.horizontal, 8)

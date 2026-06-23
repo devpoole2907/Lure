@@ -1,4 +1,5 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
 
 struct PageControlView: UIViewRepresentable {
@@ -21,3 +22,22 @@ struct PageControlView: UIViewRepresentable {
         control.isHidden = numberOfPages <= 1
     }
 }
+#else
+/// AppKit has no `UIPageControl`; render an equivalent row of dots in SwiftUI.
+struct PageControlView: View {
+    let numberOfPages: Int
+    let currentPage: Int
+
+    var body: some View {
+        if numberOfPages > 1 {
+            HStack(spacing: 7) {
+                ForEach(0..<numberOfPages, id: \.self) { index in
+                    Circle()
+                        .fill(Color.white.opacity(index == currentPage ? 1 : 0.32))
+                        .frame(width: 7, height: 7)
+                }
+            }
+        }
+    }
+}
+#endif

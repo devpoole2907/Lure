@@ -1,8 +1,8 @@
 import SwiftUI
-#if os(iOS) || os(visionOS)
+#if canImport(UIKit)
 import UIKit
 private typealias PlatformImage = UIImage
-#elseif os(macOS)
+#elseif canImport(AppKit)
 import AppKit
 private typealias PlatformImage = NSImage
 #endif
@@ -78,9 +78,9 @@ struct PosterImage: View {
 
 private extension Image {
     init(platformImage: PlatformImage) {
-        #if os(iOS) || os(visionOS)
+        #if canImport(UIKit)
         self.init(uiImage: platformImage)
-        #elseif os(macOS)
+        #elseif canImport(AppKit)
         self.init(nsImage: platformImage)
         #endif
     }

@@ -68,7 +68,7 @@ struct TVDetailView: View {
                         Label("Report an Issue", systemImage: "exclamationmark.triangle")
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                         .foregroundStyle(.white.opacity(0.8))
                 }
             }
@@ -328,7 +328,7 @@ struct TVDetailView: View {
         if show.mediaInfo?.isAvailable == true {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 12) {
-                    Label("Available in Seerr", systemImage: "checkmark.circle.fill")
+                    availabilityLabel("Available in Seerr", systemImage: "checkmark.circle.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.green)
                         .frame(maxWidth: .infinity)
@@ -468,7 +468,7 @@ struct TVDetailView: View {
     private var playbackButton: some View {
         switch vm.playbackAvailability {
         case .checking:
-            Label("Checking", systemImage: "hourglass")
+            availabilityLabel("Checking", systemImage: "hourglass")
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -477,7 +477,7 @@ struct TVDetailView: View {
             Button {
                 showEpisodePicker = true
             } label: {
-                Label("Watch", systemImage: "play.fill")
+                availabilityLabel("Watch", systemImage: "play.fill")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -485,12 +485,19 @@ struct TVDetailView: View {
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
         default:
-            Label("Not in Jellyfin", systemImage: "exclamationmark.triangle")
+            availabilityLabel("Not in Jellyfin", systemImage: "exclamationmark.triangle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .glassEffect(.regular.tint(Color.orange.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func availabilityLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(title)
         }
     }
 
@@ -885,7 +892,10 @@ struct TVDetailView: View {
     }
 
     private func pill(icon: String, label: String, color: Color) -> some View {
-        Label(label, systemImage: icon)
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+            Text(label)
+        }
             .font(.caption.weight(.semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 10)

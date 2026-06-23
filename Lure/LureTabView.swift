@@ -25,14 +25,11 @@ struct LureTabView: View {
                 RequestListView(apiClient: apiClient, currentUser: currentUser)
             }
 
-            Tab("More", systemImage: "ellipsis.circle", value: LureTab.more) {
+            Tab("More", systemImage: "ellipsis", value: LureTab.more) {
                 MoreView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-#if os(iOS) || os(visionOS)
-        .tabBarMinimizeBehavior(.onScrollDown)
-#endif
         .task {
             await SearchViewModel.preloadBrowseGenres(using: apiClient)
         }

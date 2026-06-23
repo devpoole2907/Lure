@@ -91,6 +91,7 @@ struct LureNotificationBanner: View {
         .glassEffect(.regular.tint(tintColor.opacity(0.18)), in: RoundedRectangle(cornerRadius: 24))
         .padding(.horizontal)
         .offset(y: offsetY)
+        #if !os(tvOS)
         .gesture(
             DragGesture()
                 .onChanged { value in
@@ -107,6 +108,7 @@ struct LureNotificationBanner: View {
                     }
                 }
         )
+        #endif
     }
 
     private var iconName: String {

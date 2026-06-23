@@ -1,8 +1,8 @@
 import CryptoKit
 import Foundation
-#if os(iOS) || os(visionOS)
+#if canImport(UIKit)
 import UIKit
-#elseif os(macOS)
+#elseif canImport(AppKit)
 import AppKit
 #endif
 
@@ -171,7 +171,7 @@ actor LureImageCache {
 
     private func compressedData(from data: Data) -> Data? {
         let maxDimension: CGFloat = 800
-#if os(iOS) || os(visionOS)
+#if canImport(UIKit)
         guard let image = UIImage(data: data) else { return nil }
         let size = image.size
         guard size.width > 0, size.height > 0 else { return nil }
@@ -183,7 +183,7 @@ actor LureImageCache {
         let renderer = UIGraphicsImageRenderer(size: newSize)
         let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
         return resized.jpegData(compressionQuality: 0.75)
-#elseif os(macOS)
+#elseif canImport(AppKit)
         guard let image = NSImage(data: data) else { return nil }
         let size = image.size
         guard size.width > 0, size.height > 0 else { return nil }

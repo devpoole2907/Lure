@@ -4,6 +4,7 @@ import Observation
 @MainActor
 @Observable
 final class DiscoverViewModel {
+    private(set) var featuredItems: [SeerrMediaItem] = []
     private(set) var trending: [SeerrMediaItem] = []
     private(set) var popularMovies: [SeerrMediaItem] = []
     private(set) var popularTV: [SeerrMediaItem] = []
@@ -24,7 +25,7 @@ final class DiscoverViewModel {
         self.jellyfinService = jellyfinService
     }
 
-    func loadInitialData() async {
+    func loadInitialData(preserveResumeItemsOnEmpty: Bool = false) async {
         isLoading = true
         error = nil
 
@@ -34,20 +35,29 @@ final class DiscoverViewModel {
         async let newReleasesLoad = loadNewReleases()
         async let upcomingLoad = loadUpcomingMovies()
         async let collectionsLoad = loadCollections()
-        async let continueWatchingLoad = loadContinueWatching()
+        async let continueWatchingLoad = loadContinueWatching(preserveExistingOnEmpty: preserveResumeItemsOnEmpty)
 
         _ = await (trendingLoad, moviesLoad, tvLoad, newReleasesLoad, upcomingLoad, collectionsLoad, continueWatchingLoad)
         isLoading = false
     }
 
     func refresh() async {
-        await loadInitialData()
+        await loadInitialData(preserveResumeItemsOnEmpty: true)
+    }
+
+    func markWatched(_ item: JellyfinItem) async throws {
+        try await jellyfinService.markWatched(item)
+        if let itemID = item.id {
+            continueWatching.removeAll { $0.id == itemID }
+        }
     }
 
     private func loadTrending() async {
         do {
             let response = try await apiClient.getDiscoverTrending()
-            trending = response.results.map { $0.toMediaItem() }
+            let items = response.results.map { $0.toMediaItem() }
+            trending = items
+            featuredItems = await filteredFeaturedItems(from: items)
         } catch {
             self.error = error.localizedDescription
         }
@@ -99,7 +109,76 @@ final class DiscoverViewModel {
         }
     }
 
-    private func loadContinueWatching() async {
-        continueWatching = await jellyfinService.resumeItems()
+    private func loadContinueWatching(preserveExistingOnEmpty: Bool) async {
+        let items = await jellyfinService.resumeItems()
+        if !items.isEmpty || !preserveExistingOnEmpty {
+            continueWatching = items
+        }
+    }
+
+    private func filteredFeaturedItems(from items: [SeerrMediaItem]) async -> [SeerrMediaItem] {
+        let movieIDs = items.compactMap { item -> Int? in
+            if case .movie(let movie) = item {
+                return movie.id
+            }
+            return nil
+        }
+        let homeReleasedMovieIDs = await homeReleasedMovieIDs(for: movieIDs)
+
+        return items.filter { item in
+            switch item {
+            case .movie(let movie):
+                homeReleasedMovieIDs.contains(movie.id)
+            case .tv:
+                true
+            case .person:
+                false
+            }
+        }
+    }
+
+    private func homeReleasedMovieIDs(for movieIDs: [Int]) async -> Set<Int> {
+        let uniqueIDs = Array(Set(movieIDs))
+        let apiClient = self.apiClient
+
+        return await withTaskGroup(of: Int?.self) { group in
+            for movieID in uniqueIDs {
+                group.addTask {
+                    do {
+                        let detail = try await apiClient.getMovieDetail(tmdbId: movieID)
+                        return detail.hasHomeViewingRelease ? movieID : nil
+                    } catch {
+                        return nil
+                    }
+                }
+            }
+
+            var releasedIDs = Set<Int>()
+            for await movieID in group {
+                if let movieID {
+                    releasedIDs.insert(movieID)
+                }
+            }
+            return releasedIDs
+        }
+    }
+}
+
+private extension SeerrMovieDetail {
+    var hasHomeViewingRelease: Bool {
+        if mediaInfo?.isAvailable == true {
+            return true
+        }
+
+        let homeReleaseTypes: Set<Int> = [4, 5, 6]
+        let now = Date()
+        return releases?.preferredReleaseDates.contains { releaseDate in
+            guard let type = releaseDate.type,
+                  homeReleaseTypes.contains(type),
+                  let date = releaseDate.parsedDate else {
+                return false
+            }
+            return date <= now
+        } == true
     }
 }

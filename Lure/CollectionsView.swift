@@ -4,8 +4,6 @@ struct CollectionsView: View {
     let apiClient: SeerrAPIClient
     @State private var viewModel: CollectionsViewModel?
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
-
     var body: some View {
         Group {
             if let vm = viewModel {
@@ -50,10 +48,10 @@ struct CollectionsView: View {
             )
         } else {
             GeometryReader { proxy in
-                let posterWidth = max(92, floor((proxy.size.width - 32 - 24) / 3))
+                let posterWidth = ThreeColumnMediaGrid.posterWidth(for: proxy.size.width)
 
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 20) {
+                    LazyVGrid(columns: ThreeColumnMediaGrid.columns, spacing: ThreeColumnMediaGrid.rowSpacing) {
                         ForEach(vm.collections.indices, id: \.self) { index in
                             NavigationLink(value: vm.collections[index]) {
                                 collectionCard(vm.collections[index], posterWidth: posterWidth)
@@ -61,7 +59,7 @@ struct CollectionsView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
                     .padding(.vertical, 12)
                 }
             }

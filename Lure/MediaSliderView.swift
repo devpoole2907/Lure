@@ -8,6 +8,9 @@ struct MediaSliderView: View {
     var transitionNamespace: Namespace.ID? = nil
     var headerValue: DiscoverSectionDestination? = nil
 
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
+
     var body: some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -33,10 +36,27 @@ struct MediaSliderView: View {
                                 sourceID: navigationSourceID(for: item, index: index)
                             )
 
-                            NavigationLink(value: destination) {
+                            let link = NavigationLink(value: destination) {
                                 titleCard(for: item, destination: destination)
                             }
                             .buttonStyle(.plain)
+
+                            if item.hasRequestContextActions {
+                                link.contextMenu {
+                                    MediaRequestContextMenu(
+                                        mediaType: item.mediaType,
+                                        tmdbId: item.tmdbId,
+                                        title: item.title,
+                                        mediaInfo: item.mediaInfo,
+                                        isKnownAvailable: item.mediaInfo?.isAvailable == true,
+                                        apiClient: apiClient,
+                                        notificationCenter: notificationCenter,
+                                        requestsCoordinator: requestsCoordinator
+                                    )
+                                }
+                            } else {
+                                link
+                            }
                         }
                     }
                     .padding(.horizontal)

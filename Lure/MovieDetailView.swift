@@ -67,7 +67,7 @@ struct MovieDetailView: View {
                         Label("Report an Issue", systemImage: "exclamationmark.triangle")
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                         .foregroundStyle(.white.opacity(0.8))
                 }
             }
@@ -310,7 +310,7 @@ struct MovieDetailView: View {
                     playbackButton(movie)
                 } else {
                     HStack(spacing: 12) {
-                        Label("Available in Seerr", systemImage: "checkmark.circle.fill")
+                        availabilityLabel("Available in Seerr", systemImage: "checkmark.circle.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.green)
                             .frame(maxWidth: .infinity)
@@ -461,7 +461,7 @@ struct MovieDetailView: View {
     private func playbackButton(_ movie: SeerrMovieDetail) -> some View {
         switch vm.playbackAvailability {
         case .checking:
-            Label("Checking", systemImage: "hourglass")
+            availabilityLabel("Checking", systemImage: "hourglass")
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -470,7 +470,10 @@ struct MovieDetailView: View {
             Button {
                 watchMovie(movie)
             } label: {
-                Label(vm.canResume ? "Continue Watching" : "Watch", systemImage: vm.canResume ? "play.circle.fill" : "play.fill")
+                availabilityLabel(
+                    vm.canResume ? "Continue Watching" : "Watch",
+                    systemImage: vm.canResume ? "play.circle.fill" : "play.fill"
+                )
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
@@ -479,12 +482,19 @@ struct MovieDetailView: View {
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
         default:
-            Label("Not in Jellyfin", systemImage: "exclamationmark.triangle")
+            availabilityLabel("Not in Jellyfin", systemImage: "exclamationmark.triangle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .glassEffect(.regular.tint(Color.orange.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func availabilityLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(title)
         }
     }
 

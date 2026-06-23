@@ -180,6 +180,7 @@ struct TransportOverlay: View {
 
     private var scrubBar: some View {
         VStack(spacing: 4) {
+            #if !os(tvOS)
             Slider(
                 value: scrubbing ? $scrubPosition : .init(
                     get: { vm.duration > 0 ? vm.currentTime / vm.duration : 0 },
@@ -201,6 +202,21 @@ struct TransportOverlay: View {
             )
             .tint(.white)
             .accessibilityLabel("Seek position")
+            #else
+            // tvOS: show a progress bar (seek is handled via Siri Remote focus/swipe)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.25))
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: proxy.size.width * (vm.duration > 0 ? min(vm.currentTime / vm.duration, 1) : 0))
+                }
+                .frame(height: 4)
+                .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(height: 20)
+            .accessibilityLabel("Seek position")
+            #endif
 
             HStack {
                 Text(formatTime(vm.currentTime))

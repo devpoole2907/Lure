@@ -2,6 +2,11 @@ import SwiftUI
 import Combine
 import AVFoundation
 import AetherEngine
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 @MainActor
 @Observable
@@ -19,6 +24,12 @@ final class PlayerViewModel {
     var isSubtitleActive: Bool = false
     var isLoadingSubtitles: Bool = false
     var videoGravity: AVLayerVideoGravity = .resizeAspect
+    var playbackBackend: PlaybackBackend = .none
+
+    /// True when the engine is software-decoding (e.g. MKV / dav1d), which has no
+    /// `AVPlayer` for AVKit to drive — those sessions need our custom transport.
+    /// The native backend renders through AVKit's own `AVPlayer` + controls.
+    var isSoftwareBackend: Bool { playbackBackend == .software }
 
     // MARK: - App-level state
     var title: String = ""
@@ -217,6 +228,12 @@ final class PlayerViewModel {
                 #endif
                 startStartupDiagnostics(streamURL: candidate.url, startPosition: startPosition)
                 do {
+                    // NOTE: LoadOptions(prepareNativeSubtitles: true) would surface text
+                    // subs in AVKit's native menu, but on PGS-heavy sources the engine's
+                    // mov_text injection emits malformed samples (negative durations / no
+                    // pts) that corrupt the fMP4 segments and fail playback with
+                    // "Cannot Open" (AetherEngine #55). Until that's fixed upstream we keep
+                    // subtitle selection host-rendered via our own tracks menu.
                     try await engine.load(url: candidate.url, startPosition: startPosition)
                     isDirect = candidate.isDirect
                     #if DEBUG
@@ -477,7 +494,7 @@ final class PlayerViewModel {
                 }
             }
             .store(in: &cancellables)
-        engine.$currentTime
+        engine.clock.$currentTime
             .sink { [weak self] value in
                 self?.currentTime = value
                 self?.checkSegments()
@@ -501,7 +518,7 @@ final class PlayerViewModel {
                 #endif
             }
             .store(in: &cancellables)
-        engine.$progress
+        engine.clock.$progress
             .sink { [weak self] value in self?.progress = value }
             .store(in: &cancellables)
         engine.$videoFormat
@@ -509,6 +526,14 @@ final class PlayerViewModel {
                 self?.videoFormat = value
                 #if DEBUG
                 print("[PlayerViewModel] videoFormat -> \(value)")
+                #endif
+            }
+            .store(in: &cancellables)
+        engine.$playbackBackend
+            .sink { [weak self] value in
+                self?.playbackBackend = value
+                #if DEBUG
+                print("[PlayerViewModel] playbackBackend -> \(value)")
                 #endif
             }
             .store(in: &cancellables)
@@ -629,6 +654,7 @@ final class PlayerViewModel {
     // MARK: - Private: Lifecycle
 
     private func observeLifecycle() {
+        #if canImport(UIKit)
         let fg = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
@@ -638,5 +664,16 @@ final class PlayerViewModel {
             Task { @MainActor in await self.reloadAfterForeground() }
         }
         lifecycleObservers.append(fg)
+        #else
+        let fg = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in await self.reloadAfterForeground() }
+        }
+        lifecycleObservers.append(fg)
+        #endif
     }
 }

@@ -137,16 +137,24 @@ struct TVSeasonDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func availabilityLabel(allAvailable: Bool, hasEpisodeData: Bool) -> Label<Text, Image> {
+    private func availabilityLabel(allAvailable: Bool, hasEpisodeData: Bool) -> some View {
+        let text: String
+        let systemImage: String
+
         if hasEpisodeData {
-            return Label(
-                allAvailable ? "All Available" : "\(availableCount) of \(totalCount) available",
-                systemImage: allAvailable ? "checkmark.circle.fill" : "circle.lefthalf.filled"
-            )
+            text = allAvailable ? "All Available" : "\(availableCount) of \(totalCount) available"
+            systemImage = allAvailable ? "checkmark.circle.fill" : "circle.lefthalf.filled"
         } else if statusSeason?.status == 5 {
-            return Label("All \(totalCount) Available", systemImage: "checkmark.circle.fill")
+            text = "All \(totalCount) Available"
+            systemImage = "checkmark.circle.fill"
         } else {
-            return Label("\(totalCount) episode\(totalCount == 1 ? "" : "s")", systemImage: "tv")
+            text = "\(totalCount) episode\(totalCount == 1 ? "" : "s")"
+            systemImage = "tv"
+        }
+
+        return HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(text)
         }
     }
 

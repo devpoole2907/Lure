@@ -24,22 +24,9 @@ struct SearchGenreResultsView: View {
                     description: Text("No \(vm.destination.mediaTypeLabel.lowercased()) found for this genre.")
                 )
             } else {
-                List {
-                    ForEach(vm.results) { item in
-                        NavigationLink(value: MediaDestination(mediaType: item.mediaType, tmdbId: item.tmdbId, title: item.title, posterURL: item.posterURL)) {
-                            MediaListRow(item: item)
-                        }
-                        .task {
-                            await vm.loadMoreIfNeeded(currentItem: item)
-                        }
-                    }
-
-                    if vm.isLoadingMore {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                    }
+                DiscoverMediaGridView(title: destination.title, initialItems: vm.results, apiClient: apiClient) { page in
+                    try await vm.loadPage(page)
                 }
-                .listStyle(.plain)
             }
         }
         .navigationTitle(destination.title)

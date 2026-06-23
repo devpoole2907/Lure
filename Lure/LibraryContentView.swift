@@ -5,6 +5,8 @@ struct LibraryContentView: View {
     let apiClient: SeerrAPIClient
 
     @Environment(PlayerCoordinator.self) private var playerCoordinator
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     var body: some View {
         if viewModel.isLoading && viewModel.items.isEmpty && viewModel.continueWatching.isEmpty {
@@ -38,7 +40,8 @@ struct LibraryContentView: View {
                     ContinueWatchingShelf(
                         items: viewModel.continueWatching,
                         jellyfinClient: viewModel.jellyfinClient,
-                        onPlay: { playerCoordinator.presentResume($0) }
+                        onPlay: { playerCoordinator.presentResume($0) },
+                        onMarkWatched: { try await viewModel.markWatched($0) }
                     )
                 }
 
@@ -68,7 +71,7 @@ struct LibraryContentView: View {
                 navRowLabel(icon: "tv", label: "TV Shows", color: .blue, count: viewModel.tvShows.count)
             }
         }
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(Color.secondaryGroupedBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 16)
     }
@@ -101,30 +104,33 @@ struct LibraryContentView: View {
 
     private var recentlyAddedSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Recently Added")
-                    .font(.title3.bold())
-
-                Spacer()
-
-                NavigationLink {
-                    MediaCategoryView(
-                        title: "Recently Added",
-                        items: viewModel.recentlyAdded,
-                        apiClient: apiClient,
-                        initialSortOrder: .added
-                    )
-                } label: {
-                    Text("See All")
-                        .font(.subheadline)
+            NavigationLink {
+                MediaCategoryView(
+                    title: "Recently Added",
+                    items: viewModel.recentlyAdded,
+                    apiClient: apiClient,
+                    initialSortOrder: .added
+                )
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Recently Added")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
+                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(.plain)
             .padding(.horizontal, 16)
 
             let recentItems = Array(viewModel.recentlyAdded.prefix(12))
             LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-                spacing: 12
+                columns: ThreeColumnMediaGrid.columns,
+                spacing: ThreeColumnMediaGrid.rowSpacing
             ) {
                 ForEach(recentItems) { item in
                     NavigationLink(value: MediaDestination(
@@ -136,9 +142,17 @@ struct LibraryContentView: View {
                         LibraryPosterCell(item: item)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        LibraryItemRequestContextMenu(
+                            item: item,
+                            apiClient: apiClient,
+                            notificationCenter: notificationCenter,
+                            requestsCoordinator: requestsCoordinator
+                        )
+                    }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
         }
     }
 }

@@ -8,6 +8,8 @@ struct CollectionDetailView: View {
     @State private var isLoading = false
     @Namespace private var navigationTransitionNamespace
     @Environment(JellyfinService.self) private var jellyfinService
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     private var displayCollection: SeerrCollection { fullCollection ?? collection }
 
@@ -159,6 +161,20 @@ struct CollectionDetailView: View {
 #endif
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            if item.hasRequestContextActions {
+                                MediaRequestContextMenu(
+                                    mediaType: "movie",
+                                    tmdbId: movie.id,
+                                    title: movie.displayTitle,
+                                    mediaInfo: movie.mediaInfo,
+                                    isKnownAvailable: movie.mediaInfo?.isAvailable == true,
+                                    apiClient: apiClient,
+                                    notificationCenter: notificationCenter,
+                                    requestsCoordinator: requestsCoordinator
+                                )
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 14)

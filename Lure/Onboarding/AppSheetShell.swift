@@ -78,10 +78,14 @@ struct AppSheetShell<Content: View>: View {
 private extension View {
     @ViewBuilder
     func appSheetNavigationSubtitle(_ subtitle: String?) -> some View {
+        #if os(macOS)
         if let subtitle {
             self.navigationSubtitle(subtitle)
         } else {
             self
         }
+        #else
+        self
+        #endif
     }
 }

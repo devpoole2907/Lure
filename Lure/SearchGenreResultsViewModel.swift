@@ -73,6 +73,12 @@ final class SearchGenreResultsViewModel {
         await loadMore()
     }
 
+    func loadPage(_ page: Int) async throws -> [SeerrMediaItem] {
+        guard page <= totalPages else { return [] }
+        let response = try await fetch(page: page)
+        return filterResults(response.results).map { $0.toMediaItem() }
+    }
+
     private func fetch(page: Int) async throws -> SeerrDiscoverResponse {
         switch destination.mediaType {
         case "movie":

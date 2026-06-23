@@ -14,6 +14,8 @@ struct SearchView: View {
     @State private var libraryLoadTask: Task<Void, Never>?
     @Namespace private var genreTransitionNamespace
     @Environment(JellyfinService.self) private var jellyfinService
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     @State private var jellyfinResults: [JellyfinItem] = []
     @State private var jellyfinSearchTask: Task<Void, Never>?
@@ -67,12 +69,19 @@ struct SearchView: View {
                     .id(destination)
             }
         }
+        #if os(tvOS)
+        .searchable(
+            text: $searchText,
+            prompt: scope == .library ? "Your library" : "Movies, TV shows..."
+        )
+        #else
         .searchable(
             text: $searchText,
             isPresented: $isSearchPresented,
             placement: .automatic,
             prompt: scope == .library ? "Your library" : "Movies, TV shows..."
         )
+        #endif
         .onSubmit(of: .search) {
             recordRecent(searchText)
         }
@@ -157,6 +166,14 @@ struct SearchView: View {
                         posterURL: item.posterURL
                     )) {
                         MediaListRow(item: item)
+                    }
+                    .contextMenu {
+                        LibraryItemRequestContextMenu(
+                            item: item,
+                            apiClient: apiClient,
+                            notificationCenter: notificationCenter,
+                            requestsCoordinator: requestsCoordinator
+                        )
                     }
                 }
             }
@@ -288,6 +305,7 @@ struct SearchView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        #if !os(tvOS)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 removeRecent(term)
@@ -295,6 +313,7 @@ struct SearchView: View {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                        #endif
                     }
                 } header: {
                     HStack {
@@ -383,14 +402,30 @@ struct SearchView: View {
                 Spacer()
             } else if vm.results.isEmpty && vm.hasSearched {
                 ContentUnavailableView.search(text: searchText)
-            } else if !vm.results.isEmpty {
+            } else if filteredResults.isEmpty && vm.hasSearched {
+                ContentUnavailableView.search(text: searchText)
+            } else if !filteredResults.isEmpty {
                 List {
                     ForEach(filteredResults) { item in
                         NavigationLink(value: MediaDestination(mediaType: item.mediaType, tmdbId: item.tmdbId, title: item.title, posterURL: item.posterURL)) {
                             MediaListRow(item: item)
                         }
+                        .contextMenu {
+                            if item.hasRequestContextActions {
+                                MediaRequestContextMenu(
+                                    mediaType: item.mediaType,
+                                    tmdbId: item.tmdbId,
+                                    title: item.title,
+                                    mediaInfo: item.mediaInfo,
+                                    isKnownAvailable: item.mediaInfo?.isAvailable == true,
+                                    apiClient: apiClient,
+                                    notificationCenter: notificationCenter,
+                                    requestsCoordinator: requestsCoordinator
+                                )
+                            }
+                        }
                     }
-                    if vm.currentPage < vm.totalPages {
+                    if vm.currentPage < vm.totalPages && selectedFilter != .people {
                         ProgressView()
                             .frame(maxWidth: .infinity)
                             .task { await vm.loadMore() }

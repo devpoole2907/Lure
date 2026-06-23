@@ -1,8 +1,8 @@
 import SwiftUI
-#if os(iOS) || os(visionOS)
+#if canImport(UIKit)
 import UIKit
 private typealias RemotePlatformImage = UIImage
-#elseif os(macOS)
+#elseif canImport(AppKit)
 import AppKit
 private typealias RemotePlatformImage = NSImage
 #endif
@@ -56,9 +56,9 @@ struct CachedRemoteImage<Placeholder: View>: View {
 
 private extension Image {
     init(remotePlatformImage: RemotePlatformImage) {
-        #if os(iOS) || os(visionOS)
+        #if canImport(UIKit)
         self.init(uiImage: remotePlatformImage)
-        #elseif os(macOS)
+        #elseif canImport(AppKit)
         self.init(nsImage: remotePlatformImage)
         #endif
     }

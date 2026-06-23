@@ -143,7 +143,9 @@ struct UserProfileView: View {
                 .glassEffect(.regular.interactive(), in: Capsule())
             }
         }
+        #if !os(tvOS)
         .scrollContentBackground(.hidden)
+        #endif
         .lureGradientBackground(.purple)
     }
 

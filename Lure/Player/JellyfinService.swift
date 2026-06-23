@@ -55,6 +55,12 @@ final class JellyfinService {
         return (try? await client.getResumeItems(limit: limit)) ?? []
     }
 
+    func markWatched(_ item: JellyfinItem) async throws {
+        guard let client else { throw JellyfinError.noCredentials }
+        guard let itemId = item.id else { throw JellyfinError.itemNotFound }
+        try await client.markPlayed(itemId: itemId)
+    }
+
     func allLibraryItems() async -> [JellyfinItem] {
         guard let client else { return [] }
         return (try? await client.getAllLibraryItems()) ?? []

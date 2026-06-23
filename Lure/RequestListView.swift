@@ -1,10 +1,12 @@
 import SwiftUI
+import SwiftData
 
 struct RequestListView: View {
     let apiClient: SeerrAPIClient
     let currentUser: SeerrUser?
 
     @State private var vm: RequestListViewModel
+    @State private var searchText = ""
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(\.modelContext) private var modelContext
     @Environment(JellyfinService.self) private var jellyfinService
@@ -20,17 +22,29 @@ struct RequestListView: View {
         NavigationStack {
             content
                 .navigationTitle("Requests")
+                #if os(macOS)
                 .navigationSubtitle(subtitleText)
+                #endif
 #if os(iOS) || os(visionOS)
                 .toolbarTitleDisplayMode(.large)
 #endif
                 .toolbar { toolbarContent }
+                #if os(iOS) || os(visionOS)
+                .searchable(
+                    text: $searchText,
+                    placement: .navigationBarDrawer(displayMode: .automatic),
+                    prompt: "Title, requester, status"
+                )
+                #else
+                .searchable(text: $searchText, prompt: "Title, requester, status")
+                #endif
+                .autocorrectionDisabled()
                 .refreshable { await vm.loadRequests() }
                 .task {
                     vm.setModelContext(modelContext)
                     await vm.loadRequestsIfNeeded()
                 }
-                .animation(.default, value: vm.sortedRequests.map(\.id))
+                .animation(.default, value: displayedRequests.map(\.id))
                 .onChange(of: requestsCoordinator.lastChange) { _, _ in
                     Task { await vm.loadRequests() }
                 }
@@ -74,19 +88,23 @@ struct RequestListView: View {
                     ProgressView("Loading requests...")
                         .frame(maxWidth: .infinity, alignment: .center)
                 }
-            } else if vm.sortedRequests.isEmpty {
+            } else if displayedRequests.isEmpty {
                 Section {
-                    ContentUnavailableView {
-                        Label("No Requests", systemImage: "tray")
-                    } description: {
-                        Text("No requests match the current filter.")
+                    if isSearchingRequests {
+                        ContentUnavailableView.search(text: searchText)
+                    } else {
+                        ContentUnavailableView {
+                            Label("No Requests", systemImage: "tray")
+                        } description: {
+                            Text("No requests match the current filter.")
+                        }
                     }
                 }
             } else {
-                ForEach(vm.sortedRequests) { request in
+                ForEach(displayedRequests) { request in
                     requestRow(request)
                 }
-                if vm.hasMore {
+                if vm.hasMore && !isSearchingRequests {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .task { await vm.loadMore() }
@@ -107,20 +125,24 @@ struct RequestListView: View {
             NavigationLink(value: MediaDestination(mediaType: type, tmdbId: tmdbId, title: resolvedTitle, posterURL: resolvedPosterURL)) {
                 RequestItemContent(request: request, resolvedTitle: resolvedTitle, resolvedPosterURL: resolvedPosterURL)
             }
+            #if !os(tvOS)
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 trailingActions(for: request)
             }
             .swipeActions(edge: .leading) {
                 leadingActions(for: request)
             }
+            #endif
         } else {
             RequestItemContent(request: request, resolvedTitle: resolvedTitle, resolvedPosterURL: resolvedPosterURL)
+                #if !os(tvOS)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     trailingActions(for: request)
                 }
                 .swipeActions(edge: .leading) {
                     leadingActions(for: request)
                 }
+                #endif
         }
     }
 
@@ -240,8 +262,57 @@ struct RequestListView: View {
     // MARK: - Helpers
 
     private var subtitleText: String {
+        if isSearchingRequests {
+            let count = displayedRequests.count
+            return count == 1 ? "1 match" : "\(count) matches"
+        }
         let count = vm.totalCount > 0 ? vm.totalCount : vm.sortedRequests.count
         return count == 1 ? "1 request" : "\(count) requests"
+    }
+
+    private var isSearchingRequests: Bool {
+        !normalizedSearchText.isEmpty
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var displayedRequests: [SeerrMediaRequest] {
+        let query = normalizedSearchText
+        guard !query.isEmpty else { return vm.sortedRequests }
+
+        return vm.sortedRequests.filter { request in
+            requestSearchTokens(for: request).contains { token in
+                token.localizedCaseInsensitiveContains(query)
+            }
+        }
+    }
+
+    private func requestSearchTokens(for request: SeerrMediaRequest) -> [String] {
+        var tokens = [
+            vm.resolvedTitle(for: request),
+            request.qualityLabel
+        ]
+
+        if let type = request.type {
+            tokens.append(type)
+            tokens.append(type.capitalized)
+        }
+        if let user = request.requestedBy {
+            tokens.append(user.displayName)
+            if let email = user.email {
+                tokens.append(email)
+            }
+        }
+        if let requestStatus = request.requestStatus {
+            tokens.append(requestStatus.displayName)
+        }
+        if let mediaStatus = request.media?.mediaStatus {
+            tokens.append(mediaStatus.displayName)
+        }
+
+        return tokens
     }
 
     private func filterIcon(for filter: RequestFilter) -> String {

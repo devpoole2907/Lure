@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct LibraryView: View {
     let apiClient: SeerrAPIClient

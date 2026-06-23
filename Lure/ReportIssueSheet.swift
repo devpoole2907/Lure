@@ -56,6 +56,10 @@ struct ReportIssueSheet: View {
                 }
 
                 Section("Description") {
+                    #if os(tvOS)
+                    TextField("Describe the problem...", text: $message, axis: .vertical)
+                        .lineLimit(4...)
+                    #else
                     TextEditor(text: $message)
                         .frame(minHeight: 80)
                         .overlay(alignment: .topLeading) {
@@ -67,6 +71,7 @@ struct ReportIssueSheet: View {
                                     .allowsHitTesting(false)
                             }
                         }
+                    #endif
                 }
 
                 if let error = submitError {

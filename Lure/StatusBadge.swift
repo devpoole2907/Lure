@@ -5,7 +5,10 @@ struct StatusBadge: View {
 
     var body: some View {
         if let status = mediaInfo?.mediaStatus, status.isUserVisible {
-            Label(status.displayName, systemImage: status.systemImage)
+            HStack(spacing: 4) {
+                Image(systemName: status.systemImage)
+                Text(status.displayName)
+            }
                 .font(.caption2)
                 .fontWeight(.medium)
                 .padding(.horizontal, 8)

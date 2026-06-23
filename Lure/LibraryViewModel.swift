@@ -21,7 +21,21 @@ struct LibrarySection: Identifiable {
 @MainActor
 @Observable
 final class LibraryViewModel {
-    private(set) var items: [LibraryItem] = []
+    // The server can return the same title from multiple library folders, which
+    // produces duplicate `mediaType-tmdbId` ids. SwiftUI `ForEach`/`LazyVGrid`
+    // require unique ids, so collapse duplicates at the single storage point
+    // (the guard prevents the dedup re-assignment from recursing).
+    private(set) var items: [LibraryItem] = [] {
+        didSet {
+            guard !isDedupingItems else { return }
+            let deduped = items.uniqued(by: \.id)
+            guard deduped.count != items.count else { return }
+            isDedupingItems = true
+            items = deduped
+            isDedupingItems = false
+        }
+    }
+    private var isDedupingItems = false
     private(set) var continueWatching: [JellyfinItem] = []
     private(set) var isLoading = false
     private(set) var isRefreshing = false
@@ -135,6 +149,13 @@ final class LibraryViewModel {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.refreshLibrary(showBlockingLoader: false) }
             group.addTask { await self.loadContinueWatching() }
+        }
+    }
+
+    func markWatched(_ item: JellyfinItem) async throws {
+        try await jellyfinService.markWatched(item)
+        if let itemID = item.id {
+            continueWatching.removeAll { $0.id == itemID }
         }
     }
 
@@ -330,5 +351,14 @@ final class LibraryViewModel {
 
     private func pauseBetweenDiffStages() async {
         try? await Task.sleep(for: .milliseconds(140))
+    }
+}
+
+extension Array {
+    /// Returns the array with duplicates removed, keeping the first occurrence of
+    /// each distinct key (order preserved).
+    func uniqued<Key: Hashable>(by key: (Element) -> Key) -> [Element] {
+        var seen = Set<Key>()
+        return filter { seen.insert(key($0)).inserted }
     }
 }

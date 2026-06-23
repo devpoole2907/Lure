@@ -7,6 +7,8 @@ struct MediaCategoryView: View {
     var initialSortOrder: LibrarySortOrder = .title
 
     @State private var sortOrder: LibrarySortOrder
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     init(title: String, items: [LibraryItem], apiClient: SeerrAPIClient, initialSortOrder: LibrarySortOrder = .title) {
         self.title = title
@@ -88,6 +90,14 @@ struct MediaCategoryView: View {
                 ForEach(section.items) { item in
                     NavigationLink(value: destination(for: item)) {
                         MediaListRow(item: item)
+                    }
+                    .contextMenu {
+                        LibraryItemRequestContextMenu(
+                            item: item,
+                            apiClient: apiClient,
+                            notificationCenter: notificationCenter,
+                            requestsCoordinator: requestsCoordinator
+                        )
                     }
                 }
             }

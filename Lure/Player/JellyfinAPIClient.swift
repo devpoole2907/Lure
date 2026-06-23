@@ -67,7 +67,7 @@ actor JellyfinAPIClient {
     func getItem(itemId: String) async throws -> JellyfinItem {
         let response: JellyfinItemsResponse = try await get(
             "/Users/\(userId)/Items",
-            params: ["Ids": itemId, "Fields": "UserData"]
+            params: ["Ids": itemId, "Fields": "UserData,RunTimeTicks,SeriesId,SeriesName,ProviderIds,ProductionYear"]
         )
         guard let item = response.items?.first else { throw JellyfinError.itemNotFound }
         return item
@@ -284,7 +284,7 @@ actor JellyfinAPIClient {
             params: [
                 "MediaTypes": "Video",
                 "Limit": "\(limit)",
-                "Fields": "UserData,RunTimeTicks,SeriesId,SeriesName"
+                "Fields": "UserData,RunTimeTicks,SeriesId,SeriesName,ProviderIds,ProductionYear"
             ]
         )
         return response.items ?? []
@@ -314,6 +314,10 @@ actor JellyfinAPIClient {
             params: ["UserId": userId, "SeriesId": seriesId, "Limit": "1", "Fields": "UserData"]
         )
         return response.items?.first
+    }
+
+    func markPlayed(itemId: String) async throws {
+        try await postEmpty("/Users/\(userId)/PlayedItems/\(itemId)")
     }
 
     // MARK: - Playback
@@ -441,7 +445,19 @@ actor JellyfinAPIClient {
         var request = try buildRequest(path: path, method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
-        _ = try await session.data(for: request)
+        try await performVoid(request)
+    }
+
+    private func postEmpty(_ path: String) async throws {
+        let request = try buildRequest(path: path, method: "POST")
+        try await performVoid(request)
+    }
+
+    private func performVoid(_ request: URLRequest) async throws {
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw JellyfinError.invalidResponse }
+        if http.statusCode == 401 { throw JellyfinError.unauthorized }
+        guard (200..<300).contains(http.statusCode) else { throw JellyfinError.serverError(http.statusCode) }
     }
 
     private func buildRequest(path: String, method: String, queryParams: [String: String] = [:]) throws -> URLRequest {
@@ -462,19 +478,16 @@ actor JellyfinAPIClient {
     }
 
     nonisolated private static var currentDeviceName: String {
-        #if canImport(UIKit)
-        switch UIDevice.current.userInterfaceIdiom {
-        case .pad: return "iPad"
-        case .phone: return "iPhone"
-        case .tv: return "Apple TV"
-        case .mac: return "Mac"
-        case .vision: return "Apple Vision"
-        case .carPlay: return "CarPlay"
-        case .unspecified: return "iPhone"
-        @unknown default: return "iPhone"
-        }
+        #if os(tvOS)
+        "Apple TV"
+        #elseif os(visionOS)
+        "Apple Vision"
+        #elseif targetEnvironment(macCatalyst)
+        "Mac"
+        #elseif os(iOS)
+        "iPhone"
         #else
-        return "Mac"
+        "Mac"
         #endif
     }
 

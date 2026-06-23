@@ -17,7 +17,7 @@ struct DetailBadge: Identifiable {
 /// Tightens the gap between a Label's icon and title for compact pills.
 struct TightIconLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             configuration.icon
             configuration.title
         }

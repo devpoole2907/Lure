@@ -1,8 +1,24 @@
 import SwiftUI
 
+enum ThreeColumnMediaGrid {
+    static let horizontalPadding: CGFloat = 16
+    static let columnSpacing: CGFloat = 12
+    static let rowSpacing: CGFloat = 20
+
+    static let columns = Array(
+        repeating: GridItem(.flexible(), spacing: columnSpacing, alignment: .top),
+        count: 3
+    )
+
+    static func posterWidth(for containerWidth: CGFloat) -> CGFloat {
+        max(92, floor((containerWidth - horizontalPadding * 2 - columnSpacing * 2) / 3))
+    }
+}
+
 struct DiscoverMediaGridView: View {
     let title: String
     let initialItems: [SeerrMediaItem]
+    var apiClient: SeerrAPIClient? = nil
     var transitionNamespace: Namespace.ID? = nil
     var loadPage: (@Sendable (Int) async throws -> [SeerrMediaItem])? = nil
 
@@ -11,19 +27,19 @@ struct DiscoverMediaGridView: View {
     @State private var hasMore = false
     @State private var isLoadingMore = false
     @State private var loadError: Error?
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
 
     private var allItems: [SeerrMediaItem] {
         initialItems + additionalItems
     }
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 3)
-
     var body: some View {
         GeometryReader { proxy in
-            let posterWidth = max(92, floor((proxy.size.width - 32 - 24) / 3))
+            let posterWidth = ThreeColumnMediaGrid.posterWidth(for: proxy.size.width)
 
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 20) {
+                LazyVGrid(columns: ThreeColumnMediaGrid.columns, spacing: ThreeColumnMediaGrid.rowSpacing) {
                     ForEach(Array(allItems.enumerated()), id: \.offset) { index, item in
                         let destination = MediaDestination(
                             mediaType: item.mediaType,
@@ -33,23 +49,7 @@ struct DiscoverMediaGridView: View {
                             sourceID: navigationSourceID(for: item, index: index)
                         )
 
-                        NavigationLink(value: destination) {
-                            if let transitionNamespace {
-                                TitleCardView(
-                                    item: item,
-                                    posterWidth: posterWidth,
-                                    posterHeight: posterWidth * 1.5
-                                )
-                                .matchedTransitionSource(id: destination, in: transitionNamespace)
-                            } else {
-                                TitleCardView(
-                                    item: item,
-                                    posterWidth: posterWidth,
-                                    posterHeight: posterWidth * 1.5
-                                )
-                            }
-                        }
-                        .buttonStyle(.plain)
+                        gridLink(for: item, destination: destination, posterWidth: posterWidth)
                     }
 
                     if hasMore {
@@ -77,7 +77,7 @@ struct DiscoverMediaGridView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
                 .padding(.vertical, 12)
             }
         }
@@ -113,4 +113,43 @@ struct DiscoverMediaGridView: View {
     private func navigationSourceID(for item: SeerrMediaItem, index: Int) -> String {
         "\(title)-grid-\(index)-\(item.id)"
     }
+
+    @ViewBuilder
+    private func gridLink(for item: SeerrMediaItem, destination: MediaDestination, posterWidth: CGFloat) -> some View {
+        let link = NavigationLink(value: destination) {
+            if let transitionNamespace {
+                TitleCardView(
+                    item: item,
+                    posterWidth: posterWidth,
+                    posterHeight: posterWidth * 1.5
+                )
+                .matchedTransitionSource(id: destination, in: transitionNamespace)
+            } else {
+                TitleCardView(
+                    item: item,
+                    posterWidth: posterWidth,
+                    posterHeight: posterWidth * 1.5
+                )
+            }
+        }
+        .buttonStyle(.plain)
+
+        if let apiClient, item.hasRequestContextActions {
+            link.contextMenu {
+                MediaRequestContextMenu(
+                    mediaType: item.mediaType,
+                    tmdbId: item.tmdbId,
+                    title: item.title,
+                    mediaInfo: item.mediaInfo,
+                    isKnownAvailable: item.mediaInfo?.isAvailable == true,
+                    apiClient: apiClient,
+                    notificationCenter: notificationCenter,
+                    requestsCoordinator: requestsCoordinator
+                )
+            }
+        } else {
+            link
+        }
+    }
 }
+

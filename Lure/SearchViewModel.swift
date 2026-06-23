@@ -30,6 +30,8 @@ final class SearchViewModel {
     func search() async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
+            searchTask?.cancel()
+            isSearching = false
             results = []
             hasSearched = false
             return

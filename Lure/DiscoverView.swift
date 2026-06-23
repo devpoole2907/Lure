@@ -29,6 +29,7 @@ struct DiscoverView: View {
                         DiscoverMediaGridView(
                             title: "Trending",
                             initialItems: vm.trending,
+                            apiClient: apiClient,
                             transitionNamespace: navigationTransitionNamespace
                         ) { page in
                             let response = try await apiClient.getDiscoverTrending(page: page)
@@ -38,6 +39,7 @@ struct DiscoverView: View {
                         DiscoverMediaGridView(
                             title: "Popular Movies",
                             initialItems: vm.popularMovies,
+                            apiClient: apiClient,
                             transitionNamespace: navigationTransitionNamespace
                         ) { page in
                             let response = try await apiClient.getDiscoverMovies(page: page, sortBy: "popularity.desc")
@@ -47,6 +49,7 @@ struct DiscoverView: View {
                         DiscoverMediaGridView(
                             title: "Popular TV",
                             initialItems: vm.popularTV,
+                            apiClient: apiClient,
                             transitionNamespace: navigationTransitionNamespace
                         ) { page in
                             let response = try await apiClient.getDiscoverTV(page: page, sortBy: "popularity.desc")
@@ -56,6 +59,7 @@ struct DiscoverView: View {
                         DiscoverMediaGridView(
                             title: "New Releases",
                             initialItems: vm.newReleases,
+                            apiClient: apiClient,
                             transitionNamespace: navigationTransitionNamespace
                         ) { page in
                             let response = try await apiClient.getDiscoverMoviesNewReleases(page: page)
@@ -65,6 +69,7 @@ struct DiscoverView: View {
                         DiscoverMediaGridView(
                             title: "Upcoming",
                             initialItems: vm.upcomingMovies,
+                            apiClient: apiClient,
                             transitionNamespace: navigationTransitionNamespace
                         ) { page in
                             let response = try await apiClient.getDiscoverMoviesUpcoming(page: page)
@@ -118,7 +123,7 @@ struct DiscoverView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     DiscoverHeroCarouselView(
-                        items: vm.trending,
+                        items: vm.featuredItems,
                         activeIndex: $heroActiveIndex,
                         scrollTargetID: $heroScrollTargetID,
                         transitionNamespace: navigationTransitionNamespace,
@@ -129,7 +134,8 @@ struct DiscoverView: View {
                         ContinueWatchingShelf(
                             items: vm.continueWatching,
                             jellyfinClient: vm.jellyfinClient,
-                            onPlay: playResumeItem
+                            onPlay: playResumeItem,
+                            onMarkWatched: markResumeItemWatched
                         )
                     }
                     MediaSliderView(
@@ -189,6 +195,10 @@ struct DiscoverView: View {
 
     private func playResumeItem(_ item: JellyfinItem) {
         playerCoordinator.presentResume(item)
+    }
+
+    private func markResumeItemWatched(_ item: JellyfinItem) async throws {
+        try await viewModel?.markWatched(item)
     }
 
     @ViewBuilder
