@@ -22,12 +22,13 @@ import AetherEngine
 /// subtitle-track selection — are surfaced by `PlayerView` as native SwiftUI
 /// `Menu`s overlaid on the player.
 @MainActor
-final class PlayerHostController: AVPlayerViewController, AVPlayerViewControllerDelegate {
+final class PlayerHostController: AVPlayerViewController, AVPlayerViewControllerDelegate, UIGestureRecognizerDelegate {
     private let vm: PlayerViewModel
     private let onClose: () -> Void
     private let aetherView = AetherPlayerView()
     private var aetherViewMounted = false
     private var subscriptions: Set<AnyCancellable> = []
+    private var hideControlsWork: DispatchWorkItem?
 
     init(vm: PlayerViewModel, onClose: @escaping () -> Void) {
         self.vm = vm
@@ -43,6 +44,15 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
         videoGravity = .resizeAspect
         allowsPictureInPicturePlayback = true
         delegate = self
+
+        // AVKit exposes no controls-visibility signal, so mirror its tap-to-toggle:
+        // a non-intrusive recognizer (runs alongside AVKit's own gesture, ignores
+        // taps on AVKit's buttons/scrubber) flips `vm.controlsVisible` in lockstep.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleControlsTap))
+        tap.delegate = self
+        tap.cancelsTouchesInView = false
+        view.addGestureRecognizer(tap)
+        scheduleControlsAutoHide()
 
         // The engine republishes its native AVPlayer on every internal reload
         // (an audio-track switch rebuilds the native host), so re-bind each time.
@@ -94,6 +104,51 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
         vm.engine.unbind(view: aetherView)
         aetherView.removeFromSuperview()
         aetherViewMounted = false
+    }
+
+    // MARK: - Controls visibility (mirrors AVKit's chrome)
+
+    @objc private func handleControlsTap() {
+        setControlsVisible(!vm.controlsVisible)
+    }
+
+    private func setControlsVisible(_ visible: Bool) {
+        vm.controlsVisible = visible
+        if visible {
+            scheduleControlsAutoHide()
+        } else {
+            hideControlsWork?.cancel()
+        }
+    }
+
+    /// Auto-hide after the same idle window AVKit uses, but keep the chrome up while
+    /// paused (AVKit does the same) so the tracks button stays reachable when stopped.
+    private func scheduleControlsAutoHide() {
+        hideControlsWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.vm.state == .playing else { return }
+            self.vm.controlsVisible = false
+        }
+        hideControlsWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
+    }
+
+    // MARK: - UIGestureRecognizerDelegate
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        // Don't toggle when the user is actually operating AVKit's controls
+        // (play/pause, scrubber, volume) — only bare taps on the video toggle chrome.
+        !(touch.view is UIControl)
     }
 
     // MARK: - AVPlayerViewControllerDelegate

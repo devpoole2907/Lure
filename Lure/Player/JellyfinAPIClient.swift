@@ -222,7 +222,7 @@ actor JellyfinAPIClient {
     func getEpisodes(seriesId: String, seasonId: String) async throws -> [JellyfinItem] {
         let response: JellyfinEpisodesResponse = try await get(
             "/Shows/\(seriesId)/Episodes",
-            params: ["SeasonId": seasonId, "UserId": userId, "Fields": "UserData"]
+            params: ["SeasonId": seasonId, "UserId": userId, "Fields": "UserData,Overview,RunTimeTicks"]
         )
         return response.items ?? []
     }

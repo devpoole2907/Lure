@@ -55,6 +55,7 @@ struct JellyfinItem: Decodable, Sendable {
     let runTimeTicks: Int64?
     let dateCreated: String?
     let communityRating: Double?
+    let overview: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -71,6 +72,7 @@ struct JellyfinItem: Decodable, Sendable {
         case runTimeTicks = "RunTimeTicks"
         case dateCreated = "DateCreated"
         case communityRating = "CommunityRating"
+        case overview = "Overview"
     }
 
     var resumePositionSeconds: Double {

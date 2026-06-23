@@ -31,6 +31,12 @@ final class PlayerViewModel {
     /// The native backend renders through AVKit's own `AVPlayer` + controls.
     var isSoftwareBackend: Bool { playbackBackend == .software }
 
+    /// Mirrors AVKit's transport-chrome visibility on the native path. AVKit has no
+    /// public "controls visible" signal, so `PlayerHostController` tracks the same
+    /// tap-to-toggle + auto-hide behavior and updates this; our custom overlay
+    /// controls fade in/out with it so they hide together with AVKit's chrome.
+    var controlsVisible: Bool = true
+
     // MARK: - App-level state
     var title: String = ""
     var episodeLabel: String?
@@ -131,6 +137,9 @@ final class PlayerViewModel {
             // Read resume position
             let item = try await client.getItem(itemId: self.itemId)
             let resumePosition = item.resumePositionSeconds
+            #if DEBUG
+            print("[PlayerViewModel] resume: itemId=\(self.itemId) resumePositionSeconds=\(String(format: "%.1f", resumePosition)) playbackPositionTicks=\(item.userData?.playbackPositionTicks.map(String.init) ?? "nil") played=\(item.userData?.played.map(String.init) ?? "nil")")
+            #endif
 
             // Get playback info
             let info = try await client.getPlaybackInfo(itemId: self.itemId, startPositionSeconds: resumePosition)
@@ -290,15 +299,34 @@ final class PlayerViewModel {
         }
     }
 
+    /// The native HLS path can drop the engine's load-time seek when it's issued
+    /// before the AVPlayer item is ready / `duration` is known — the seek clamps to
+    /// 0 and playback starts from the beginning instead of the resume point. So for
+    /// a resume we wait until playback is genuinely established (duration known +
+    /// playing), then seek to the target ourselves, but only if we're not already
+    /// there (a no-op when the engine's own seek lands correctly).
     private func recoverStartupIfNeeded(startPosition: Double?) async {
-        let expectedStart = startPosition ?? 0
-        try? await Task.sleep(for: .milliseconds(700))
+        let target = startPosition ?? 0
+
+        // Wait for playback to establish: duration is what the seek clamps against,
+        // so seeking before it's known is exactly the bug we're recovering from.
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            if case .playing = state, target == 0 || duration > 0 { break }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
         guard case .playing = state else { return }
-        guard currentTime <= expectedStart + 0.05 else { return }
-        #if DEBUG
-        print("[PlayerViewModel] startup recovery seek triggered expectedStart=\(String(format: "%.3f", expectedStart)) current=\(String(format: "%.3f", currentTime)) layer=\(displayLayerStatus())")
-        #endif
-        await engine.seek(to: expectedStart)
+
+        if target > 0 {
+            guard duration > 0, currentTime < target - 5 else { return }
+            #if DEBUG
+            print("[PlayerViewModel] resume seek -> \(String(format: "%.1f", target)) (current=\(String(format: "%.1f", currentTime)) duration=\(String(format: "%.1f", duration)))")
+            #endif
+            await engine.seek(to: min(target, duration - 1))
+        } else {
+            guard currentTime <= 0.05 else { return }
+            await engine.seek(to: 0)
+        }
     }
 
     #if DEBUG

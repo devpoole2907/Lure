@@ -184,6 +184,9 @@ struct DiscoverView: View {
                 }
                 .padding(.bottom)
             }
+#if os(iOS)
+            .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
             .ignoresSafeArea(edges: .top)
             .onScrollGeometryChange(for: CGFloat.self) {
                 $0.contentOffset.y + $0.contentInsets.top

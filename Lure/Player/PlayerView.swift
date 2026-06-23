@@ -130,6 +130,9 @@ struct PlayerView: View {
                     tracksMenu
                 }
                 .padding(.trailing, 20)
+                .opacity(vm.controlsVisible ? 1 : 0)
+                .allowsHitTesting(vm.controlsVisible)
+                .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
             }
 
             Spacer()

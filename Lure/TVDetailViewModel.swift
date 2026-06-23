@@ -21,6 +21,10 @@ final class TVDetailViewModel {
     private let apiClient: SeerrAPIClient
     private let jellyfinService: JellyfinService
 
+    var jellyfinClient: JellyfinAPIClient? {
+        jellyfinService.client
+    }
+
     init(tmdbId: Int, apiClient: SeerrAPIClient, jellyfinService: JellyfinService) {
         self.tmdbId = tmdbId
         self.apiClient = apiClient
