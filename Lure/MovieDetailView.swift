@@ -41,7 +41,7 @@ struct MovieDetailView: View {
         Group {
             if let movie = vm.movie {
                 scrollContent(movie)
-                    .background { artBackground(url: displayPosterURL(for: movie)) }
+                    .background { artBackground(url: heroArtworkURL(for: movie)) }
                     .transition(.opacity)
             } else if vm.isLoading {
                 loadingContent
@@ -227,7 +227,8 @@ struct MovieDetailView: View {
     private func heroSection(_ movie: SeerrMovieDetail) -> some View {
         DetailPosterHeroView(
             title: movie.displayTitle,
-            posterURL: heroPosterURL(for: movie),
+            artworkURL: heroArtworkURL(for: movie),
+            logoURL: vm.heroArtwork?.logoURL,
             mediaTypeLabel: "Movie",
             year: movie.year,
             rating: movie.voteAverage,
@@ -258,14 +259,10 @@ struct MovieDetailView: View {
         }
     }
 
-    private func displayPosterURL(for movie: SeerrMovieDetail) -> URL? {
-        initialPosterURL ?? movie.posterURL
-    }
-
-    /// The hero is full-bleed, so prefer the original-resolution poster from the
-    /// loaded movie; only fall back to the low-res list thumbnail before it lands.
-    private func heroPosterURL(for movie: SeerrMovieDetail) -> URL? {
-        movie.heroPosterURL ?? initialPosterURL
+    /// Prefer clean wide key art for full-bleed surfaces; posters remain a fallback
+    /// for titles without usable backdrops.
+    private func heroArtworkURL(for movie: SeerrMovieDetail) -> URL? {
+        vm.heroArtwork?.backdropURL ?? movie.backdropURL ?? movie.heroPosterURL ?? initialPosterURL
     }
 
     /// Global-Y below which the hero title is considered tucked behind the status +

@@ -11,7 +11,8 @@ struct HeroTitleBottomKey: PreferenceKey {
 
 struct DetailPosterHeroView: View {
     let title: String
-    let posterURL: URL?
+    let artworkURL: URL?
+    let logoURL: URL?
     let mediaTypeLabel: String
     let year: String?
     let rating: Double?
@@ -54,7 +55,7 @@ struct DetailPosterHeroView: View {
     }
 
     private var heroImage: some View {
-        CachedRemoteImage(url: posterURL, contentMode: .fill) {
+        CachedRemoteImage(url: artworkURL, contentMode: .fill) {
             ZStack {
                 Rectangle()
                     .fill(.linearGradient(
@@ -71,20 +72,13 @@ struct DetailPosterHeroView: View {
 
     private var bottomContent: some View {
         VStack(spacing: 10) {
-            Text(title)
-                .font(.largeTitle.weight(.black))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: HeroTitleBottomKey.self,
-                            value: geo.frame(in: .global).maxY
-                        )
-                    }
-                )
+            HeroTitleArtworkView(
+                title: title,
+                logoURL: logoURL,
+                maxWidth: 430,
+                maxLogoHeight: 142,
+                reportTitleBottom: true
+            )
 
             metadataRow
 
@@ -148,7 +142,8 @@ struct DetailPosterHeroView: View {
 #Preview("Detail Poster Hero") {
     DetailPosterHeroView(
         title: SeerrTVDetail.previewShow.displayTitle,
-        posterURL: nil,
+        artworkURL: nil,
+        logoURL: nil,
         mediaTypeLabel: "TV Show",
         year: SeerrTVDetail.previewShow.year,
         rating: SeerrTVDetail.previewShow.voteAverage,

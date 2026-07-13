@@ -11,6 +11,11 @@ enum ImageURL {
         return URL(string: size.baseURL + path)
     }
 
+    static func logo(_ path: String?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        return URL(string: LureConstants.TMDB.imageBaseURL + "original" + path)
+    }
+
     static func profile(_ path: String?) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         return URL(string: LureConstants.TMDB.profileMedium + path)
@@ -31,12 +36,13 @@ enum ImageURL {
     }
 
     enum BackdropSize {
-        case small, large
+        case small, large, original
 
         var baseURL: String {
             switch self {
             case .small: LureConstants.TMDB.backdropSmall
             case .large: LureConstants.TMDB.backdropLarge
+            case .original: LureConstants.TMDB.backdropOriginal
             }
         }
     }

@@ -11,6 +11,7 @@ struct DiscoverHeroCarouselView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollPhase: ScrollPhase = .idle
+    @State private var artworkByItemID: [String: MediaArtwork] = [:]
 
     private var heroItems: [SeerrMediaItem] {
         Array(items.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }.prefix(8))
@@ -55,6 +56,7 @@ struct DiscoverHeroCarouselView: View {
             }
             .task(id: heroItems.map(\.id).joined(separator: "|")) {
                 syncCarouselSelection()
+                await loadHeroArtwork()
                 await preloadHeroImages()
             }
             .task(id: "\(heroItems.map(\.id).joined(separator: "|"))|\(isActive)") {
@@ -125,11 +127,12 @@ struct DiscoverHeroCarouselView: View {
         let isActive = heroItems[safe: activeIndex]?.id == item.id
 
         return VStack(spacing: 10) {
-            Text(item.title)
-                .font(.largeTitle.weight(.black))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
+            HeroTitleArtworkView(
+                title: item.title,
+                logoURL: artworkByItemID[item.id]?.logoURL,
+                maxWidth: 430,
+                maxLogoHeight: 132
+            )
 
             HStack(spacing: 8) {
                 Text(item.mediaType == "tv" ? "TV Show" : "Movie")
@@ -177,18 +180,57 @@ struct DiscoverHeroCarouselView: View {
     }
 
     private func heroImageURL(for item: SeerrMediaItem) -> URL? {
-        backdropURL(for: item) ?? item.posterURL
+        artworkByItemID[item.id]?.backdropURL ?? backdropURL(for: item) ?? item.posterURL
     }
 
     private func preloadHeroImages() async {
         let urls = heroItems.flatMap { item in
-            [backdropURL(for: item), item.posterURL].compactMap(\.self)
+            [
+                heroImageURL(for: item),
+                artworkByItemID[item.id]?.logoURL,
+                item.posterURL
+            ].compactMap(\.self)
         }
         await withTaskGroup(of: Void.self) { group in
             for url in urls {
                 group.addTask {
                     _ = try? await LureImageCache.shared.imageData(for: url)
                 }
+            }
+        }
+    }
+
+    @MainActor
+    private func loadHeroArtwork() async {
+        var resolved = artworkByItemID
+
+        await withTaskGroup(of: (String, MediaArtwork).self) { group in
+            for item in heroItems {
+                let id = item.id
+                let mediaType = item.mediaType
+                let tmdbId = item.tmdbId
+                let fallbackBackdropURL = backdropURL(for: item)
+                let fallbackPosterURL = item.posterURL
+
+                group.addTask {
+                    let artwork = await MediaArtworkService.shared.artwork(
+                        mediaType: mediaType,
+                        tmdbId: tmdbId,
+                        fallbackBackdropURL: fallbackBackdropURL,
+                        fallbackPosterURL: fallbackPosterURL
+                    )
+                    return (id, artwork)
+                }
+            }
+
+            for await (id, artwork) in group {
+                resolved[id] = artwork
+            }
+        }
+
+        withAnimation(.easeInOut(duration: 0.25)) {
+            artworkByItemID = resolved.filter { pair in
+                heroItems.contains(where: { $0.id == pair.key })
             }
         }
     }

@@ -14,6 +14,7 @@ final class TVDetailViewModel {
     var error: String?
     private(set) var requestSuccess: Bool = false
     private(set) var playbackAvailability: PlaybackAvailability = .unknown
+    private(set) var heroArtwork: MediaArtwork?
 
     // Season selection for requests
     var selectedSeasons: Set<Int> = []
@@ -35,6 +36,7 @@ final class TVDetailViewModel {
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = true
             error = nil
+            heroArtwork = nil
         }
 
         do {
@@ -49,9 +51,10 @@ final class TVDetailViewModel {
             }
         }
 
+        async let artworkLoad: () = loadArtwork()
         async let ratingsLoad: () = loadRatings()
         async let recsLoad: () = loadRecommendations()
-        _ = await (ratingsLoad, recsLoad)
+        _ = await (artworkLoad, ratingsLoad, recsLoad)
 
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = false
@@ -173,6 +176,19 @@ final class TVDetailViewModel {
             withAnimation(.smooth(duration: 0.35)) {
                 recommendations = loadedRecommendations
             }
+        }
+    }
+
+    private func loadArtwork() async {
+        guard let show else { return }
+        let artwork = await MediaArtworkService.shared.artwork(
+            mediaType: "tv",
+            tmdbId: tmdbId,
+            fallbackBackdropURL: show.backdropURL,
+            fallbackPosterURL: show.heroPosterURL
+        )
+        withAnimation(.smooth(duration: 0.35)) {
+            heroArtwork = artwork
         }
     }
 

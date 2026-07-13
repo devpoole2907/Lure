@@ -16,6 +16,7 @@ final class MovieDetailViewModel {
     private(set) var playbackAvailability: PlaybackAvailability = .unknown
     private(set) var mediaQuality: MediaQualityInfo?
     private(set) var resumePositionSeconds: Double = 0
+    private(set) var heroArtwork: MediaArtwork?
 
     /// True when Jellyfin has a saved playback position partway through the film,
     /// so the Watch button should offer to continue instead of restart.
@@ -34,6 +35,7 @@ final class MovieDetailViewModel {
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = true
             error = nil
+            heroArtwork = nil
         }
 
         do {
@@ -49,9 +51,10 @@ final class MovieDetailViewModel {
         }
 
         // Load ratings and recommendations concurrently (non-critical)
+        async let artworkLoad: () = loadArtwork()
         async let ratingsLoad: () = loadRatings()
         async let recsLoad: () = loadRecommendations()
-        _ = await (ratingsLoad, recsLoad)
+        _ = await (artworkLoad, ratingsLoad, recsLoad)
 
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = false
@@ -102,6 +105,19 @@ final class MovieDetailViewModel {
             withAnimation(.smooth(duration: 0.35)) {
                 recommendations = loadedRecommendations
             }
+        }
+    }
+
+    private func loadArtwork() async {
+        guard let movie else { return }
+        let artwork = await MediaArtworkService.shared.artwork(
+            mediaType: "movie",
+            tmdbId: tmdbId,
+            fallbackBackdropURL: movie.backdropURL,
+            fallbackPosterURL: movie.heroPosterURL
+        )
+        withAnimation(.smooth(duration: 0.35)) {
+            heroArtwork = artwork
         }
     }
 
