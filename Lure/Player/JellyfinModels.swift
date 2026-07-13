@@ -191,8 +191,8 @@ struct JellyfinDeviceProfile: Encodable {
 
     static let aetherEngine = JellyfinDeviceProfile(
         name: "Lure (AetherEngine)",
-        maxStaticBitrate: 1_000_000_000,
-        maxStreamingBitrate: 1_000_000_000,
+        maxStaticBitrate: 200_000_000,
+        maxStreamingBitrate: 200_000_000,
         directPlayProfiles: [
             JellyfinDirectPlayProfile(
                 container: "mp4,m4v,mov,mkv,matroska,avi,mpegts,ts,ogg,webm,flv",

@@ -310,7 +310,7 @@ actor JellyfinAPIClient {
         let body = JellyfinPlaybackInfoBody(
             deviceProfile: .aetherEngine,
             userId: userId,
-            maxStreamingBitrate: 1_000_000_000,
+            maxStreamingBitrate: 200_000_000,
             startTimeTicks: startTicks,
             enableDirectPlay: true,
             enableDirectStream: true,
@@ -339,7 +339,8 @@ actor JellyfinAPIClient {
         var components = URLComponents(string: "\(serverURL)/Videos/\(itemId)/\(streamPath)")
         var queryItems = [
             URLQueryItem(name: "api_key", value: token),
-            URLQueryItem(name: "MediaSourceId", value: mediaSourceId)
+            URLQueryItem(name: "MediaSourceId", value: mediaSourceId),
+            URLQueryItem(name: "PlaySessionId", value: playSessionId)
         ]
         if isStatic {
             queryItems.append(URLQueryItem(name: "Static", value: "true"))
@@ -349,8 +350,35 @@ actor JellyfinAPIClient {
     }
 
     nonisolated func transcodingURL(path: String) -> URL? {
-        guard let baseURL = URL(string: serverURL) else { return nil }
-        return URL(string: path, relativeTo: baseURL)?.absoluteURL
+        serverRelativeURL(path: path)
+    }
+
+    nonisolated func serverRelativeURL(path: String) -> URL? {
+        if let absolute = URL(string: path), absolute.scheme != nil {
+            return absolute
+        }
+        guard let baseURL = URL(string: serverURL),
+              var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        else { return nil }
+
+        let parsedPath = URLComponents(string: path)
+        let incomingPath = parsedPath?.path.isEmpty == false ? parsedPath?.path ?? path : path
+        let basePath = baseURL.path
+
+        if incomingPath.hasPrefix("/") {
+            let normalizedBase = basePath.hasSuffix("/") ? String(basePath.dropLast()) : basePath
+            if normalizedBase.isEmpty || incomingPath == normalizedBase || incomingPath.hasPrefix("\(normalizedBase)/") {
+                components.path = incomingPath
+            } else {
+                components.path = "\(normalizedBase)/\(incomingPath.drop { $0 == "/" })"
+            }
+        } else {
+            let normalizedBase = basePath.hasSuffix("/") ? basePath : "\(basePath)/"
+            components.path = "\(normalizedBase)\(incomingPath)"
+        }
+        components.query = parsedPath?.percentEncodedQuery
+        components.fragment = parsedPath?.percentEncodedFragment
+        return components.url
     }
 
     func playbackURLDiagnostics(_ url: URL) async {

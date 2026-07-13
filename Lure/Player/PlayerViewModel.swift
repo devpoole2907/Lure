@@ -94,6 +94,10 @@ final class PlayerViewModel {
     private var nextEpisodeCountdownSuppressed = false
     private var startupDiagnosticsTask: Task<Void, Never>?
     private let lifecycleObserverBag = LifecycleObserverBag()
+    private let directCandidateLoadTimeoutSeconds: Double = 24
+    private let transcodeCandidateLoadTimeoutSeconds: Double = 75
+    private let directCandidateStartupTimeoutSeconds: Double = 16
+    private let transcodeCandidateStartupTimeoutSeconds: Double = 35
     #if DEBUG
     private var lastLoggedPlaybackSecond = -1
     #endif
@@ -143,6 +147,8 @@ final class PlayerViewModel {
         isLoading = true
         playbackEnded = false
         videoSize = nil
+        selectedAudioTrackId = nil
+        selectedSubtitleTrackId = nil
         nextEpisodeCountdownSuppressed = false
         stopProgressReporting()
         #if DEBUG
@@ -196,6 +202,7 @@ final class PlayerViewModel {
 
             // Build stream URL
             var streamCandidates: [(url: URL, isDirect: Bool, label: String, playMethod: String)] = []
+            var directFallbackCandidates: [(url: URL, isDirect: Bool, label: String, playMethod: String)] = []
             if mediaSource.supportsDirectPlay == true {
                 if let url = client.streamURL(
                     itemId: self.itemId,
@@ -217,13 +224,13 @@ final class PlayerViewModel {
                     container: mediaSource.container,
                     useContainerExtension: false
                 ) {
-                    streamCandidates.append((fallbackURL, true, "static direct play fallback stream", "DirectPlay"))
+                    directFallbackCandidates.append((fallbackURL, true, "static direct play fallback stream", "DirectPlay"))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate static direct play fallback: \(fallbackURL.absoluteString)")
                     #endif
                 }
             }
-            if mediaSource.supportsDirectStream == true {
+            if mediaSource.supportsDirectPlay != true, mediaSource.supportsDirectStream == true {
                 if let url = client.streamURL(
                     itemId: self.itemId,
                     mediaSourceId: self.mediaSourceId,
@@ -244,7 +251,7 @@ final class PlayerViewModel {
                     container: mediaSource.container,
                     useContainerExtension: false
                 ) {
-                    streamCandidates.append((fallbackURL, true, "non-static direct stream fallback stream", "DirectStream"))
+                    directFallbackCandidates.append((fallbackURL, true, "non-static direct stream fallback stream", "DirectStream"))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate non-static direct stream fallback: \(fallbackURL.absoluteString)")
                     #endif
@@ -257,6 +264,7 @@ final class PlayerViewModel {
                 print("[PlayerViewModel] Candidate transcode: \(url.absoluteString)")
                 #endif
             }
+            streamCandidates.append(contentsOf: directFallbackCandidates)
             guard !streamCandidates.isEmpty else {
                 throw JellyfinError.noPlayableSource
             }
@@ -275,13 +283,11 @@ final class PlayerViewModel {
             // JellyfinModels.swift but otherwise unused until now. Map them to AetherEngine
             // 4.12.1's first-class external-subtitle support (#88) so sidecar srt/ass/vtt
             // tracks actually show up (ISSUE-007).
-            let serverURLString = client.serverURL
             let externalSubtitleTracks: [ExternalSubtitleTrack] = (mediaSource.mediaStreams ?? []).compactMap { stream in
                 guard stream.type == "Subtitle",
                       stream.isExternal == true,
                       let deliveryUrl = stream.deliveryUrl,
-                      let baseURL = URL(string: serverURLString),
-                      let url = URL(string: deliveryUrl, relativeTo: baseURL)?.absoluteURL
+                      let url = client.serverRelativeURL(path: deliveryUrl)
                 else { return nil }
                 return ExternalSubtitleTrack(
                     url: url,
@@ -299,6 +305,7 @@ final class PlayerViewModel {
             #else
             let panelIsInHDRMode = false
             #endif
+            let preferredAudioLanguages = Self.preferredAudioLanguages()
 
             var lastLoadError: Error?
             // Suppress the engine.$state sink's error writes while candidates are being
@@ -306,6 +313,7 @@ final class PlayerViewModel {
             // failed load, and without suppression a failed direct-play candidate would
             // flash the error overlay even when a later transcode candidate succeeds.
             suppressEngineErrors = true
+            defer { suppressEngineErrors = false }
             for candidate in streamCandidates {
                 #if DEBUG
                 print("[PlayerViewModel] Trying \(candidate.label): \(candidate.url.absoluteString)")
@@ -319,19 +327,23 @@ final class PlayerViewModel {
                     // by native WebVTT renditions in AetherEngine 4.9.0, but wiring that up
                     // is a separate change).
                     //
-                    // Track layout is already known from Jellyfin's MediaInfo, so a tight
-                    // probe budget is safe (AetherEngine #68): shaves ~13s off load time on
-                    // remote sources vs. the 50MB/60s engine default. This is a fail-OPEN
-                    // budget (late-resolving tracks silently go missing instead of the load
-                    // throwing), so direct-play candidates are validated against Jellyfin's
-                    // own MediaInfo track counts below and retried unbounded if under-resolved.
-                    let probe = try await engine.load(
+                    // Track layout is already known from Jellyfin's MediaInfo, so a bounded
+                    // remote probe budget is safe (AetherEngine #68): it avoids 4K remux
+                    // startup stalls where sparse PGS/bitmap subtitle tracks force the full
+                    // 50MB/60s engine default before the first frame. Audio is still validated
+                    // below because a missing audio stream is playback-breaking; sparse
+                    // subtitles are allowed to resolve late or be absent rather than blocking
+                    // startup.
+                    let probe = try await loadEngineCandidate(
+                        candidate.label,
                         url: candidate.url,
                         startPosition: startPosition,
+                        timeoutSeconds: candidate.isDirect ? directCandidateLoadTimeoutSeconds : transcodeCandidateLoadTimeoutSeconds,
                         options: LoadOptions(
                             panelIsInHDRMode: panelIsInHDRMode,
-                            probesize: 4 * 1024 * 1024,
-                            maxAnalyzeDuration: 5 * 1_000_000,
+                            probesize: 16 * 1024 * 1024,
+                            maxAnalyzeDuration: 10 * 1_000_000,
+                            preferredAudioLanguages: preferredAudioLanguages,
                             externalSubtitles: externalSubtitleTracks
                         )
                     )
@@ -341,26 +353,44 @@ final class PlayerViewModel {
                     if candidate.isDirect, let probe {
                         let resolvedAudioCount = probe.audioTracks.filter { !$0.isExternal }.count
                         let resolvedSubtitleCount = probe.subtitleTracks.filter { !$0.isExternal }.count
-                        if resolvedAudioCount < embeddedAudioCount || resolvedSubtitleCount < embeddedSubtitleCount {
+                        if resolvedAudioCount < embeddedAudioCount {
                             #if DEBUG
-                            print("[PlayerViewModel] Tight probe under-resolved tracks (audio \(resolvedAudioCount)/\(embeddedAudioCount), subtitle \(resolvedSubtitleCount)/\(embeddedSubtitleCount)) — retrying \(candidate.label) with unbounded probe budget")
+                            print("[PlayerViewModel] Bounded probe under-resolved audio tracks (audio \(resolvedAudioCount)/\(embeddedAudioCount), subtitle \(resolvedSubtitleCount)/\(embeddedSubtitleCount)) — retrying \(candidate.label) with unbounded probe budget")
                             #endif
-                            let retryProbe = try await engine.load(
+                            let retryProbe = try await loadEngineCandidate(
+                                "\(candidate.label) full-probe retry",
                                 url: candidate.url,
                                 startPosition: startPosition,
+                                timeoutSeconds: directCandidateLoadTimeoutSeconds,
                                 options: LoadOptions(
                                     panelIsInHDRMode: panelIsInHDRMode,
+                                    preferredAudioLanguages: preferredAudioLanguages,
                                     externalSubtitles: externalSubtitleTracks
                                 )
                             )
                             if let retryProbe {
                                 videoSize = Self.videoSize(from: retryProbe)
                             }
+                        } else if resolvedSubtitleCount < embeddedSubtitleCount {
+                            #if DEBUG
+                            print("[PlayerViewModel] Bounded probe under-resolved sparse subtitle tracks (subtitle \(resolvedSubtitleCount)/\(embeddedSubtitleCount)); accepting to avoid delaying first frame")
+                            #endif
                         }
                     }
                     playMethod = candidate.playMethod
+                    engine.play()
+                    let startupTimeout = candidate.isDirect
+                        ? directCandidateStartupTimeoutSeconds
+                        : transcodeCandidateStartupTimeoutSeconds
+                    let startupSucceeded = await waitForStartupEvidence(
+                        candidate.label,
+                        timeoutSeconds: startupTimeout
+                    )
+                    guard startupSucceeded else {
+                        throw PlayerStartupTimeoutError(label: candidate.label, seconds: startupTimeout)
+                    }
                     #if DEBUG
-                    print("[PlayerViewModel] Loaded via \(candidate.label)")
+                    print("[PlayerViewModel] Loaded and started via \(candidate.label)")
                     #endif
                     lastLoadError = nil
                     // Clear any stale error from an earlier failed candidate now that this
@@ -369,12 +399,12 @@ final class PlayerViewModel {
                     break
                 } catch {
                     lastLoadError = error
+                    engine.stop()
                     #if DEBUG
                     print("[PlayerViewModel] Load candidate failed label=\(candidate.label) error=\(String(describing: error)) localized=\(error.localizedDescription)")
                     #endif
                 }
             }
-            suppressEngineErrors = false
             if let lastLoadError {
                 throw lastLoadError
             }
@@ -382,11 +412,6 @@ final class PlayerViewModel {
             print("[PlayerViewModel] engine.load returned state=\(String(describing: state)) current=\(String(format: "%.3f", currentTime)) duration=\(String(format: "%.3f", duration)) layer=\(displayLayerStatus())")
             #endif
 
-            // Auto-select preferred audio track
-            autoSelectAudioTrack()
-
-            // Start playback
-            engine.play()
             await recoverStartupIfNeeded(startPosition: startPosition)
             isLoading = false
 
@@ -557,7 +582,6 @@ final class PlayerViewModel {
 
     func selectAudioTrack(_ track: TrackInfo) {
         engine.selectAudioTrack(index: track.id)
-        selectedAudioTrackId = track.id
     }
 
     func selectSubtitleTrack(_ track: TrackInfo) {
@@ -619,7 +643,7 @@ final class PlayerViewModel {
     /// rebuffers/stalls/seeks surface the same buffering signal as startup loading does.
     var isBuffering: Bool {
         switch playbackPhase {
-        case .loading, .rebuffering, .seeking: true
+        case .loading, .rebuffering, .seeking, .stalled: true
         default: isLoading
         }
     }
@@ -732,7 +756,11 @@ final class PlayerViewModel {
                     print("[PlayerViewModel] audioTracks -> [\(summary)]")
                 }
                 #endif
-                self?.autoSelectAudioTrack()
+            }
+            .store(in: &cancellables)
+        engine.$activeAudioTrackIndex
+            .sink { [weak self] value in
+                self?.selectedAudioTrackId = value
             }
             .store(in: &cancellables)
         engine.$subtitleTracks
@@ -800,18 +828,71 @@ final class PlayerViewModel {
         }
     }
 
-    // MARK: - Private: Auto Track Selection
+    // MARK: - Private: Engine Load Helpers
 
-    private func autoSelectAudioTrack() {
-        guard selectedAudioTrackId == nil, !audioTracks.isEmpty else { return }
-        let preferred = Locale.current.language.languageCode?.identifier ?? "en"
-        let match = audioTracks.first { $0.language?.hasPrefix(preferred) == true && $0.isDefault }
-            ?? audioTracks.first { $0.language?.hasPrefix(preferred) == true }
-            ?? audioTracks.first { $0.isDefault }
-            ?? audioTracks.first
-        guard let match else { return }
-        engine.selectAudioTrack(index: match.id)
-        selectedAudioTrackId = match.id
+    private func loadEngineCandidate(
+        _ label: String,
+        url: URL,
+        startPosition: Double?,
+        timeoutSeconds: Double,
+        options: LoadOptions
+    ) async throws -> SourceProbe? {
+        try await withThrowingTaskGroup(of: SourceProbe?.self) { group in
+            group.addTask { @MainActor [engine] in
+                try await engine.load(url: url, startPosition: startPosition, options: options)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                throw PlayerLoadTimeoutError(label: label, seconds: timeoutSeconds)
+            }
+
+            do {
+                guard let result = try await group.next() else {
+                    group.cancelAll()
+                    throw CancellationError()
+                }
+                group.cancelAll()
+                return result
+            } catch let error as PlayerLoadTimeoutError {
+                group.cancelAll()
+                engine.stop()
+                throw error
+            } catch {
+                group.cancelAll()
+                throw error
+            }
+        }
+    }
+
+    private func waitForStartupEvidence(_ label: String, timeoutSeconds: Double) async -> Bool {
+        let startedAt = Date()
+        let baselineTime = currentTime
+        while Date().timeIntervalSince(startedAt) < timeoutSeconds {
+            if Task.isCancelled { return false }
+            if case .error = state { return false }
+            if currentTime > baselineTime + 0.35 {
+                return true
+            }
+            #if DEBUG
+            if Date().timeIntervalSince(startedAt) > 4,
+               Int(Date().timeIntervalSince(startedAt) * 10) % 20 == 0 {
+                print("[PlayerViewModel] Waiting for startup evidence label=\(label) state=\(String(describing: state)) phase=\(playbackPhase) current=\(String(format: "%.3f", currentTime)) duration=\(String(format: "%.3f", duration))")
+            }
+            #endif
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return false
+    }
+
+    private static func preferredAudioLanguages() -> [String] {
+        var languages: [String] = []
+        if let identifier = Locale.current.language.languageCode?.identifier, !identifier.isEmpty {
+            languages.append(identifier)
+        }
+        if !languages.contains("en") {
+            languages.append("en")
+        }
+        return languages
     }
 
     // MARK: - Private: Segment Checking
@@ -924,5 +1005,23 @@ private final class LifecycleObserverBag: @unchecked Sendable {
         for token in tokens {
             NotificationCenter.default.removeObserver(token)
         }
+    }
+}
+
+private struct PlayerLoadTimeoutError: LocalizedError {
+    let label: String
+    let seconds: Double
+
+    var errorDescription: String? {
+        "Timed out loading \(label) after \(Int(seconds)) seconds"
+    }
+}
+
+private struct PlayerStartupTimeoutError: LocalizedError {
+    let label: String
+    let seconds: Double
+
+    var errorDescription: String? {
+        "Timed out starting \(label) after \(Int(seconds)) seconds"
     }
 }
