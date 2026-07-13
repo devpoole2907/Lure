@@ -271,27 +271,27 @@ struct TVDetailView: View {
 
     private func favoriteAction(for show: SeerrTVDetail) -> DetailPosterHeroAction {
         DetailPosterHeroAction(
-            title: vm.isFavorite ? "In Favorites" : "Add to Favorites",
+            title: vm.isFavorite ? "Remove from Favorites" : "Add to Favorites",
             systemImage: vm.isFavorite ? "checkmark" : "plus",
-            isEnabled: vm.playbackAvailability.playableItemId != nil && !vm.isFavorite,
+            isEnabled: vm.playbackAvailability.playableItemId != nil,
             isHighlighted: vm.isFavorite
         ) {
-            addToFavorites(title: show.displayTitle)
+            toggleFavorite(title: show.displayTitle)
         }
     }
 
-    private func addToFavorites(title: String) {
+    private func toggleFavorite(title: String) {
         Task { @MainActor in
             do {
-                try await vm.addPlayableItemToFavorites()
+                let isFavorite = try await vm.togglePlayableItemFavorite()
                 notificationCenter.show(LureBannerItem(
-                    title: "Added to Favorites",
+                    title: isFavorite ? "Added to Favorites" : "Removed from Favorites",
                     message: title,
-                    style: .success
+                    style: isFavorite ? .success : .info
                 ))
             } catch {
                 notificationCenter.show(LureBannerItem(
-                    title: "Favorite Failed",
+                    title: "Favorites Update Failed",
                     message: error.localizedDescription,
                     style: .error
                 ))

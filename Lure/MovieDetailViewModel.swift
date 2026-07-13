@@ -127,17 +127,24 @@ final class MovieDetailViewModel {
         await resolvePlaybackAvailability(for: movie)
     }
 
-    func addPlayableItemToFavorites() async throws {
+    @discardableResult
+    func togglePlayableItemFavorite() async throws -> Bool {
         guard let itemId = playbackAvailability.playableItemId else {
             throw JellyfinError.itemNotFound
         }
         guard let client = jellyfinService.client else {
             throw JellyfinError.noCredentials
         }
-        try await client.addFavorite(itemId: itemId)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
-            isFavorite = true
+        let newValue = !isFavorite
+        if newValue {
+            try await client.addFavorite(itemId: itemId)
+        } else {
+            try await client.removeFavorite(itemId: itemId)
         }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+            isFavorite = newValue
+        }
+        return newValue
     }
 
     private func resolvePlaybackAvailability(for movie: SeerrMovieDetail) async {

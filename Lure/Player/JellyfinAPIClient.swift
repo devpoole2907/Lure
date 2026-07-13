@@ -307,6 +307,10 @@ actor JellyfinAPIClient {
         try await postEmpty("/Users/\(userId)/FavoriteItems/\(itemId)")
     }
 
+    func removeFavorite(itemId: String) async throws {
+        try await deleteEmpty("/Users/\(userId)/FavoriteItems/\(itemId)")
+    }
+
     // MARK: - Playback
 
     func getPlaybackInfo(
@@ -483,6 +487,11 @@ actor JellyfinAPIClient {
 
     private func postEmpty(_ path: String) async throws {
         let request = try buildRequest(path: path, method: "POST")
+        try await performVoid(request)
+    }
+
+    private func deleteEmpty(_ path: String) async throws {
+        let request = try buildRequest(path: path, method: "DELETE")
         try await performVoid(request)
     }
 
