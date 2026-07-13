@@ -76,7 +76,7 @@ struct PlayableMedia: Identifiable, Hashable, Codable, Sendable {
         self.init(
             itemId: item.id,
             title: item.seriesName ?? item.name ?? "",
-            episodeLabel: item.episodeLabel,
+            episodeLabel: item.detailedEpisodeLabel,
             kind: item.type?.lowercased() == "episode" ? .tv : .movie
         )
     }

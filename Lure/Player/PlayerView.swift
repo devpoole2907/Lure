@@ -112,43 +112,75 @@ struct PlayerView: View {
     /// Empty regions are non-interactive so taps fall through to AVKit's controls.
     @ViewBuilder
     private var nativeAuxOverlay: some View {
-        VStack(spacing: 0) {
-            Spacer()
+        ZStack {
+            VStack(spacing: 0) {
+                Spacer()
 
-            if hasTrackChoices {
-                HStack {
-                    Spacer()
-                    tracksMenu
+                if hasTrackChoices {
+                    HStack {
+                        Spacer()
+                        tracksMenu
+                    }
+                    .padding(.trailing, 20)
+                    .opacity(vm.controlsVisible ? 1 : 0)
+                    .allowsHitTesting(vm.controlsVisible)
+                    .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
                 }
-                .padding(.trailing, 20)
-                .opacity(vm.controlsVisible ? 1 : 0)
-                .allowsHitTesting(vm.controlsVisible)
-                .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
+
+                Spacer()
+
+                if vm.showNextEpisodeCountdown, let next = vm.nextEpisode {
+                    nextEpisodePrompt(next)
+                } else if vm.activeIntroSegment != nil {
+                    HStack {
+                        Spacer()
+                        Button {
+                            Task { await vm.skipIntro() }
+                        } label: {
+                            Label("Skip Intro", systemImage: "forward.end.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 12)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .padding(.trailing, 24)
+                    }
+                    .padding(.bottom, 120)
+                }
             }
 
-            Spacer()
-
-            if vm.showNextEpisodeCountdown, let next = vm.nextEpisode {
-                nextEpisodePrompt(next)
-            } else if vm.activeIntroSegment != nil {
+            if vm.controlsVisible {
                 HStack {
+                    playerTitleBlock
                     Spacer()
-                    Button {
-                        Task { await vm.skipIntro() }
-                    } label: {
-                        Label("Skip Intro", systemImage: "forward.end.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                            .background(.ultraThinMaterial, in: Capsule())
-                    }
-                    .padding(.trailing, 24)
                 }
-                .padding(.bottom, 120)
+                .padding(.horizontal, 88)
+                .padding(.bottom, 88)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
+                .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
             }
         }
         .ignoresSafeArea()
+    }
+
+    private var playerTitleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let ep = vm.episodeLabel {
+                Text(ep)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+            }
+
+            Text(vm.title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: 520, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     /// Only worth showing the tracks button when there's actually a choice to make:

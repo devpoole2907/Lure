@@ -82,7 +82,7 @@ struct EpisodePickerView: View {
                     ForEach(episodes, id: \.id) { episode in
                         Button {
                             guard let id = episode.id else { return }
-                            onPlay(id, episode.episodeLabel, episode.name ?? seriesTitle)
+                            onPlay(id, episode.detailedEpisodeLabel, episode.seriesName ?? seriesTitle)
                             dismiss()
                         } label: {
                             episodeRow(episode)

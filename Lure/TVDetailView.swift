@@ -14,6 +14,7 @@ struct TVDetailView: View {
     @State private var selectedCastMember: SeerrCastMember?
     @State private var isModeratingRequest = false
     @State private var showEpisodePicker = false
+    @State private var selectedEpisodeDetail: EpisodeDetailRoute?
     @State private var heroVerticalOffset: CGFloat = 0
     @State private var showNavTitle = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
@@ -144,6 +145,14 @@ struct TVDetailView: View {
                 }
             }
         }
+        .navigationDestination(item: $selectedEpisodeDetail) { route in
+            EpisodeDetailView(
+                route: route,
+                jellyfinClient: vm.jellyfinClient
+            ) { episode in
+                playerCoordinator.presentResume(episode)
+            }
+        }
     }
 
     // MARK: - Watch
@@ -155,6 +164,21 @@ struct TVDetailView: View {
         }
 
         playerCoordinator.presentResume(episode)
+    }
+
+    private func openEpisodeDetail(_ episode: JellyfinItem?) {
+        guard let show = vm.show,
+              let episode,
+              let itemId = episode.id else {
+            return
+        }
+
+        selectedEpisodeDetail = EpisodeDetailRoute(
+            itemId: itemId,
+            seriesTitle: show.displayTitle,
+            episodeTitle: episode.name ?? "Episode",
+            episodeLabel: episode.detailedEpisodeLabel ?? episode.episodeLabel
+        )
     }
 
     // MARK: - Background
@@ -333,7 +357,7 @@ struct TVDetailView: View {
                 jellyfinClient: vm.jellyfinClient,
                 jellyfinSeriesId: vm.playbackAvailability.playableItemId,
                 onPlayEpisode: playEpisodeFromShelf,
-                onOpenEpisodePicker: { showEpisodePicker = true }
+                onOpenEpisodeDetail: openEpisodeDetail
             )
         }
 

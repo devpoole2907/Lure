@@ -93,6 +93,13 @@ struct JellyfinItem: Decodable, Sendable {
         return "S\(s) \u{00B7} E\(e)"
     }
 
+    var detailedEpisodeLabel: String? {
+        guard let episodeLabel else { return nil }
+        let title = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let title, !title.isEmpty else { return episodeLabel }
+        return "\(episodeLabel) - \(title)"
+    }
+
     var resumeLabel: String? {
         let pos = resumePositionSeconds
         guard pos > 30 else { return nil }

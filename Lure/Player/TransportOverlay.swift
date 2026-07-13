@@ -226,12 +226,32 @@ struct TransportOverlay: View {
     // MARK: - Bottom Bar
 
     private var bottomBar: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            playerTitleBlock
             scrubBar
             bottomButtons
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
+    }
+
+    private var playerTitleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let ep = vm.episodeLabel {
+                Text(ep)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+            }
+
+            Text(vm.title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
     }
 
     private var scrubBar: some View {

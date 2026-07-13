@@ -5,7 +5,7 @@ struct TVSeasonEpisodeShelf: View {
     let jellyfinClient: JellyfinAPIClient?
     let jellyfinSeriesId: String?
     let onPlayEpisode: (JellyfinItem?) -> Void
-    let onOpenEpisodePicker: () -> Void
+    let onOpenEpisodeDetail: (JellyfinItem?) -> Void
 
     @State private var selectedSeasonNumber: Int
     @State private var jellyfinEpisodesBySeasonNumber: [Int: [JellyfinItem]] = [:]
@@ -16,13 +16,13 @@ struct TVSeasonEpisodeShelf: View {
         jellyfinClient: JellyfinAPIClient? = nil,
         jellyfinSeriesId: String? = nil,
         onPlayEpisode: @escaping (JellyfinItem?) -> Void = { _ in },
-        onOpenEpisodePicker: @escaping () -> Void = {}
+        onOpenEpisodeDetail: @escaping (JellyfinItem?) -> Void = { _ in }
     ) {
         self.show = show
         self.jellyfinClient = jellyfinClient
         self.jellyfinSeriesId = jellyfinSeriesId
         self.onPlayEpisode = onPlayEpisode
-        self.onOpenEpisodePicker = onOpenEpisodePicker
+        self.onOpenEpisodeDetail = onOpenEpisodeDetail
         self._selectedSeasonNumber = State(initialValue: show.requestableSeasons.first?.seasonNumber ?? 1)
     }
 
@@ -59,7 +59,7 @@ struct TVSeasonEpisodeShelf: View {
                                 jellyfinClient: jellyfinClient,
                                 jellyfinEpisode: jellyfinEpisode(for: episodeNumber),
                                 onPlay: onPlayEpisode,
-                                onOpenEpisodePicker: onOpenEpisodePicker
+                                onOpenEpisodeDetail: onOpenEpisodeDetail
                             )
                         }
                     }
@@ -178,7 +178,7 @@ private struct TVSeasonEpisodeCard: View {
     let jellyfinClient: JellyfinAPIClient?
     let jellyfinEpisode: JellyfinItem?
     let onPlay: (JellyfinItem?) -> Void
-    let onOpenEpisodePicker: () -> Void
+    let onOpenEpisodeDetail: (JellyfinItem?) -> Void
     @State private var isMarkingWatched = false
 
     private static let cardWidth: CGFloat = 320
@@ -198,18 +198,18 @@ private struct TVSeasonEpisodeCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            Button {
-                onPlay(jellyfinEpisode)
-            } label: {
-                cardVisual
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityHint("Opens the player for this episode.")
+            cardVisual
+                .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                .onTapGesture {
+                    onPlay(jellyfinEpisode)
+                }
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint("Opens the player for this episode.")
 
             episodeMenu
                 .padding(.trailing, 10)
                 .padding(.bottom, 10)
+                .zIndex(1)
         }
         .frame(width: Self.cardWidth, height: Self.cardHeight)
     }
@@ -296,8 +296,9 @@ private struct TVSeasonEpisodeCard: View {
             .disabled(jellyfinEpisode == nil)
 
             Button("Go to episode", systemImage: "info.circle") {
-                onOpenEpisodePicker()
+                onOpenEpisodeDetail(jellyfinEpisode)
             }
+            .disabled(jellyfinEpisode?.id == nil)
 
             Button("Mark as watched", systemImage: "checkmark.circle") {
                 markAsWatched()
@@ -316,6 +317,8 @@ private struct TVSeasonEpisodeCard: View {
                 .contentShape(Circle())
         }
         .menuStyle(.button)
+        .buttonStyle(.plain)
+        .contentShape(Circle())
     }
 
     private func markAsWatched() {

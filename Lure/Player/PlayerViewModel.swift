@@ -683,7 +683,7 @@ final class PlayerViewModel {
         await load(
             itemId: id,
             title: next.seriesName ?? next.name ?? "",
-            episodeLabel: next.episodeLabel
+            episodeLabel: next.detailedEpisodeLabel
         )
     }
 
