@@ -10,6 +10,7 @@ struct MediaSliderView: View {
 
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
+    private let horizontalBleed: CGFloat = 16
 
     var body: some View {
         if !items.isEmpty {
@@ -59,8 +60,9 @@ struct MediaSliderView: View {
                             }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, horizontalBleed)
                 }
+                .padding(.horizontal, -horizontalBleed)
             }
         }
     }
