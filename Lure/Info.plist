@@ -31,12 +31,8 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>FanartTVAPIKey</key>
-	<string>$(FANART_TV_API_KEY)</string>
-	<key>TMDBAPIKey</key>
-	<string>$(TMDB_API_KEY)</string>
-	<key>TMDBReadAccessToken</key>
-	<string>$(TMDB_READ_ACCESS_TOKEN)</string>
+	<key>LureArtworkWorkerURL</key>
+	<string>https://lure-worker.james-5d8.workers.dev</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
