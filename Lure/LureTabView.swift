@@ -5,10 +5,11 @@ struct LureTabView: View {
     let currentUser: SeerrUser
     let onLogout: () -> Void
 
-    @State private var selectedTab: LureTab = .discover
+    @Environment(LureRouter.self) private var router
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        @Bindable var router = router
+        TabView(selection: $router.selectedTab) {
             Tab("Discover", systemImage: "film", value: LureTab.discover) {
                 DiscoverView(apiClient: apiClient)
             }
@@ -34,8 +35,4 @@ struct LureTabView: View {
             await SearchViewModel.preloadBrowseGenres(using: apiClient)
         }
     }
-}
-
-private enum LureTab: Hashable {
-    case discover, search, library, requests, more
 }

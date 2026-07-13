@@ -166,9 +166,7 @@ struct RequestListView: View {
 
             Button {
                 if let url = URL(string: "trawl://seerr-issue") {
-                    #if os(iOS)
-                    UIApplication.shared.open(url)
-                    #endif
+                    openExternalURL(url)
                 }
             } label: {
                 Label("Trawl", systemImage: "arrow.up.forward.app")

@@ -28,17 +28,26 @@ final class PlayerCoordinator {
         releaseYear: Int? = nil,
         mediaType: String = "movie"
     ) {
+        present(PlayableMedia(
+            itemId: itemId,
+            title: title,
+            episodeLabel: episodeLabel,
+            serviceUrl: serviceUrl,
+            tmdbId: tmdbId,
+            releaseYear: releaseYear,
+            mediaType: mediaType
+        ))
+    }
+
+    /// Build a `PlayerViewModel` for a portable media payload and show it. The
+    /// payload stays view-model free so it can later be routed to a macOS window,
+    /// tvOS player shell, or fallback engine without changing callers.
+    func present(_ media: PlayableMedia) {
         do {
             let vm = try PlayerViewModel(jellyfinService: jellyfinService)
             activePlayer = PlayerPresentation(
                 vm: vm,
-                itemId: itemId,
-                title: title,
-                episodeLabel: episodeLabel,
-                serviceUrl: serviceUrl,
-                tmdbId: tmdbId,
-                releaseYear: releaseYear,
-                mediaType: mediaType
+                media: media
             )
         } catch {
             presentationError = "Player failed to start: \(error.localizedDescription)"
@@ -48,13 +57,8 @@ final class PlayerCoordinator {
     /// Convenience for Continue Watching items, which already carry a
     /// Jellyfin item id and only need title/episode metadata derived.
     func presentResume(_ item: JellyfinItem) {
-        guard let id = item.id else { return }
-        present(
-            itemId: id,
-            title: item.seriesName ?? item.name ?? "",
-            episodeLabel: item.episodeLabel,
-            mediaType: item.type?.lowercased() == "episode" ? "tv" : "movie"
-        )
+        guard item.id != nil else { return }
+        present(PlayableMedia(resumeItem: item))
     }
 }
 
@@ -70,13 +74,7 @@ private struct PlayerPresentationModifier: ViewModifier {
             .fullScreenCover(item: $bindable.activePlayer) { presentation in
                 PlayerView(
                     vm: presentation.vm,
-                    itemId: presentation.itemId,
-                    title: presentation.title,
-                    episodeLabel: presentation.episodeLabel,
-                    serviceUrl: presentation.serviceUrl,
-                    tmdbId: presentation.tmdbId,
-                    releaseYear: presentation.releaseYear,
-                    mediaType: presentation.mediaType
+                    media: presentation.media
                 )
                 .environment(notificationCenter)
             }

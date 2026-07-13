@@ -3,7 +3,6 @@ import SwiftUI
 struct DiscoverView: View {
     let apiClient: SeerrAPIClient
     @State private var viewModel: DiscoverViewModel?
-    @State private var navigationPath = NavigationPath()
     @State private var heroActiveIndex = 0
     @State private var heroScrollTargetID: String?
     @State private var heroVerticalOffset: CGFloat = 0
@@ -11,9 +10,11 @@ struct DiscoverView: View {
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(JellyfinService.self) private var jellyfinService
     @Environment(PlayerCoordinator.self) private var playerCoordinator
+    @Environment(LureRouter.self) private var router
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
+        @Bindable var router = router
+        NavigationStack(path: $router.discoverPath) {
             Group {
                 if let vm = viewModel {
                     discoverContent(vm: vm)
@@ -128,7 +129,7 @@ struct DiscoverView: View {
                         scrollTargetID: $heroScrollTargetID,
                         transitionNamespace: navigationTransitionNamespace,
                         verticalOffset: heroVerticalOffset,
-                        isActive: navigationPath.isEmpty
+                        isActive: router.discoverPath.isEmpty
                     )
                     if !vm.continueWatching.isEmpty {
                         ContinueWatchingShelf(

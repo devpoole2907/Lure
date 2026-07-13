@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var jellyfinService: JellyfinService
     @State private var playerCoordinator: PlayerCoordinator
     @State private var requestsCoordinator = RequestsCoordinator()
+    @State private var router = LureRouter()
     @State private var showSignIn = false
     @State private var pendingInvite: LureInvite?
     @State private var inviteAwaitingConfirmation: LureInvite?
@@ -47,6 +48,7 @@ struct ContentView: View {
                             // tear down the session in the background. The swap is
                             // animated via `.animation(value: hasFinishedOnboarding)`.
                             hasFinishedOnboarding = false
+                            router.reset()
                             Task {
                                 await authViewModel.logout(profile: servers.first(where: \.isActive), modelContext: modelContext)
                                 await jellyfinService.clearCredentials()
@@ -58,6 +60,7 @@ struct ContentView: View {
                     .environment(jellyfinService)
                     .environment(playerCoordinator)
                     .environment(requestsCoordinator)
+                    .environment(router)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
                 } else {
                     signInPrompt
@@ -105,6 +108,7 @@ struct ContentView: View {
                     Task {
                         await authViewModel.logout(profile: servers.first(where: \.isActive), modelContext: modelContext)
                         await jellyfinService.clearCredentials()
+                        router.reset()
                         inviteAwaitingConfirmation = nil
                         pendingInvite = invite
                     }
@@ -191,6 +195,8 @@ struct ContentView: View {
         // Both resolve to a LureInvite and route into the one-shot redemption flow.
         if let invite = LureInvite.parse(url) {
             presentInvite(invite)
+        } else {
+            _ = router.route(url)
         }
     }
 

@@ -12,13 +12,7 @@ import AetherEngine
 /// uses the engine's render surface with the custom SwiftUI `TransportOverlay`.
 struct PlayerView: View {
     @State var vm: PlayerViewModel
-    let itemId: String
-    let title: String
-    let episodeLabel: String?
-    let serviceUrl: String?
-    let tmdbId: Int?
-    let releaseYear: Int?
-    let mediaType: String
+    let media: PlayableMedia
 
     @Environment(\.dismiss) private var dismiss
     @State private var hasStartedLoad = false
@@ -32,21 +26,13 @@ struct PlayerView: View {
             #endif
             .onAppear {
                 #if DEBUG
-                print("[PlayerView] onAppear hasStartedLoad=\(hasStartedLoad) itemId=\(itemId.isEmpty ? "<empty>" : itemId) title=\(title) mediaType=\(mediaType)")
+                print("[PlayerView] onAppear hasStartedLoad=\(hasStartedLoad) itemId=\((media.itemId ?? "").isEmpty ? "<empty>" : media.itemId ?? "") title=\(media.title) mediaType=\(media.mediaType)")
                 #endif
                 PlayerOrientationController.lockLandscape()
                 guard !hasStartedLoad else { return }
                 hasStartedLoad = true
                 Task {
-                    await vm.load(
-                        itemId: itemId,
-                        title: title,
-                        episodeLabel: episodeLabel,
-                        serviceUrl: serviceUrl,
-                        tmdbId: tmdbId,
-                        releaseYear: releaseYear,
-                        mediaType: mediaType
-                    )
+                    await vm.load(media)
                 }
             }
             .onDisappear {
@@ -63,7 +49,7 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            #if canImport(UIKit)
+            #if os(iOS)
             AVPlayerHostView(vm: vm) {
                 Task { await stop() }
             }
@@ -108,7 +94,7 @@ struct PlayerView: View {
         }
     }
 
-    #if canImport(UIKit)
+    #if os(iOS)
     private func overlayIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
             .font(.title3.weight(.semibold))
@@ -275,15 +261,7 @@ struct PlayerView: View {
                 .padding(.horizontal, 32)
             HStack(spacing: 16) {
                 Button("Retry") {
-                    Task { await vm.load(
-                        itemId: itemId,
-                        title: title,
-                        episodeLabel: episodeLabel,
-                        serviceUrl: serviceUrl,
-                        tmdbId: tmdbId,
-                        releaseYear: releaseYear,
-                        mediaType: mediaType
-                    ) }
+                    Task { await vm.load(media) }
                 }
                 .buttonStyle(.bordered)
                 .tint(.white)

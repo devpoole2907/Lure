@@ -114,6 +114,19 @@ final class PlayerViewModel {
     // MARK: - Load
 
     @MainActor
+    func load(_ media: PlayableMedia) async {
+        await load(
+            itemId: media.itemId ?? "",
+            title: media.title,
+            episodeLabel: media.episodeLabel,
+            serviceUrl: media.serviceUrl,
+            tmdbId: media.tmdbId,
+            releaseYear: media.releaseYear,
+            mediaType: media.mediaType
+        )
+    }
+
+    @MainActor
     func load(
         itemId: String,
         title: String,

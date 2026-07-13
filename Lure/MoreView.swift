@@ -10,10 +10,11 @@ struct MoreView: View {
     let currentUser: SeerrUser
     let onLogout: () -> Void
 
-    @State private var path = [MoreDestination]()
+    @Environment(LureRouter.self) private var router
 
     var body: some View {
-        NavigationStack(path: $path) {
+        @Bindable var router = router
+        NavigationStack(path: $router.morePath) {
             List {
                 Section {
                     NavigationLink(value: MoreDestination.profile) {
