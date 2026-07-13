@@ -238,6 +238,7 @@ struct TVDetailView: View {
             logoURL: vm.heroArtwork?.logoURL,
             mediaTypeLabel: "TV Show",
             year: show.year,
+            runtime: nil,
             rating: show.voteAverage,
             badges: [],
             genres: [],
@@ -247,7 +248,7 @@ struct TVDetailView: View {
     }
 
     private func heroAction(for show: SeerrTVDetail) -> DetailPosterHeroAction {
-        if show.mediaInfo?.isAvailable == true {
+        if show.hasPlayableContent {
             return DetailPosterHeroAction(
                 title: "Play",
                 systemImage: "play.fill",
@@ -269,7 +270,7 @@ struct TVDetailView: View {
     /// Prefer clean wide key art for full-bleed surfaces; posters remain a fallback
     /// for titles without usable backdrops.
     private func heroArtworkURL(for show: SeerrTVDetail) -> URL? {
-        vm.heroArtwork?.backdropURL ?? show.backdropURL ?? show.heroPosterURL ?? initialPosterURL
+        vm.heroArtwork?.backdropURL ?? show.heroBackdropURL ?? show.backdropURL ?? show.heroPosterURL ?? initialPosterURL
     }
 
     /// Global-Y below which the hero title is considered tucked behind the status +
@@ -283,7 +284,7 @@ struct TVDetailView: View {
     private func cardsSection(_ show: SeerrTVDetail) -> some View {
         requestCard(show)
 
-        if show.mediaInfo?.isAvailable == true, !show.requestableSeasons.isEmpty {
+        if show.hasPlayableContent, !show.requestableSeasons.isEmpty {
             TVSeasonEpisodeShelf(
                 show: show,
                 jellyfinClient: vm.jellyfinClient,
@@ -317,8 +318,8 @@ struct TVDetailView: View {
             castCard(Array(cast.prefix(20)))
         }
 
-        if let url = show.trailerURL {
-            trailerCard(url)
+        if !show.trailerVideos.isEmpty {
+            TrailerShelfView(videos: show.trailerVideos)
         }
 
         let infoRows = showInfoRows(show)
@@ -339,7 +340,7 @@ struct TVDetailView: View {
     /// moderator-only approve / decline / open-in-Trawl actions.
     @ViewBuilder
     private func requestCard(_ show: SeerrTVDetail) -> some View {
-        if show.mediaInfo?.isAvailable == true {
+        if show.hasPlayableContent {
             if let message = playbackAvailabilityMessage {
                 availabilityDiagnostic(message)
             }
@@ -713,33 +714,6 @@ struct TVDetailView: View {
             .horizontalSoftEdges()
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    // MARK: - Trailer Card
-
-    private func trailerCard(_ url: URL) -> some View {
-        Link(destination: url) {
-            HStack(spacing: 12) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.red)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Watch Trailer")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Opens YouTube")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "arrow.up.forward.square")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(14)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Info Rows Data

@@ -40,8 +40,10 @@ final class MovieDetailViewModel {
 
         do {
             let loadedMovie = try await apiClient.getMovieDetail(tmdbId: tmdbId)
+            let loadedArtwork = await artwork(for: loadedMovie)
             withAnimation(.smooth(duration: 0.35)) {
                 movie = loadedMovie
+                heroArtwork = loadedArtwork
             }
             await resolvePlaybackAvailability(for: loadedMovie)
         } catch {
@@ -51,10 +53,9 @@ final class MovieDetailViewModel {
         }
 
         // Load ratings and recommendations concurrently (non-critical)
-        async let artworkLoad: () = loadArtwork()
         async let ratingsLoad: () = loadRatings()
         async let recsLoad: () = loadRecommendations()
-        _ = await (artworkLoad, ratingsLoad, recsLoad)
+        _ = await (ratingsLoad, recsLoad)
 
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = false
@@ -81,10 +82,13 @@ final class MovieDetailViewModel {
             _ = try await apiClient.createRequest(body)
             requestSuccess = true
             // Reload to get updated mediaInfo
-            movie = try await apiClient.getMovieDetail(tmdbId: tmdbId)
-            if let movie {
-                await resolvePlaybackAvailability(for: movie)
+            let updatedMovie = try await apiClient.getMovieDetail(tmdbId: tmdbId)
+            let updatedArtwork = await artwork(for: updatedMovie)
+            withAnimation(.smooth(duration: 0.3)) {
+                movie = updatedMovie
+                heroArtwork = updatedArtwork
             }
+            await resolvePlaybackAvailability(for: updatedMovie)
         } catch {
             self.error = error.localizedDescription
         }
@@ -108,17 +112,13 @@ final class MovieDetailViewModel {
         }
     }
 
-    private func loadArtwork() async {
-        guard let movie else { return }
-        let artwork = await MediaArtworkService.shared.artwork(
+    private func artwork(for movie: SeerrMovieDetail) async -> MediaArtwork {
+        await MediaArtworkService.shared.artwork(
             mediaType: "movie",
             tmdbId: tmdbId,
-            fallbackBackdropURL: movie.backdropURL,
+            fallbackBackdropURL: movie.heroBackdropURL ?? movie.backdropURL,
             fallbackPosterURL: movie.heroPosterURL
         )
-        withAnimation(.smooth(duration: 0.35)) {
-            heroArtwork = artwork
-        }
     }
 
     func refreshPlaybackAvailability() async {

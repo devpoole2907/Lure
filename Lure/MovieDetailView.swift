@@ -231,6 +231,7 @@ struct MovieDetailView: View {
             logoURL: vm.heroArtwork?.logoURL,
             mediaTypeLabel: "Movie",
             year: movie.year,
+            runtime: movie.runtimeText,
             rating: movie.voteAverage,
             badges: movieBadges(movie),
             genres: movie.genres?.compactMap(\.name) ?? [],
@@ -262,7 +263,7 @@ struct MovieDetailView: View {
     /// Prefer clean wide key art for full-bleed surfaces; posters remain a fallback
     /// for titles without usable backdrops.
     private func heroArtworkURL(for movie: SeerrMovieDetail) -> URL? {
-        vm.heroArtwork?.backdropURL ?? movie.backdropURL ?? movie.heroPosterURL ?? initialPosterURL
+        vm.heroArtwork?.backdropURL ?? movie.heroBackdropURL ?? movie.backdropURL ?? movie.heroPosterURL ?? initialPosterURL
     }
 
     /// Global-Y below which the hero title is considered tucked behind the status +
@@ -301,8 +302,6 @@ struct MovieDetailView: View {
             overviewCard(overview)
         }
 
-        statsCard(movie)
-
         if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -312,8 +311,8 @@ struct MovieDetailView: View {
             castCard(Array(cast.prefix(20)))
         }
 
-        if let url = movie.trailerURL {
-            trailerCard(url)
+        if !movie.trailerVideos.isEmpty {
+            TrailerShelfView(videos: movie.trailerVideos)
         }
 
         let infoRows = movieInfoRows(movie)
@@ -545,31 +544,6 @@ struct MovieDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Stats Card
-
-    private func statsCard(_ movie: SeerrMovieDetail) -> some View {
-        HStack(spacing: 0) {
-            if let year = movie.year {
-                statCell(value: year, label: "Year")
-                cardDivider
-            }
-            if let runtime = movie.runtime, runtime > 0 {
-                statCell(value: "\(runtime)m", label: "Runtime")
-                cardDivider
-            }
-            statCell(
-                value: movie.mediaInfo?.requestStatusLabel
-                    ?? (movie.mediaInfo?.mediaStatus?.isUserVisible == true
-                        ? movie.mediaInfo?.mediaStatus?.displayName ?? "Not Requested"
-                        : "Not Requested"),
-                label: "Status"
-            )
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-
     // MARK: - Watch Providers Card
 
     private func namedProviders(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
@@ -705,34 +679,6 @@ struct MovieDetailView: View {
             .horizontalSoftEdges()
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    // MARK: - Trailer Card
-
-    private func trailerCard(_ url: URL) -> some View {
-        Link(destination: url) {
-            HStack(spacing: 12) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.red)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Watch Trailer")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Opens YouTube")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "arrow.up.forward.square")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Info Rows Data

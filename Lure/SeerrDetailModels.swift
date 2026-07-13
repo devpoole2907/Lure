@@ -37,16 +37,20 @@ struct SeerrMovieDetail: Codable, Identifiable, Sendable {
     /// Full-resolution poster for the full-bleed detail hero (w500 looks soft there).
     var heroPosterURL: URL? { ImageURL.poster(posterPath, size: .original) }
     var backdropURL: URL? { ImageURL.backdrop(backdropPath) }
+    var heroBackdropURL: URL? { ImageURL.backdrop(backdropPath, size: .original) }
+    var runtimeText: String? { Self.runtimeText(minutes: runtime) }
 
     var year: String? {
         guard let releaseDate, releaseDate.count >= 4 else { return nil }
         return String(releaseDate.prefix(4))
     }
 
+    var trailerVideos: [SeerrRelatedVideo] {
+        (relatedVideos ?? []).filter(\.isYouTubeTrailer)
+    }
+
     var trailerURL: URL? {
-        guard let video = relatedVideos?.first(where: { $0.type == "Trailer" && $0.site == "YouTube" }),
-              let key = video.key else { return nil }
-        return URL(string: "https://www.youtube.com/watch?v=\(key)")
+        trailerVideos.first?.youtubeURL
     }
 
     /// US content certification (e.g. "PG-13", "R"). Falls back to first available region.
@@ -130,6 +134,19 @@ struct SeerrMovieDetail: Codable, Identifiable, Sendable {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
+
+    private static func runtimeText(minutes: Int?) -> String? {
+        guard let minutes, minutes > 0 else { return nil }
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if hours > 0, remainingMinutes > 0 {
+            return "\(hours)h \(remainingMinutes)m"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(minutes)m"
+        }
+    }
 }
 
 // MARK: - TV Detail
@@ -174,16 +191,20 @@ struct SeerrTVDetail: Codable, Identifiable, Sendable {
     /// Full-resolution poster for the full-bleed detail hero (w500 looks soft there).
     var heroPosterURL: URL? { ImageURL.poster(posterPath, size: .original) }
     var backdropURL: URL? { ImageURL.backdrop(backdropPath) }
+    var heroBackdropURL: URL? { ImageURL.backdrop(backdropPath, size: .original) }
+    var hasPlayableContent: Bool { mediaInfo?.hasPlayableTVContent == true }
 
     var year: String? {
         guard let firstAirDate, firstAirDate.count >= 4 else { return nil }
         return String(firstAirDate.prefix(4))
     }
 
+    var trailerVideos: [SeerrRelatedVideo] {
+        (relatedVideos ?? []).filter(\.isYouTubeTrailer)
+    }
+
     var trailerURL: URL? {
-        guard let video = relatedVideos?.first(where: { $0.type == "Trailer" && $0.site == "YouTube" }),
-              let key = video.key else { return nil }
-        return URL(string: "https://www.youtube.com/watch?v=\(key)")
+        trailerVideos.first?.youtubeURL
     }
 
     /// US content rating (e.g. "TV-MA", "TV-14"). Falls back to first available region.
@@ -228,6 +249,24 @@ struct SeerrRelatedVideo: Codable, Sendable {
     let size: Int?
     let type: String?              // "Trailer", "Teaser", "Clip", etc.
     let site: String?              // "YouTube"
+
+    var isYouTubeTrailer: Bool {
+        type?.caseInsensitiveCompare("Trailer") == .orderedSame &&
+        site?.caseInsensitiveCompare("YouTube") == .orderedSame &&
+        key?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    var youtubeURL: URL? {
+        let trimmedKey = key?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedKey, !trimmedKey.isEmpty else { return nil }
+        return URL(string: "https://www.youtube.com/watch?v=\(trimmedKey)")
+    }
+
+    var youtubeThumbnailURL: URL? {
+        let trimmedKey = key?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedKey, !trimmedKey.isEmpty else { return nil }
+        return URL(string: "https://img.youtube.com/vi/\(trimmedKey)/hqdefault.jpg")
+    }
 }
 
 struct SeerrReleaseResults: Codable, Sendable {
@@ -628,7 +667,7 @@ extension SeerrTVDetail {
             year: year,
             voteAverage: voteAverage,
             posterURL: posterURL,
-            isAvailable: mediaInfo?.isAvailable == true,
+            isAvailable: hasPlayableContent,
             addedAt: addedAt
         )
     }

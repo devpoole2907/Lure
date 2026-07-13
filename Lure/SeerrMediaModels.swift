@@ -18,7 +18,17 @@ struct SeerrMediaInfo: Codable, Sendable {
         return LureConstants.MediaStatus(rawValue: status)
     }
 
-    var isAvailable: Bool { mediaStatus == .available }
+    var isAvailable: Bool {
+        mediaStatus == .available ||
+        (mediaType?.lowercased() == "tv" && mediaStatus == .partiallyAvailable)
+    }
+
+    var hasPlayableTVContent: Bool {
+        isAvailable ||
+        (mediaType?.lowercased() == "tv" && mediaStatus == .partiallyAvailable) ||
+        (seasons ?? []).contains { $0.hasPlayableContent }
+    }
+
     var isRequested: Bool {
         mediaStatus == .pending ||
         mediaStatus == .processing ||
@@ -71,6 +81,10 @@ struct SeerrSeasonStatus: Codable, Sendable {
     var mediaStatus: LureConstants.MediaStatus? {
         guard let status else { return nil }
         return LureConstants.MediaStatus(rawValue: status)
+    }
+
+    var hasPlayableContent: Bool {
+        mediaStatus == .available || mediaStatus == .partiallyAvailable
     }
 }
 
@@ -349,7 +363,10 @@ struct SeerrMediaEntry: Codable, Identifiable, Sendable {
         guard let status else { return nil }
         return LureConstants.MediaStatus(rawValue: status)
     }
-    var isAvailable: Bool { mediaStatus == .available }
+    var isAvailable: Bool {
+        mediaStatus == .available ||
+        (mediaType?.lowercased() == "tv" && mediaStatus == .partiallyAvailable)
+    }
 
     private static let createdAtFormatter = ISO8601DateFormatter()
 

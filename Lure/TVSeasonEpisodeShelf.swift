@@ -9,6 +9,7 @@ struct TVSeasonEpisodeShelf: View {
 
     @State private var selectedSeasonNumber: Int
     @State private var jellyfinEpisodesBySeasonNumber: [Int: [JellyfinItem]] = [:]
+    private let horizontalBleed: CGFloat = 16
 
     init(
         show: SeerrTVDetail,
@@ -62,7 +63,10 @@ struct TVSeasonEpisodeShelf: View {
                             )
                         }
                     }
+                    .padding(.horizontal, horizontalBleed)
                 }
+                .padding(.horizontal, -horizontalBleed)
+                .horizontalSoftEdges()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .onAppear(perform: validateSelection)
@@ -176,6 +180,7 @@ private struct TVSeasonEpisodeCard: View {
     let jellyfinEpisode: JellyfinItem?
     let onPlay: (JellyfinItem?) -> Void
     let onOpenEpisodePicker: () -> Void
+    @State private var isMarkingWatched = false
 
     private static let cardWidth: CGFloat = 320
     private static let cardHeight: CGFloat = 300
@@ -284,15 +289,24 @@ private struct TVSeasonEpisodeCard: View {
 
     private var episodeMenu: some View {
         Menu {
-            if let jellyfinEpisode {
-                Button("Play Episode", systemImage: "play.fill") {
+            Button("Play episode", systemImage: "play.fill") {
+                if let jellyfinEpisode {
                     onPlay(jellyfinEpisode)
                 }
             }
+            .disabled(jellyfinEpisode == nil)
 
-            Button("Choose Episode", systemImage: "list.bullet") {
+            Button("Go to episode", systemImage: "info.circle") {
                 onOpenEpisodePicker()
             }
+
+            Button("Mark as watched", systemImage: "checkmark.circle") {
+                markAsWatched()
+            }
+            .disabled(jellyfinEpisode?.id == nil || isMarkingWatched)
+
+            Button("Download", systemImage: "arrow.down.circle") {}
+                .disabled(true)
         } label: {
             Label("Episode Options", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)
@@ -303,6 +317,17 @@ private struct TVSeasonEpisodeCard: View {
                 .contentShape(Circle())
         }
         .menuStyle(.button)
+    }
+
+    private func markAsWatched() {
+        guard let jellyfinClient, let itemId = jellyfinEpisode?.id else { return }
+        isMarkingWatched = true
+        Task {
+            try? await jellyfinClient.markPlayed(itemId: itemId)
+            await MainActor.run {
+                isMarkingWatched = false
+            }
+        }
     }
 
     private var episodeTitle: String {

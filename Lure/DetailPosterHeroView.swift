@@ -15,6 +15,7 @@ struct DetailPosterHeroView: View {
     let logoURL: URL?
     let mediaTypeLabel: String
     let year: String?
+    let runtime: String?
     let rating: Double?
     let badges: [DetailBadge]
     let genres: [String]
@@ -120,6 +121,10 @@ struct DetailPosterHeroView: View {
                 Text("·")
                 Text(year)
             }
+            if let runtime {
+                Text("·")
+                Text(runtime)
+            }
             if let rating, rating > 0 {
                 Text("·")
                 Label(String(format: "%.1f", rating), systemImage: "star.fill")
@@ -146,6 +151,7 @@ struct DetailPosterHeroView: View {
         logoURL: nil,
         mediaTypeLabel: "TV Show",
         year: SeerrTVDetail.previewShow.year,
+        runtime: nil,
         rating: SeerrTVDetail.previewShow.voteAverage,
         badges: [],
         genres: [],

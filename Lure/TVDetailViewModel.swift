@@ -41,8 +41,10 @@ final class TVDetailViewModel {
 
         do {
             let loadedShow = try await apiClient.getTVDetail(tmdbId: tmdbId)
+            let loadedArtwork = await artwork(for: loadedShow)
             withAnimation(.smooth(duration: 0.35)) {
                 show = loadedShow
+                heroArtwork = loadedArtwork
             }
             await resolvePlaybackAvailability(for: loadedShow)
         } catch {
@@ -51,10 +53,9 @@ final class TVDetailViewModel {
             }
         }
 
-        async let artworkLoad: () = loadArtwork()
         async let ratingsLoad: () = loadRatings()
         async let recsLoad: () = loadRecommendations()
-        _ = await (artworkLoad, ratingsLoad, recsLoad)
+        _ = await (ratingsLoad, recsLoad)
 
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = false
@@ -151,10 +152,13 @@ final class TVDetailViewModel {
             )
             _ = try await apiClient.createRequest(body)
             requestSuccess = true
-            show = try await apiClient.getTVDetail(tmdbId: tmdbId)
-            if let show {
-                await resolvePlaybackAvailability(for: show)
+            let updatedShow = try await apiClient.getTVDetail(tmdbId: tmdbId)
+            let updatedArtwork = await artwork(for: updatedShow)
+            withAnimation(.smooth(duration: 0.3)) {
+                show = updatedShow
+                heroArtwork = updatedArtwork
             }
+            await resolvePlaybackAvailability(for: updatedShow)
             selectedSeasons.removeAll()
         } catch {
             self.error = error.localizedDescription
@@ -179,17 +183,13 @@ final class TVDetailViewModel {
         }
     }
 
-    private func loadArtwork() async {
-        guard let show else { return }
-        let artwork = await MediaArtworkService.shared.artwork(
+    private func artwork(for show: SeerrTVDetail) async -> MediaArtwork {
+        await MediaArtworkService.shared.artwork(
             mediaType: "tv",
             tmdbId: tmdbId,
-            fallbackBackdropURL: show.backdropURL,
+            fallbackBackdropURL: show.heroBackdropURL ?? show.backdropURL,
             fallbackPosterURL: show.heroPosterURL
         )
-        withAnimation(.smooth(duration: 0.35)) {
-            heroArtwork = artwork
-        }
     }
 
     func refreshPlaybackAvailability() async {
@@ -198,7 +198,7 @@ final class TVDetailViewModel {
     }
 
     private func resolvePlaybackAvailability(for show: SeerrTVDetail) async {
-        guard show.mediaInfo?.isAvailable == true else {
+        guard show.hasPlayableContent else {
             playbackAvailability = .unknown
             return
         }
