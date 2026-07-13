@@ -11,28 +11,55 @@ struct LureTabView: View {
         @Bindable var router = router
         TabView(selection: $router.selectedTab) {
             Tab("Discover", systemImage: "film", value: LureTab.discover) {
-                DiscoverView(apiClient: apiClient)
+                activeOnly(.discover, selection: router.selectedTab) {
+                    DiscoverView(apiClient: apiClient)
+                }
             }
 
             Tab(value: LureTab.search, role: .search) {
-                SearchView(apiClient: apiClient)
+                activeOnly(.search, selection: router.selectedTab) {
+                    SearchView(apiClient: apiClient)
+                }
             }
 
             Tab("Library", systemImage: "checkmark.circle", value: LureTab.library) {
-                LibraryView(apiClient: apiClient)
+                activeOnly(.library, selection: router.selectedTab) {
+                    LibraryView(apiClient: apiClient)
+                }
             }
 
             Tab("Requests", systemImage: "arrow.down.circle", value: LureTab.requests) {
-                RequestListView(apiClient: apiClient, currentUser: currentUser)
+                activeOnly(.requests, selection: router.selectedTab) {
+                    RequestListView(apiClient: apiClient, currentUser: currentUser)
+                }
             }
 
             Tab("More", systemImage: "ellipsis", value: LureTab.more) {
-                MoreView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
+                activeOnly(.more, selection: router.selectedTab) {
+                    MoreView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
+                }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
         .task {
             await SearchViewModel.preloadBrowseGenres(using: apiClient)
         }
+    }
+
+    @ViewBuilder
+    private func activeOnly<Content: View>(
+        _ tab: LureTab,
+        selection: LureTab,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        #if os(tvOS)
+        if tab == selection {
+            content()
+        } else {
+            Color.clear
+        }
+        #else
+        content()
+        #endif
     }
 }

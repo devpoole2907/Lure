@@ -12,6 +12,9 @@ struct TransportOverlay: View {
     @State private var showSubtitlePicker = false
     @State private var hideTask: Task<Void, Never>? = nil
     @State private var controlsVisible = true
+    #if os(tvOS)
+    @FocusState private var focusedControl: TVTransportFocus?
+    #endif
 
     private let rates: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -134,6 +137,10 @@ struct TransportOverlay: View {
                 Task { await vm.skip(by: 15) }
             }
         }
+        #if os(tvOS)
+        .focusSection()
+        .defaultFocus($focusedControl, .playPause)
+        #endif
     }
 
     private var playPauseButton: some View {
@@ -154,6 +161,9 @@ struct TransportOverlay: View {
             .contentShape(Circle())
         }
         .accessibilityLabel(vm.isPlaying ? "Pause" : "Play")
+        #if os(tvOS)
+        .focused($focusedControl, equals: .playPause)
+        #endif
     }
 
     private func skipButton(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
@@ -299,6 +309,9 @@ struct TransportOverlay: View {
             }
             .accessibilityLabel(vm.videoGravity == .resizeAspect ? "Fill screen" : "Fit to screen")
         }
+        #if os(tvOS)
+        .focusSection()
+        #endif
     }
 
     // MARK: - Intro Skip
@@ -473,3 +486,9 @@ struct TransportOverlay: View {
     }
 
 }
+
+#if os(tvOS)
+private enum TVTransportFocus: Hashable {
+    case playPause
+}
+#endif
