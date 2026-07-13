@@ -35,8 +35,14 @@ struct LureApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 #endif
     let modelContainer: ModelContainer
+    @State private var jellyfinService: JellyfinService
+    @State private var playerCoordinator: PlayerCoordinator
 
     init() {
+        let jellyfinService = JellyfinService()
+        _jellyfinService = State(wrappedValue: jellyfinService)
+        _playerCoordinator = State(wrappedValue: PlayerCoordinator(jellyfinService: jellyfinService))
+
         let schema = Schema([
             LureServerProfile.self,
             CachedLibraryItem.self,
@@ -58,8 +64,26 @@ struct LureApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(
+                jellyfinService: jellyfinService,
+                playerCoordinator: playerCoordinator
+            )
         }
         .modelContainer(modelContainer)
+
+        #if os(macOS)
+        WindowGroup("Player", id: PlayerWindowScene.id, for: PlayableMedia.self) { $media in
+            if let media {
+                PlayerWindowView(media: media)
+                    .environment(jellyfinService)
+                    .frame(minWidth: 960, minHeight: 540)
+            } else {
+                Color.black
+            }
+        }
+        .modelContainer(modelContainer)
+        .defaultSize(width: 1280, height: 720)
+        .windowResizability(.contentMinSize)
+        #endif
     }
 }

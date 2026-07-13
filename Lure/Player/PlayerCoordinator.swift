@@ -43,6 +43,9 @@ final class PlayerCoordinator {
     /// payload stays view-model free so it can later be routed to a macOS window,
     /// tvOS player shell, or fallback engine without changing callers.
     func present(_ media: PlayableMedia) {
+        #if os(macOS)
+        activePlayer = PlayerPresentation(vm: nil, media: media)
+        #else
         do {
             let vm = try PlayerViewModel(jellyfinService: jellyfinService)
             activePlayer = PlayerPresentation(
@@ -52,6 +55,7 @@ final class PlayerCoordinator {
         } catch {
             presentationError = "Player failed to start: \(error.localizedDescription)"
         }
+        #endif
     }
 
     /// Convenience for Continue Watching items, which already carry a
@@ -67,16 +71,17 @@ final class PlayerCoordinator {
 private struct PlayerPresentationModifier: ViewModifier {
     @Environment(PlayerCoordinator.self) private var coordinator
     @Environment(InAppNotificationCenter.self) private var notificationCenter
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     func body(content: Content) -> some View {
-        @Bindable var bindable = coordinator
+        #if os(macOS)
         content
-            .fullScreenCover(item: $bindable.activePlayer) { presentation in
-                PlayerView(
-                    vm: presentation.vm,
-                    media: presentation.media
-                )
-                .environment(notificationCenter)
+            .onChange(of: coordinator.activePlayer?.id) { _, _ in
+                guard let presentation = coordinator.activePlayer else { return }
+                openWindow(id: PlayerWindowScene.id, value: presentation.media)
+                coordinator.activePlayer = nil
             }
             .onChange(of: coordinator.presentationError) { _, message in
                 guard let message else { return }
@@ -87,6 +92,28 @@ private struct PlayerPresentationModifier: ViewModifier {
                 ))
                 coordinator.presentationError = nil
             }
+        #else
+        @Bindable var bindable = coordinator
+        content
+            .fullScreenCover(item: $bindable.activePlayer) { presentation in
+                if let vm = presentation.vm {
+                    PlayerView(
+                        vm: vm,
+                        media: presentation.media
+                    )
+                    .environment(notificationCenter)
+                }
+            }
+            .onChange(of: coordinator.presentationError) { _, message in
+                guard let message else { return }
+                notificationCenter.show(LureBannerItem(
+                    title: "Playback Error",
+                    message: message,
+                    style: .error
+                ))
+                coordinator.presentationError = nil
+            }
+        #endif
     }
 }
 

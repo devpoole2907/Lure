@@ -13,6 +13,7 @@ import AetherEngine
 struct PlayerView: View {
     @State var vm: PlayerViewModel
     let media: PlayableMedia
+    var onStopped: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var hasStartedLoad = false
@@ -242,6 +243,7 @@ struct PlayerView: View {
 
     private func stop(reportToJellyfin: Bool = true) async {
         await vm.stop(reportToJellyfin: reportToJellyfin)
+        onStopped?()
         // Rotate back to portrait *before* tearing down the cover, otherwise the
         // detail view underneath flashes in landscape and snaps round afterwards.
         PlayerOrientationController.unlock()

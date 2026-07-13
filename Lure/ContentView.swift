@@ -7,8 +7,6 @@ struct ContentView: View {
     @State private var authViewModel = AuthViewModel()
     @State private var isRestoringSession = true
     @State private var notificationCenter = InAppNotificationCenter()
-    @State private var jellyfinService: JellyfinService
-    @State private var playerCoordinator: PlayerCoordinator
     @State private var requestsCoordinator = RequestsCoordinator()
     @State private var router = LureRouter()
     @State private var showSignIn = false
@@ -16,11 +14,8 @@ struct ContentView: View {
     @State private var inviteAwaitingConfirmation: LureInvite?
     @AppStorage("hasFinishedOnboarding") private var hasFinishedOnboarding = false
 
-    init() {
-        let service = JellyfinService()
-        _jellyfinService = State(wrappedValue: service)
-        _playerCoordinator = State(wrappedValue: PlayerCoordinator(jellyfinService: service))
-    }
+    let jellyfinService: JellyfinService
+    let playerCoordinator: PlayerCoordinator
 
     var body: some View {
         ZStack {
