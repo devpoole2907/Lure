@@ -320,7 +320,7 @@ struct MovieDetailView: View {
             rowsCard(header: "Info", icon: "info.circle", rows: infoRows)
         }
         if !vm.recommendations.isEmpty {
-            MediaSliderView(title: "You Might Also Like", icon: "sparkles", items: vm.recommendations, apiClient: apiClient)
+            MediaSliderView(title: "You Might Also Like", items: vm.recommendations, apiClient: apiClient)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
     }

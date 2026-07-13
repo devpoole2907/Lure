@@ -8,7 +8,7 @@ struct TrailerShelfView: View {
     var body: some View {
         if !videos.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Label("Trailers", systemImage: "play.rectangle.fill")
+                Text("Trailers")
                     .font(.title3.weight(.bold))
                     .foregroundStyle(.primary)
 
@@ -21,7 +21,6 @@ struct TrailerShelfView: View {
                     .padding(.horizontal, horizontalBleed)
                 }
                 .padding(.horizontal, -horizontalBleed)
-                .horizontalSoftEdges()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -31,9 +30,9 @@ struct TrailerShelfView: View {
 private struct TrailerCard: View {
     let video: SeerrRelatedVideo
 
-    private static let cardWidth: CGFloat = 320
-    private static let cardHeight: CGFloat = 300
-    private static let cornerRadius: CGFloat = 24
+    private static let cardWidth: CGFloat = 214
+    private static let cardHeight: CGFloat = 200
+    private static let cornerRadius: CGFloat = 18
 
     var body: some View {
         Button {
@@ -69,27 +68,26 @@ private struct TrailerCard: View {
                 endPoint: .bottom
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 Spacer(minLength: 0)
 
                 Text("TRAILER")
-                    .font(.subheadline.weight(.bold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.white.opacity(0.76))
                     .lineLimit(1)
 
                 Text(trailerTitle)
-                    .font(.title2.bold())
+                    .font(.headline.bold())
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
 
                 Label("YouTube", systemImage: "play.rectangle.fill")
                     .labelStyle(.titleAndIcon)
-                    .font(.title3.bold())
+                    .font(.subheadline.bold())
                     .foregroundStyle(.white.opacity(0.84))
-                    .padding(.top, 2)
             }
-            .padding(22)
+            .padding(16)
         }
         .frame(width: Self.cardWidth, height: Self.cardHeight)
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
@@ -109,7 +107,7 @@ private struct TrailerCard: View {
                 ))
 
             Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 46, weight: .bold))
+                .font(.system(size: 34, weight: .bold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.white.opacity(0.78))
         }

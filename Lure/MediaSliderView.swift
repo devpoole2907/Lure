@@ -61,7 +61,6 @@ struct MediaSliderView: View {
                     }
                     .padding(.horizontal)
                 }
-                .horizontalSoftEdges()
             }
         }
     }

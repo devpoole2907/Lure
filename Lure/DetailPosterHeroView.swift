@@ -29,22 +29,9 @@ struct DetailPosterHeroView: View {
             let size = proxy.size
 
             ZStack(alignment: .bottom) {
-                heroImage
+                heroVisualLayer
                     .frame(width: size.width, height: size.height)
-                    .clipped()
                     .accessibilityHidden(true)
-
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .black.opacity(0.20), location: 0.45),
-                        .init(color: .black.opacity(0.65), location: 0.72),
-                        .init(color: .black.opacity(0.92), location: 0.88),
-                        .init(color: .black, location: 1.0)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
 
                 bottomContent
             }
@@ -69,6 +56,37 @@ struct DetailPosterHeroView: View {
                     .scaleEffect(1.2)
             }
         }
+    }
+
+    private var heroVisualLayer: some View {
+        ZStack {
+            heroImage
+                .clipped()
+
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: .black.opacity(0.20), location: 0.45),
+                    .init(color: .black.opacity(0.65), location: 0.72),
+                    .init(color: .black.opacity(0.88), location: 0.88),
+                    .init(color: .black.opacity(0.72), location: 0.96),
+                    .init(color: .clear, location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0.0),
+                    .init(color: .black, location: 0.84),
+                    .init(color: .clear, location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     private var bottomContent: some View {

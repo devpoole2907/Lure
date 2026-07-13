@@ -66,7 +66,6 @@ struct TVSeasonEpisodeShelf: View {
                     .padding(.horizontal, horizontalBleed)
                 }
                 .padding(.horizontal, -horizontalBleed)
-                .horizontalSoftEdges()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .onAppear(perform: validateSelection)
