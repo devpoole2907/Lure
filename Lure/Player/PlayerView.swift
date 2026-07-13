@@ -52,6 +52,10 @@ struct PlayerView: View {
             .onDisappear {
                 PlayerOrientationController.unlock()
             }
+            .onChange(of: vm.playbackEnded) { _, ended in
+                guard ended else { return }
+                Task { await stop(reportToJellyfin: false) }
+            }
     }
 
     @ViewBuilder
@@ -223,15 +227,23 @@ struct PlayerView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Button {
-                    Task { await vm.playNextEpisode() }
-                } label: {
-                    Label("Play Now (\(vm.nextEpisodeCountdown)s)", systemImage: "play.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.white, in: Capsule())
+                HStack(spacing: 12) {
+                    Button("Cancel") {
+                        vm.cancelNextEpisodeCountdown()
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.75))
+
+                    Button {
+                        Task { await vm.playNextEpisode() }
+                    } label: {
+                        Label("Play Now (\(vm.nextEpisodeCountdown)s)", systemImage: "play.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.white, in: Capsule())
+                    }
                 }
             }
             .padding(16)
@@ -242,8 +254,8 @@ struct PlayerView: View {
     }
     #endif
 
-    private func stop() async {
-        await vm.stop()
+    private func stop(reportToJellyfin: Bool = true) async {
+        await vm.stop(reportToJellyfin: reportToJellyfin)
         // Rotate back to portrait *before* tearing down the cover, otherwise the
         // detail view underneath flashes in landscape and snaps round afterwards.
         PlayerOrientationController.unlock()

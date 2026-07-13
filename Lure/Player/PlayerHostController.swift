@@ -29,6 +29,15 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
     private var aetherViewMounted = false
     private var subscriptions: Set<AnyCancellable> = []
     private var hideControlsWork: DispatchWorkItem?
+    /// When this controller finished loading its view — used to give AVKit's
+    /// settle-time spurious close-delegate fire a short grace window (ISSUE-016)
+    /// without also swallowing a real user close during a slow load.
+    private var viewLoadedAt = Date()
+    /// True once the engine has reported `.playing` at least once this session.
+    private var hasEverPlayed = false
+    /// Tracked from our own PiP delegate callbacks below — `AVPlayerViewController`
+    /// does not itself expose an `isPictureInPictureActive` property.
+    private var isPipActive = false
 
     init(vm: PlayerViewModel, onClose: @escaping () -> Void) {
         self.vm = vm
@@ -44,6 +53,7 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
         videoGravity = .resizeAspect
         allowsPictureInPicturePlayback = true
         delegate = self
+        viewLoadedAt = Date()
 
         // AVKit exposes no controls-visibility signal, so mirror its tap-to-toggle:
         // a non-intrusive recognizer (runs alongside AVKit's own gesture, ignores
@@ -69,6 +79,15 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
             .receive(on: RunLoop.main)
             .sink { [weak self] backend in
                 self?.applyBackend(backend)
+            }
+            .store(in: &subscriptions)
+
+        vm.engine.$state
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                if state == .playing {
+                    self?.hasEverPlayed = true
+                }
             }
             .store(in: &subscriptions)
     }
@@ -157,44 +176,38 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
     /// host so the engine stops and the cover dismisses (no duplicate close button).
     ///
     /// AVKit also emits this during initial setup — before playback starts — as it
-    /// settles its presentation. Honoring that spurious fire tore the player down
-    /// before it ever played, so we ignore any close until real playback is under
-    /// way (currentTime past the first second).
+    /// settles its presentation, and again when Picture in Picture starts (which also
+    /// collapses the full-screen presentation). Honoring either spurious fire tore the
+    /// player down before it ever played, or the instant PiP kicked in, so we ignore
+    /// the close: while PiP is active, and until either real playback has started or a
+    /// short settle-time grace window has elapsed (whichever the load takes — a slow
+    /// load should never eat a genuine user close).
     func playerViewController(
         _ playerViewController: AVPlayerViewController,
         willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator
     ) {
-        guard vm.currentTime > 1.0 else { return }
+        guard !isPipActive else { return }
+        guard hasEverPlayed || Date().timeIntervalSince(viewLoadedAt) > 2.0 else { return }
         let close = onClose
         coordinator.animate(alongsideTransition: nil) { context in
             guard !context.isCancelled else { return }
             close()
         }
     }
-}
 
-extension TrackInfo {
-    /// Human-readable track label, e.g. "English · 5.1 · AC3".
-    var displayLabel: String {
-        var parts: [String] = []
-        if !name.isEmpty {
-            parts.append(name)
-        } else if let lang = language, !lang.isEmpty {
-            parts.append(lang.uppercased())
-        } else {
-            parts.append("Track \(id)")
-        }
-        if isAtmos {
-            parts.append("Atmos")
-        } else if channels == 6 {
-            parts.append("5.1")
-        } else if channels == 8 {
-            parts.append("7.1")
-        }
-        if !codec.isEmpty {
-            parts.append(codec.uppercased())
-        }
-        return parts.joined(separator: " · ")
+    // MARK: - Picture in Picture
+
+    /// The engine's background-keepalive policy reads `pictureInPictureActive` to
+    /// decide whether a paused PiP session should be torn down; wire it to AVKit's
+    /// own PiP lifecycle so it reflects reality.
+    func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        isPipActive = true
+        vm.engine.pictureInPictureActive = true
+    }
+
+    func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        isPipActive = false
+        vm.engine.pictureInPictureActive = false
     }
 }
 

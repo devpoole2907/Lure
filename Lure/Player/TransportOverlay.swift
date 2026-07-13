@@ -10,7 +10,6 @@ struct TransportOverlay: View {
     @State private var scrubPosition: Double = 0
     @State private var showAudioPicker = false
     @State private var showSubtitlePicker = false
-    @State private var currentRate: Float = 1.0
     @State private var hideTask: Task<Void, Never>? = nil
     @State private var controlsVisible = true
 
@@ -49,6 +48,14 @@ struct TransportOverlay: View {
             // Next episode countdown
             if vm.showNextEpisodeCountdown, let next = vm.nextEpisode {
                 nextEpisodeOverlay(next)
+            }
+
+            // Mid-playback stall/rebuffer indicator (ISSUE-012), distinct from the
+            // startup-only spinner on the play/pause button: a healthy-connection
+            // rebuffer already shows there via isBuffering, but a source-connection
+            // drop/backoff (.stalled) gets no signal at all otherwise.
+            if case .stalled = vm.playbackPhase {
+                reconnectingIndicator
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -108,10 +115,6 @@ struct TransportOverlay: View {
                     .accessibilityLabel("Video format: \(badge)")
             }
 
-            // Placeholder: replaced with AVRoutePickerView when AirPlay is implemented
-            Color.clear.frame(width: 44, height: 44)
-            // Placeholder: replaced with PiP trigger when Picture in Picture is implemented
-            Color.clear.frame(width: 44, height: 44)
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
@@ -263,11 +266,10 @@ struct TransportOverlay: View {
             Menu {
                 ForEach(rates, id: \.self) { rate in
                     Button {
-                        currentRate = rate
                         vm.setRate(rate)
                         resetHideTimer()
                     } label: {
-                        if rate == currentRate {
+                        if rate == vm.playbackRate {
                             Label(rateLabel(rate), systemImage: "checkmark")
                         } else {
                             Text(rateLabel(rate))
@@ -275,14 +277,14 @@ struct TransportOverlay: View {
                     }
                 }
             } label: {
-                Text(rateLabel(currentRate))
+                Text(rateLabel(vm.playbackRate))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(currentRate == 1.0 ? .white.opacity(0.7) : .white)
+                    .foregroundStyle(vm.playbackRate == 1.0 ? .white.opacity(0.7) : .white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(.white.opacity(0.15), in: Capsule())
             }
-            .accessibilityLabel("Playback speed: \(rateLabel(currentRate))")
+            .accessibilityLabel("Playback speed: \(rateLabel(vm.playbackRate))")
 
             // Aspect ratio
             Button {
@@ -347,7 +349,7 @@ struct TransportOverlay: View {
 
                     HStack(spacing: 12) {
                         Button("Cancel") {
-                            vm.showNextEpisodeCountdown = false
+                            vm.cancelNextEpisodeCountdown()
                         }
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.white.opacity(0.7))
@@ -370,6 +372,33 @@ struct TransportOverlay: View {
         }
     }
 
+    // MARK: - Reconnecting Indicator
+
+    /// Small top-centered capsule shown while `playbackPhase` is `.stalled` (ISSUE-012):
+    /// a source-connection drop/retry-backoff, distinct from the ordinary `isBuffering`
+    /// spinner already on the play/pause button. Not interactive; always visible
+    /// regardless of `controlsVisible` so a silent stall doesn't look like a freeze.
+    private var reconnectingIndicator: some View {
+        VStack {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(0.7)
+                Text("Reconnecting…")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.6), in: Capsule())
+            .padding(.top, 60)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
+        .accessibilityLabel("Reconnecting")
+    }
+
     // MARK: - Track Pickers
 
     @ViewBuilder
@@ -379,9 +408,9 @@ struct TransportOverlay: View {
                 vm.selectAudioTrack(track)
             } label: {
                 if track.id == vm.selectedAudioTrackId {
-                    Label(trackLabel(track), systemImage: "checkmark")
+                    Label(track.displayLabel, systemImage: "checkmark")
                 } else {
-                    Text(trackLabel(track))
+                    Text(track.displayLabel)
                 }
             }
         }
@@ -443,13 +472,4 @@ struct TransportOverlay: View {
         rate == 1.0 ? "1×" : String(format: "%g×", rate)
     }
 
-    private func trackLabel(_ track: TrackInfo) -> String {
-        var parts: [String] = []
-        if let lang = track.language { parts.append(lang.uppercased()) }
-        parts.append(track.name)
-        if track.isAtmos { parts.append("Atmos") }
-        else if track.channels == 6 { parts.append("5.1") }
-        else if track.channels == 8 { parts.append("7.1") }
-        return parts.joined(separator: " \u{2022} ")
-    }
 }

@@ -25,6 +25,10 @@ final class PlayerViewModel {
     var isLoadingSubtitles: Bool = false
     var videoGravity: AVLayerVideoGravity = .resizeAspect
     var playbackBackend: PlaybackBackend = .none
+    /// Mirrors `engine.$playbackPhase` (ISSUE-012): finer-grained than `state`, distinguishing
+    /// mid-playback rebuffers/stalls from the startup-only `isLoading` flag so the transport
+    /// UI can surface a "Reconnecting…" indicator instead of a frozen frame.
+    var playbackPhase: PlaybackPhase = .idle
 
     /// True when the engine is software-decoding (e.g. MKV / dav1d), which has no
     /// `AVPlayer` for AVKit to drive — those sessions need our custom transport.
@@ -48,17 +52,17 @@ final class PlayerViewModel {
     var nextEpisode: JellyfinItem?
     var showNextEpisodeCountdown: Bool = false
     var nextEpisodeCountdown: Int = 10
+    /// Set when `PlaybackState.ended` is reached with no known next episode (ISSUE-006):
+    /// a dismissable end-of-playback signal for the view, since the custom transport's
+    /// play button is otherwise dead at end of media with no explanation. Reset at the
+    /// top of `load()`.
+    var playbackEnded: Bool = false
 
     // Current track selections (for UI state)
     var selectedAudioTrackId: Int? = nil
     var selectedSubtitleTrackId: Int? = nil
-
-    // Future: PiP coordinator (AVPictureInPictureController + AVSampleBufferDisplayLayer delegate)
-    // var pipCoordinator: PiPCoordinator?
-    // var onRestoreFromPiP: (() -> Void)?
-
-    // Future: Chromecast coordinator (Google Cast SDK)
-    // var castCoordinator: CastCoordinator?
+    var playbackRate: Float = 1.0
+    var videoSize: CGSize?
 
     // MARK: - Engine
 
@@ -70,14 +74,26 @@ final class PlayerViewModel {
     private var itemId: String = ""
     private var mediaSourceId: String = ""
     private var playSessionId: String = ""
-    private var isDirect: Bool = true
+    /// Chosen candidate's report method for `reportPlaybackStart` (ISSUE-013): "DirectPlay"
+    /// for an untouched-file static candidate, "DirectStream" for a non-static direct
+    /// candidate, "Transcode" otherwise. Distinct from "DirectStream", which used to be
+    /// reported for both direct cases.
+    private var playMethod: String = "DirectStream"
+
+    /// True while the `load()` candidate loop is in flight. AetherEngine sets
+    /// `state = .error(...)` *before* throwing on a failed candidate load; without this
+    /// guard, a direct-play candidate that fails followed by a transcode candidate that
+    /// succeeds would leave the stale `errorMessage` from the failed candidate rendering
+    /// over successfully-playing video (ISSUE-002).
+    private var suppressEngineErrors = false
 
     // MARK: - Combine
     private var cancellables: Set<AnyCancellable> = []
     private var progressTask: Task<Void, Never>?
     private var countdownTask: Task<Void, Never>?
+    private var nextEpisodeCountdownSuppressed = false
     private var startupDiagnosticsTask: Task<Void, Never>?
-    private var lifecycleObservers: [NSObjectProtocol] = []
+    private let lifecycleObserverBag = LifecycleObserverBag()
     #if DEBUG
     private var lastLoggedPlaybackSecond = -1
     #endif
@@ -86,6 +102,10 @@ final class PlayerViewModel {
 
     init(jellyfinService: JellyfinService) throws {
         engine = try AetherEngine()
+        #if os(iOS)
+        // AetherEngine 4.12.1 sets .longFormAudio which blocks PiP (engine #116, fixed in 5.0.1); override until we bump to 5.x
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, policy: .default)
+        #endif
         self.jellyfinService = jellyfinService
         bindPublishers()
         observeLifecycle()
@@ -108,6 +128,9 @@ final class PlayerViewModel {
         self.itemId = itemId
         errorMessage = nil
         isLoading = true
+        playbackEnded = false
+        videoSize = nil
+        nextEpisodeCountdownSuppressed = false
         stopProgressReporting()
         #if DEBUG
         lastLoggedPlaybackSecond = -1
@@ -159,7 +182,7 @@ final class PlayerViewModel {
             #endif
 
             // Build stream URL
-            var streamCandidates: [(url: URL, isDirect: Bool, label: String)] = []
+            var streamCandidates: [(url: URL, isDirect: Bool, label: String, playMethod: String)] = []
             if mediaSource.supportsDirectPlay == true {
                 if let url = client.streamURL(
                     itemId: self.itemId,
@@ -168,7 +191,7 @@ final class PlayerViewModel {
                     isStatic: true,
                     container: mediaSource.container
                 ) {
-                    streamCandidates.append((url, true, "static direct play stream.\(mediaSource.container ?? "mp4")"))
+                    streamCandidates.append((url, true, "static direct play stream.\(mediaSource.container ?? "mp4")", "DirectPlay"))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate static direct play: \(url.absoluteString)")
                     #endif
@@ -181,7 +204,7 @@ final class PlayerViewModel {
                     container: mediaSource.container,
                     useContainerExtension: false
                 ) {
-                    streamCandidates.append((fallbackURL, true, "static direct play fallback stream"))
+                    streamCandidates.append((fallbackURL, true, "static direct play fallback stream", "DirectPlay"))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate static direct play fallback: \(fallbackURL.absoluteString)")
                     #endif
@@ -195,7 +218,7 @@ final class PlayerViewModel {
                     isStatic: false,
                     container: mediaSource.container
                 ) {
-                    streamCandidates.append((url, true, "non-static direct stream stream.\(mediaSource.container ?? "mp4")"))
+                    streamCandidates.append((url, true, "non-static direct stream stream.\(mediaSource.container ?? "mp4")", "DirectStream"))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate non-static direct stream: \(url.absoluteString)")
                     #endif
@@ -208,7 +231,7 @@ final class PlayerViewModel {
                     container: mediaSource.container,
                     useContainerExtension: false
                 ) {
-                    streamCandidates.append((fallbackURL, true, "non-static direct stream fallback stream"))
+                    streamCandidates.append((fallbackURL, true, "non-static direct stream fallback stream", "DirectStream"))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate non-static direct stream fallback: \(fallbackURL.absoluteString)")
                     #endif
@@ -216,7 +239,7 @@ final class PlayerViewModel {
             }
             if let transPath = mediaSource.transcodingUrl,
                let url = client.transcodingURL(path: transPath) {
-                streamCandidates.append((url, false, "transcode"))
+                streamCandidates.append((url, false, "transcode", "Transcode"))
                 #if DEBUG
                 print("[PlayerViewModel] Candidate transcode: \(url.absoluteString)")
                 #endif
@@ -229,7 +252,47 @@ final class PlayerViewModel {
             // appropriate layer to the bound AetherPlayerView; HDR presentation is now
             // handled internally via display-criteria matching (LoadOptions defaults).
             let startPosition = resumePosition > 0 ? resumePosition : nil
+
+            // Jellyfin's own MediaInfo track counts, used below to validate the tight
+            // probe budget hasn't silently dropped late-resolving tracks (ISSUE-005).
+            let embeddedAudioCount = mediaSource.mediaStreams?.filter { $0.type == "Audio" }.count ?? 0
+            let embeddedSubtitleCount = mediaSource.mediaStreams?.filter { $0.type == "Subtitle" && $0.isExternal != true }.count ?? 0
+
+            // Jellyfin external (sidecar) subtitle streams — decoded via `deliveryUrl` in
+            // JellyfinModels.swift but otherwise unused until now. Map them to AetherEngine
+            // 4.12.1's first-class external-subtitle support (#88) so sidecar srt/ass/vtt
+            // tracks actually show up (ISSUE-007).
+            let serverURLString = client.serverURL
+            let externalSubtitleTracks: [ExternalSubtitleTrack] = (mediaSource.mediaStreams ?? []).compactMap { stream in
+                guard stream.type == "Subtitle",
+                      stream.isExternal == true,
+                      let deliveryUrl = stream.deliveryUrl,
+                      let baseURL = URL(string: serverURLString),
+                      let url = URL(string: deliveryUrl, relativeTo: baseURL)?.absoluteURL
+                else { return nil }
+                return ExternalSubtitleTrack(
+                    url: url,
+                    name: stream.displayTitle,
+                    language: stream.language,
+                    isDefault: stream.isDefault ?? false
+                )
+            }
+
+            // Mirror of `UIScreen.main.currentEDRHeadroom > 1` so an HDR-capable display
+            // accepts the HDR10-to-DV upgrade path upfront instead of the conservative SDR
+            // branch (ISSUE-015; see LoadOptions.panelIsInHDRMode doc).
+            #if os(iOS)
+            let panelIsInHDRMode = UIScreen.main.currentEDRHeadroom > 1
+            #else
+            let panelIsInHDRMode = false
+            #endif
+
             var lastLoadError: Error?
+            // Suppress the engine.$state sink's error writes while candidates are being
+            // tried in turn: AetherEngine sets `state = .error(...)` before throwing on a
+            // failed load, and without suppression a failed direct-play candidate would
+            // flash the error overlay even when a later transcode candidate succeeds.
+            suppressEngineErrors = true
             for candidate in streamCandidates {
                 #if DEBUG
                 print("[PlayerViewModel] Trying \(candidate.label): \(candidate.url.absoluteString)")
@@ -238,17 +301,58 @@ final class PlayerViewModel {
                 startStartupDiagnostics(streamURL: candidate.url, startPosition: startPosition)
                 do {
                     // NOTE: LoadOptions(prepareNativeSubtitles: true) would surface text
-                    // subs in AVKit's native menu, but on PGS-heavy sources the engine's
-                    // mov_text injection emits malformed samples (negative durations / no
-                    // pts) that corrupt the fMP4 segments and fail playback with
-                    // "Cannot Open" (AetherEngine #55). Until that's fixed upstream we keep
-                    // subtitle selection host-rendered via our own tracks menu.
-                    try await engine.load(url: candidate.url, startPosition: startPosition)
-                    isDirect = candidate.isDirect
+                    // subs in AVKit's native menu; kept host-rendered via our own tracks
+                    // menu for now (the mov_text approach this used to rely on was replaced
+                    // by native WebVTT renditions in AetherEngine 4.9.0, but wiring that up
+                    // is a separate change).
+                    //
+                    // Track layout is already known from Jellyfin's MediaInfo, so a tight
+                    // probe budget is safe (AetherEngine #68): shaves ~13s off load time on
+                    // remote sources vs. the 50MB/60s engine default. This is a fail-OPEN
+                    // budget (late-resolving tracks silently go missing instead of the load
+                    // throwing), so direct-play candidates are validated against Jellyfin's
+                    // own MediaInfo track counts below and retried unbounded if under-resolved.
+                    let probe = try await engine.load(
+                        url: candidate.url,
+                        startPosition: startPosition,
+                        options: LoadOptions(
+                            panelIsInHDRMode: panelIsInHDRMode,
+                            probesize: 4 * 1024 * 1024,
+                            maxAnalyzeDuration: 5 * 1_000_000,
+                            externalSubtitles: externalSubtitleTracks
+                        )
+                    )
+                    if let probe {
+                        videoSize = Self.videoSize(from: probe)
+                    }
+                    if candidate.isDirect, let probe {
+                        let resolvedAudioCount = probe.audioTracks.filter { !$0.isExternal }.count
+                        let resolvedSubtitleCount = probe.subtitleTracks.filter { !$0.isExternal }.count
+                        if resolvedAudioCount < embeddedAudioCount || resolvedSubtitleCount < embeddedSubtitleCount {
+                            #if DEBUG
+                            print("[PlayerViewModel] Tight probe under-resolved tracks (audio \(resolvedAudioCount)/\(embeddedAudioCount), subtitle \(resolvedSubtitleCount)/\(embeddedSubtitleCount)) — retrying \(candidate.label) with unbounded probe budget")
+                            #endif
+                            let retryProbe = try await engine.load(
+                                url: candidate.url,
+                                startPosition: startPosition,
+                                options: LoadOptions(
+                                    panelIsInHDRMode: panelIsInHDRMode,
+                                    externalSubtitles: externalSubtitleTracks
+                                )
+                            )
+                            if let retryProbe {
+                                videoSize = Self.videoSize(from: retryProbe)
+                            }
+                        }
+                    }
+                    playMethod = candidate.playMethod
                     #if DEBUG
                     print("[PlayerViewModel] Loaded via \(candidate.label)")
                     #endif
                     lastLoadError = nil
+                    // Clear any stale error from an earlier failed candidate now that this
+                    // one succeeded (ISSUE-002).
+                    errorMessage = nil
                     break
                 } catch {
                     lastLoadError = error
@@ -257,6 +361,7 @@ final class PlayerViewModel {
                     #endif
                 }
             }
+            suppressEngineErrors = false
             if let lastLoadError {
                 throw lastLoadError
             }
@@ -278,7 +383,7 @@ final class PlayerViewModel {
                 playSessionId: playSessionId,
                 mediaSourceId: self.mediaSourceId,
                 positionSeconds: resumePosition,
-                isDirect: isDirect
+                playMethod: playMethod
             )
             startProgressReporting()
 
@@ -322,7 +427,7 @@ final class PlayerViewModel {
             #if DEBUG
             print("[PlayerViewModel] resume seek -> \(String(format: "%.1f", target)) (current=\(String(format: "%.1f", currentTime)) duration=\(String(format: "%.1f", duration)))")
             #endif
-            await engine.seek(to: min(target, duration - 1))
+            await engine.seek(to: max(0, min(target, duration - 1)))
         } else {
             guard currentTime <= 0.05 else { return }
             await engine.seek(to: 0)
@@ -377,7 +482,11 @@ final class PlayerViewModel {
         startupDiagnosticsTask = nil
         stopProgressReporting()
         stopCountdown()
-        removeLifecycleObservers()
+        // Lifecycle observers are intentionally NOT removed here: `playNextEpisode()`
+        // calls stop() then load() on the same VM, and reloadAfterForeground()'s own
+        // `guard state == .paused` already makes the observer a no-op while stopped.
+        // Removing them here left every episode after the first without foreground
+        // recovery. They live for the VM's lifetime via `lifecycleObserverBag`.
         if reportToJellyfin, let client = jellyfinClient, !itemId.isEmpty, !playSessionId.isEmpty {
             await client.reportStopped(
                 itemId: itemId,
@@ -388,33 +497,28 @@ final class PlayerViewModel {
         engine.stop()
     }
 
-    private func removeLifecycleObservers() {
-        for obs in lifecycleObservers {
-            NotificationCenter.default.removeObserver(obs)
-        }
-        lifecycleObservers.removeAll()
-    }
-
     // MARK: - Playback Controls
 
     func togglePlayPause() {
+        // Pause/Unpause reporting happens in the engine.$state sink (ISSUE-003): AetherEngine
+        // is @MainActor and its Combine sink delivers synchronously, so reading `state` here
+        // (after the toggle) would already reflect the post-toggle value, inverting the
+        // reported event. Reporting from the sink's previous/new state comparison instead
+        // also captures AVKit-native-control toggles, which never call this method.
         engine.togglePlayPause()
-        guard let client = jellyfinClient, !itemId.isEmpty, !playSessionId.isEmpty else { return }
-        let isPaused = state == .playing
-        let pos = currentTime
-        let sess = playSessionId
-        let item = itemId
-        let event = isPaused ? "Pause" : "Unpause"
-        Task {
-            await client.reportProgress(itemId: item, playSessionId: sess, positionSeconds: pos, isPaused: isPaused, eventName: event)
-        }
     }
 
     func seek(to seconds: Double) async {
         let clamped = max(0, min(seconds, duration))
+        // Workaround AetherEngine #122 (paused seek re-engages playback), fixed upstream in
+        // 5.0.3: capture the paused state before seeking and re-pause after if needed (ISSUE-011).
+        let wasPaused = state == .paused
         await engine.seek(to: clamped)
+        if wasPaused {
+            engine.pause()
+        }
         guard let client = jellyfinClient, !itemId.isEmpty, !playSessionId.isEmpty else { return }
-        await client.reportProgress(itemId: itemId, playSessionId: playSessionId, positionSeconds: clamped, isPaused: false, eventName: "Seek")
+        await client.reportProgress(itemId: itemId, playSessionId: playSessionId, positionSeconds: clamped, isPaused: wasPaused, eventName: "Seek")
     }
 
     func skip(by seconds: Double) async {
@@ -422,6 +526,7 @@ final class PlayerViewModel {
     }
 
     func setRate(_ rate: Float) {
+        playbackRate = rate
         engine.setRate(rate)
     }
 
@@ -466,6 +571,12 @@ final class PlayerViewModel {
         )
     }
 
+    func cancelNextEpisodeCountdown() {
+        stopCountdown()
+        showNextEpisodeCountdown = false
+        nextEpisodeCountdownSuppressed = true
+    }
+
     // MARK: - Foreground Reload
 
     @MainActor
@@ -491,7 +602,14 @@ final class PlayerViewModel {
     }
 
     var isPlaying: Bool { state == .playing }
-    var isBuffering: Bool { state == .loading || (isLoading && state == .idle) }
+    /// Derived from `playbackPhase` (ISSUE-012) instead of just `state`, so mid-playback
+    /// rebuffers/stalls/seeks surface the same buffering signal as startup loading does.
+    var isBuffering: Bool {
+        switch playbackPhase {
+        case .loading, .rebuffering, .seeking: true
+        default: isLoading
+        }
+    }
 
     var currentIntroSegment: JellyfinMediaSegment? {
         segments.first { $0.type?.lowercased() == "intro"
@@ -512,14 +630,41 @@ final class PlayerViewModel {
     private func bindPublishers() {
         engine.$state
             .sink { [weak self] value in
+                guard let self else { return }
                 #if DEBUG
                 print("[PlayerViewModel] state -> \(String(describing: value))")
                 #endif
-                self?.state = value
-                if case .error(let message) = value {
-                    self?.errorMessage = message
-                    self?.isLoading = false
+                let previous = self.state
+                self.state = value
+                if case .error(let message) = value, self.suppressEngineErrors != true {
+                    self.errorMessage = message
+                    self.isLoading = false
                 }
+
+                // ISSUE-003: report Pause/Unpause from the state transition itself (instead
+                // of from togglePlayPause(), which read `state` after a synchronous engine
+                // toggle and reported the inverted event). This also captures AVKit-native-
+                // control toggles, which never call togglePlayPause().
+                if previous == .playing, value == .paused {
+                    self.reportPauseTransition(isPaused: true, eventName: "Pause")
+                } else if previous == .paused, value == .playing {
+                    self.reportPauseTransition(isPaused: false, eventName: "Unpause")
+                }
+
+                // ISSUE-006: PlaybackState.ended is terminal like .idle but reached by
+                // natural end-of-media rather than stop(). Report stopped/played once, then
+                // auto-advance or surface a dismissable end-of-playback signal.
+                if previous != .ended, value == .ended {
+                    self.handlePlaybackEnded()
+                }
+            }
+            .store(in: &cancellables)
+        engine.$playbackPhase
+            .sink { [weak self] value in
+                self?.playbackPhase = value
+                #if DEBUG
+                print("[PlayerViewModel] playbackPhase -> \(value)")
+                #endif
             }
             .store(in: &cancellables)
         engine.clock.$currentTime
@@ -599,6 +744,49 @@ final class PlayerViewModel {
             .store(in: &cancellables)
     }
 
+    private static func videoSize(from probe: SourceProbe) -> CGSize? {
+        guard probe.videoWidth > 0, probe.videoHeight > 0 else { return nil }
+        return CGSize(width: CGFloat(probe.videoWidth), height: CGFloat(probe.videoHeight))
+    }
+
+    // MARK: - Private: Pause/Unpause + End-of-Playback Reporting
+
+    /// Fires the Jellyfin Pause/Unpause progress event from an observed `engine.$state`
+    /// transition (ISSUE-003). See the sink in `bindPublishers()`.
+    private func reportPauseTransition(isPaused: Bool, eventName: String) {
+        guard let client = jellyfinClient, !itemId.isEmpty, !playSessionId.isEmpty else { return }
+        let pos = currentTime
+        let sess = playSessionId
+        let item = itemId
+        Task {
+            await client.reportProgress(itemId: item, playSessionId: sess, positionSeconds: pos, isPaused: isPaused, eventName: eventName)
+        }
+    }
+
+    /// Handles the transition into `PlaybackState.ended` (ISSUE-006): reports the stopped
+    /// position and marks the item played, then either auto-advances to the known next
+    /// episode or surfaces `playbackEnded` for the view to dismiss on.
+    private func handlePlaybackEnded() {
+        guard let client = jellyfinClient, !itemId.isEmpty, !playSessionId.isEmpty else {
+            if nextEpisode == nil { playbackEnded = true }
+            return
+        }
+        let item = itemId
+        let sess = playSessionId
+        let pos = duration > 0 ? duration : currentTime
+        let hasNext = nextEpisode != nil
+        Task { [weak self] in
+            await client.reportStopped(itemId: item, playSessionId: sess, positionSeconds: pos)
+            try? await client.markPlayed(itemId: item)
+            guard let self else { return }
+            if hasNext {
+                await self.playNextEpisode()
+            } else {
+                self.playbackEnded = true
+            }
+        }
+    }
+
     // MARK: - Private: Auto Track Selection
 
     private func autoSelectAudioTrack() {
@@ -624,7 +812,8 @@ final class PlayerViewModel {
         guard duration > 60,
               let next = nextEpisode,
               next.id != nil,
-              !showNextEpisodeCountdown
+              !showNextEpisodeCountdown,
+              !nextEpisodeCountdownSuppressed
         else { return }
         let outroStart = segments.first(where: { $0.type?.lowercased() == "outro" })?.startSeconds
         let threshold = outroStart ?? max(duration - 30, duration * 0.9)
@@ -691,7 +880,7 @@ final class PlayerViewModel {
             guard let self else { return }
             Task { @MainActor in await self.reloadAfterForeground() }
         }
-        lifecycleObservers.append(fg)
+        lifecycleObserverBag.add(fg)
         #else
         let fg = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
@@ -701,7 +890,26 @@ final class PlayerViewModel {
             guard let self else { return }
             Task { @MainActor in await self.reloadAfterForeground() }
         }
-        lifecycleObservers.append(fg)
+        lifecycleObserverBag.add(fg)
         #endif
+    }
+}
+
+/// Holds NotificationCenter observer tokens for the VM's lifetime and removes them on
+/// deallocation, mirroring AetherEngine's own `LifecycleObserverBag` pattern. Using a
+/// separate reference type (rather than removing observers in `stop()`) lets the same
+/// VM instance be reused across `stop()` + `load()` cycles (e.g. `playNextEpisode()`)
+/// without losing foreground-recovery.
+private final class LifecycleObserverBag: @unchecked Sendable {
+    private var tokens: [NSObjectProtocol] = []
+
+    func add(_ token: NSObjectProtocol) {
+        tokens.append(token)
+    }
+
+    deinit {
+        for token in tokens {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 }

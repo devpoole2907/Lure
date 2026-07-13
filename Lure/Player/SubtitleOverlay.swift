@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import AetherEngine
 
 /// Renders active subtitle cues over the video layer.
@@ -60,17 +61,38 @@ struct SubtitleOverlay: View {
     }
 
     private func imageCue(_ img: SubtitleImage, in size: CGSize) -> some View {
+        let videoRect = displayedVideoRect(in: size)
         let rect = CGRect(
-            x: img.position.minX * size.width,
-            y: img.position.minY * size.height,
-            width: img.position.width * size.width,
-            height: img.position.height * size.height
+            x: videoRect.minX + img.position.minX * videoRect.width,
+            y: videoRect.minY + img.position.minY * videoRect.height,
+            width: img.position.width * videoRect.width,
+            height: img.position.height * videoRect.height
         )
         return Image(decorative: img.cgImage, scale: 1)
             .resizable()
             .frame(width: rect.width, height: rect.height)
             .position(x: rect.midX, y: rect.midY)
             .accessibilityHidden(true)
+    }
+
+    private func displayedVideoRect(in containerSize: CGSize) -> CGRect {
+        guard let videoSize = vm.videoSize, videoSize.width > 0, videoSize.height > 0 else {
+            return CGRect(origin: .zero, size: containerSize)
+        }
+
+        let containerRect = CGRect(origin: .zero, size: containerSize)
+        if vm.videoGravity == .resizeAspectFill {
+            let scale = max(containerSize.width / videoSize.width, containerSize.height / videoSize.height)
+            let scaledSize = CGSize(width: videoSize.width * scale, height: videoSize.height * scale)
+            return CGRect(
+                x: (containerSize.width - scaledSize.width) / 2,
+                y: (containerSize.height - scaledSize.height) / 2,
+                width: scaledSize.width,
+                height: scaledSize.height
+            )
+        }
+
+        return AVMakeRect(aspectRatio: videoSize, insideRect: containerRect)
     }
 
     private func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {

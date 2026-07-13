@@ -194,23 +194,6 @@ actor JellyfinAPIClient {
             .joined()
     }
 
-    @available(*, deprecated, message: "Jellyfin may ignore AnyProviderIdEquals; use searchByTmdbId(_:mediaType:title:) instead.")
-    private func searchByProviderFilter(_ tmdbId: Int, mediaType: String) async throws -> String? {
-        let type = mediaType == "tv" ? "Series" : "Movie"
-        let response: JellyfinItemsResponse = try await get(
-            "/Users/\(userId)/Items",
-            params: [
-                "IncludeItemTypes": type,
-                "Recursive": "true",
-                "CollapseBoxSetItems": "false",
-                "AnyProviderIdEquals": "tmdb.\(tmdbId)",
-                "Fields": "Id,Name,ProviderIds",
-                "Limit": "10"
-            ]
-        )
-        return (response.items ?? []).first(where: { $0.tmdbId == tmdbId })?.id
-    }
-
     func getSeasons(seriesId: String) async throws -> [JellyfinSeason] {
         let response: JellyfinSeasonsResponse = try await get(
             "/Shows/\(seriesId)/Seasons",
@@ -402,14 +385,14 @@ actor JellyfinAPIClient {
 
     // MARK: - Progress Reporting (fire-and-forget)
 
-    func reportPlaybackStart(itemId: String, playSessionId: String, mediaSourceId: String, positionSeconds: Double, isDirect: Bool) async {
+    func reportPlaybackStart(itemId: String, playSessionId: String, mediaSourceId: String, positionSeconds: Double, playMethod: String) async {
         let body = JellyfinPlayingBody(
             itemId: itemId,
             playSessionId: playSessionId,
             mediaSourceId: mediaSourceId,
             positionTicks: Int64(positionSeconds * 10_000_000),
             canSeek: true,
-            playMethod: isDirect ? "DirectStream" : "Transcode"
+            playMethod: playMethod
         )
         try? await postVoid("/Sessions/Playing", body: body)
     }
