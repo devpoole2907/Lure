@@ -197,6 +197,16 @@ final class TVDetailViewModel {
         await resolvePlaybackAvailability(for: show)
     }
 
+    func addPlayableItemToFavorites() async throws {
+        guard let itemId = playbackAvailability.playableItemId else {
+            throw JellyfinError.itemNotFound
+        }
+        guard let client = jellyfinService.client else {
+            throw JellyfinError.noCredentials
+        }
+        try await client.addFavorite(itemId: itemId)
+    }
+
     private func resolvePlaybackAvailability(for show: SeerrTVDetail) async {
         guard show.hasPlayableContent else {
             playbackAvailability = .unknown

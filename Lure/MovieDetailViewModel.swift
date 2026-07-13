@@ -126,6 +126,16 @@ final class MovieDetailViewModel {
         await resolvePlaybackAvailability(for: movie)
     }
 
+    func addPlayableItemToFavorites() async throws {
+        guard let itemId = playbackAvailability.playableItemId else {
+            throw JellyfinError.itemNotFound
+        }
+        guard let client = jellyfinService.client else {
+            throw JellyfinError.noCredentials
+        }
+        try await client.addFavorite(itemId: itemId)
+    }
+
     private func resolvePlaybackAvailability(for movie: SeerrMovieDetail) async {
         guard movie.mediaInfo?.isAvailable == true else {
             playbackAvailability = .unknown

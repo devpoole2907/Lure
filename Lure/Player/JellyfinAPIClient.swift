@@ -303,6 +303,10 @@ actor JellyfinAPIClient {
         try await postEmpty("/Users/\(userId)/PlayedItems/\(itemId)")
     }
 
+    func addFavorite(itemId: String) async throws {
+        try await postEmpty("/Users/\(userId)/FavoriteItems/\(itemId)")
+    }
+
     // MARK: - Playback
 
     func getPlaybackInfo(

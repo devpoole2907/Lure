@@ -240,10 +240,12 @@ struct TVDetailView: View {
             year: show.year,
             runtime: nil,
             rating: show.voteAverage,
-            badges: [],
-            genres: [],
+            overview: show.overview,
+            badges: showBadges(show),
+            genres: show.genres?.compactMap(\.name) ?? [],
             verticalOffset: heroVerticalOffset,
-            primaryAction: heroAction(for: show)
+            primaryAction: heroAction(for: show),
+            secondaryAction: favoriteAction(for: show)
         )
     }
 
@@ -267,6 +269,35 @@ struct TVDetailView: View {
         }
     }
 
+    private func favoriteAction(for show: SeerrTVDetail) -> DetailPosterHeroAction {
+        DetailPosterHeroAction(
+            title: "Add to Favorites",
+            systemImage: "plus",
+            isEnabled: vm.playbackAvailability.playableItemId != nil
+        ) {
+            addToFavorites(title: show.displayTitle)
+        }
+    }
+
+    private func addToFavorites(title: String) {
+        Task { @MainActor in
+            do {
+                try await vm.addPlayableItemToFavorites()
+                notificationCenter.show(LureBannerItem(
+                    title: "Added to Favorites",
+                    message: title,
+                    style: .success
+                ))
+            } catch {
+                notificationCenter.show(LureBannerItem(
+                    title: "Favorite Failed",
+                    message: error.localizedDescription,
+                    style: .error
+                ))
+            }
+        }
+    }
+
     /// Prefer clean wide key art for full-bleed surfaces; posters remain a fallback
     /// for titles without usable backdrops.
     private func heroArtworkURL(for show: SeerrTVDetail) -> URL? {
@@ -277,6 +308,17 @@ struct TVDetailView: View {
     /// inline nav bar (≈ Dynamic Island height + bar); a few px off on other devices
     /// is imperceptible.
     private var heroTitleRevealThreshold: CGFloat { 100 }
+
+    private func showBadges(_ show: SeerrTVDetail) -> [DetailBadge] {
+        var badges: [DetailBadge] = []
+        if let rating = show.contentRatingText {
+            badges.append(DetailBadge(icon: "shield", label: rating, color: .yellow))
+        }
+        if let status = shortShowStatus(show.status) {
+            badges.append(DetailBadge(icon: "circle.fill", label: status, color: .secondary))
+        }
+        return badges
+    }
 
     // MARK: - Cards Section
 
@@ -294,19 +336,11 @@ struct TVDetailView: View {
             )
         }
 
-        if let overview = show.overview, !overview.isEmpty {
-            overviewCard(overview)
-        }
-
         statsCard(show)
 
         if let providers = show.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
-        }
-
-        if let genres = show.genres, !genres.isEmpty {
-            genreChips(genres.compactMap(\.name))
         }
 
         if let ratings = vm.ratings, ratings.hasAnyScore {
@@ -536,20 +570,6 @@ struct TVDetailView: View {
         }
     }
 
-    // MARK: - Overview Card
-
-    private func overviewCard(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Overview", icon: "text.alignleft")
-            Text(text)
-                .font(.subheadline)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-
     // MARK: - Stats Card
 
     private func statsCard(_ show: SeerrTVDetail) -> some View {
@@ -614,25 +634,6 @@ struct TVDetailView: View {
             .horizontalSoftEdges()
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    // MARK: - Genre Chips
-
-    private func genreChips(_ genres: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(genres.prefix(8), id: \.self) { genre in
-                    Text(genre)
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .glassEffect(.regular, in: Capsule())
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-        .horizontalSoftEdges()
-        .frame(maxWidth: .infinity)
     }
 
     private func shortShowStatus(_ status: String?) -> String? {

@@ -17,12 +17,15 @@ struct DetailPosterHeroView: View {
     let year: String?
     let runtime: String?
     let rating: Double?
+    let overview: String?
     let badges: [DetailBadge]
     let genres: [String]
     let verticalOffset: CGFloat
     let primaryAction: DetailPosterHeroAction
+    let secondaryAction: DetailPosterHeroAction?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var isOverviewExpanded = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -101,34 +104,109 @@ struct DetailPosterHeroView: View {
 
             metadataRow
 
+            actionRow
+                .padding(.top, 4)
+
+            overviewSection
+
+            footerMetadata
+        }
+        .foregroundStyle(.white)
+        .frame(maxWidth: 540)
+        .padding(.horizontal, 28)
+        .padding(.bottom, 48)
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 14) {
             Button(action: primaryAction.action) {
                 Label(primaryAction.title, systemImage: primaryAction.systemImage)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.black)
-                    .padding(.horizontal, 22)
-                    .frame(height: 42)
+                    .padding(.horizontal, 24)
+                    .frame(height: 44)
+                    .frame(minWidth: 164)
                     .background(.white, in: Capsule())
             }
             .buttonStyle(.plain)
             .disabled(!primaryAction.isEnabled)
             .opacity(primaryAction.isEnabled ? 1 : 0.55)
-            .padding(.top, 4)
 
-            if !badges.isEmpty || !genres.isEmpty {
-                VStack(spacing: 8) {
-                    DetailBadgeSection(badges: badges)
-
-                    if !genres.isEmpty {
-                        DetailGenreChips(genres: genres)
-                    }
+            if let secondaryAction {
+                Button(action: secondaryAction.action) {
+                    Image(systemName: secondaryAction.systemImage)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay {
+                            Circle()
+                                .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+                        }
                 }
-                .padding(.top, 2)
+                .buttonStyle(.plain)
+                .disabled(!secondaryAction.isEnabled)
+                .opacity(secondaryAction.isEnabled ? 1 : 0.45)
+                .accessibilityLabel(secondaryAction.title)
             }
         }
-        .foregroundStyle(.white)
-        .frame(maxWidth: 520)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 58)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private var overviewSection: some View {
+        if let overviewText {
+            VStack(alignment: .leading, spacing: 5) {
+                ZStack(alignment: .bottomTrailing) {
+                    Text(overviewText)
+                        .font(.subheadline)
+                        .lineSpacing(2)
+                        .foregroundStyle(.white.opacity(0.88))
+                        .lineLimit(isOverviewExpanded || !shouldShowOverviewToggle ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, !isOverviewExpanded && shouldShowOverviewToggle ? 78 : 0)
+
+                    if !isOverviewExpanded && shouldShowOverviewToggle {
+                        overviewToggleButton("MORE")
+                    }
+                }
+
+                if isOverviewExpanded && shouldShowOverviewToggle {
+                    overviewToggleButton("LESS")
+                }
+            }
+            .padding(.top, 10)
+        }
+    }
+
+    private func overviewToggleButton(_ title: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isOverviewExpanded.toggle()
+            }
+        } label: {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var footerMetadata: some View {
+        if !footerItems.isEmpty {
+            Text(footerItems.joined(separator: " · "))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.76))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        }
     }
 
     @ViewBuilder
@@ -156,8 +234,34 @@ struct DetailPosterHeroView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var overviewText: String? {
+        guard let overview else { return nil }
+        let text = overview.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    private var shouldShowOverviewToggle: Bool {
+        (overviewText?.count ?? 0) > 140
+    }
+
+    private var footerItems: [String] {
+        let rawItems = badges.map(\.label) + genres
+        var seen = Set<String>()
+        return rawItems
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { item in
+                let key = item.lowercased()
+                guard !seen.contains(key) else { return false }
+                seen.insert(key)
+                return true
+            }
+            .prefix(10)
+            .map(\.self)
+    }
+
     private var carouselHeight: CGFloat {
-        horizontalSizeClass == .compact ? 610 : 740
+        horizontalSizeClass == .compact ? 660 : 780
     }
 }
 
@@ -171,10 +275,12 @@ struct DetailPosterHeroView: View {
         year: SeerrTVDetail.previewShow.year,
         runtime: nil,
         rating: SeerrTVDetail.previewShow.voteAverage,
+        overview: SeerrTVDetail.previewShow.overview,
         badges: [],
-        genres: [],
+        genres: SeerrTVDetail.previewShow.genres?.compactMap(\.name) ?? [],
         verticalOffset: 0,
-        primaryAction: DetailPosterHeroAction(title: "Play", systemImage: "play.fill") {}
+        primaryAction: DetailPosterHeroAction(title: "Play First Episode", systemImage: "play.fill") {},
+        secondaryAction: DetailPosterHeroAction(title: "Add to Favorites", systemImage: "plus") {}
     )
     .background(Color.black)
 }

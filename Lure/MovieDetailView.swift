@@ -233,10 +233,12 @@ struct MovieDetailView: View {
             year: movie.year,
             runtime: movie.runtimeText,
             rating: movie.voteAverage,
+            overview: movie.overview,
             badges: movieBadges(movie),
             genres: movie.genres?.compactMap(\.name) ?? [],
             verticalOffset: heroVerticalOffset,
-            primaryAction: heroAction(for: movie)
+            primaryAction: heroAction(for: movie),
+            secondaryAction: favoriteAction(for: movie)
         )
     }
 
@@ -257,6 +259,35 @@ struct MovieDetailView: View {
             isEnabled: !vm.isRequesting && !isModeratingRequest
         ) {
             showRequestOptions = true
+        }
+    }
+
+    private func favoriteAction(for movie: SeerrMovieDetail) -> DetailPosterHeroAction {
+        DetailPosterHeroAction(
+            title: "Add to Favorites",
+            systemImage: "plus",
+            isEnabled: vm.playbackAvailability.playableItemId != nil
+        ) {
+            addToFavorites(title: movie.displayTitle)
+        }
+    }
+
+    private func addToFavorites(title: String) {
+        Task { @MainActor in
+            do {
+                try await vm.addPlayableItemToFavorites()
+                notificationCenter.show(LureBannerItem(
+                    title: "Added to Favorites",
+                    message: title,
+                    style: .success
+                ))
+            } catch {
+                notificationCenter.show(LureBannerItem(
+                    title: "Favorite Failed",
+                    message: error.localizedDescription,
+                    style: .error
+                ))
+            }
         }
     }
 
@@ -297,10 +328,6 @@ struct MovieDetailView: View {
 
         ratingsCard(vm.ratings, movie: movie)
             .transition(.opacity.combined(with: .move(edge: .bottom)))
-
-        if let overview = movie.overview, !overview.isEmpty {
-            overviewCard(overview)
-        }
 
         if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
@@ -528,20 +555,6 @@ struct MovieDetailView: View {
                 style: .error
             ))
         }
-    }
-
-    // MARK: - Overview Card
-
-    private func overviewCard(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Overview", icon: "text.alignleft")
-            Text(text)
-                .font(.subheadline)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Watch Providers Card
