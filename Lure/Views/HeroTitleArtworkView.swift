@@ -27,12 +27,12 @@ struct HeroTitleArtworkView: View {
                 CachedRemoteImage(url: logoURL, contentMode: .fit, trimsTransparentPadding: true) {
                     fallbackTitle
                 }
-                .frame(maxWidth: maxWidth, maxHeight: maxLogoHeight, alignment: .bottom)
+                .frame(maxWidth: maxWidth * 0.94, maxHeight: maxLogoHeight * 0.9, alignment: .bottom)
                 .shadow(color: .black.opacity(0.45), radius: 14, y: 5)
                 .accessibilityLabel(title)
             } else {
                 fallbackTitle
-                    .frame(maxWidth: maxWidth)
+                    .frame(maxWidth: maxWidth * 0.94)
             }
         }
     }
