@@ -16,6 +16,7 @@ struct EpisodeDetailView: View {
 
     @State private var episode: JellyfinItem?
     @State private var mediaQuality: MediaQualityInfo?
+    @State private var mediaSource: JellyfinMediaSource?
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var heroVerticalOffset: CGFloat = 0
@@ -167,6 +168,12 @@ struct EpisodeDetailView: View {
         if let durationText {
             rows.append(("clock", "Runtime", durationText))
         }
+        if let fileSizeText {
+            rows.append(("externaldrive", "File Size", fileSizeText))
+        }
+        if let bitrateText {
+            rows.append(("speedometer", "Bitrate", bitrateText))
+        }
         if let rating = episode?.communityRating, rating > 0 {
             rows.append(("star.fill", "Rating", String(format: "%.1f", rating)))
         }
@@ -174,6 +181,20 @@ struct EpisodeDetailView: View {
             rows.append(("play.circle", "Resume", resume))
         }
         return rows
+    }
+
+    private var fileSizeText: String? {
+        guard let size = mediaSource?.size, size > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
+    private var bitrateText: String? {
+        guard let bitrate = mediaSource?.bitrate, bitrate > 0 else { return nil }
+        let megabits = Double(bitrate) / 1_000_000
+        if megabits >= 10 {
+            return String(format: "%.0f Mbps", megabits)
+        }
+        return String(format: "%.1f Mbps", megabits)
     }
 
     @MainActor
@@ -194,6 +215,7 @@ struct EpisodeDetailView: View {
             withAnimation(.smooth(duration: 0.3)) {
                 episode = loadedEpisode
                 mediaQuality = MediaQualityInfo(mediaSources: playbackInfo?.mediaSources)
+                mediaSource = playbackInfo?.mediaSources?.first
                 isLoading = false
             }
         } catch {
