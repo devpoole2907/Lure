@@ -264,9 +264,10 @@ struct MovieDetailView: View {
 
     private func favoriteAction(for movie: SeerrMovieDetail) -> DetailPosterHeroAction {
         DetailPosterHeroAction(
-            title: "Add to Favorites",
-            systemImage: "plus",
-            isEnabled: vm.playbackAvailability.playableItemId != nil
+            title: vm.isFavorite ? "In Favorites" : "Add to Favorites",
+            systemImage: vm.isFavorite ? "checkmark" : "plus",
+            isEnabled: vm.playbackAvailability.playableItemId != nil && !vm.isFavorite,
+            isHighlighted: vm.isFavorite
         ) {
             addToFavorites(title: movie.displayTitle)
         }

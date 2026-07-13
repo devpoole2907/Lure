@@ -107,9 +107,11 @@ struct JellyfinItem: Decodable, Sendable {
 struct JellyfinUserData: Decodable, Sendable {
     let playbackPositionTicks: Int64?
     let played: Bool?
+    let isFavorite: Bool?
     enum CodingKeys: String, CodingKey {
         case playbackPositionTicks = "PlaybackPositionTicks"
         case played = "Played"
+        case isFavorite = "IsFavorite"
     }
 }
 

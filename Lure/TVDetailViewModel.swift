@@ -15,6 +15,7 @@ final class TVDetailViewModel {
     private(set) var requestSuccess: Bool = false
     private(set) var playbackAvailability: PlaybackAvailability = .unknown
     private(set) var heroArtwork: MediaArtwork?
+    private(set) var isFavorite = false
 
     // Season selection for requests
     var selectedSeasons: Set<Int> = []
@@ -205,14 +206,19 @@ final class TVDetailViewModel {
             throw JellyfinError.noCredentials
         }
         try await client.addFavorite(itemId: itemId)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+            isFavorite = true
+        }
     }
 
     private func resolvePlaybackAvailability(for show: SeerrTVDetail) async {
         guard show.hasPlayableContent else {
             playbackAvailability = .unknown
+            isFavorite = false
             return
         }
         playbackAvailability = .checking
+        isFavorite = false
         playbackAvailability = await jellyfinService.resolvePlaybackAvailability(
             tmdbId: tmdbId,
             mediaType: "tv",
@@ -220,5 +226,16 @@ final class TVDetailViewModel {
             releaseYear: show.year.flatMap(Int.init),
             serviceUrl: show.mediaInfo?.serviceUrl
         )
+        if let itemId = playbackAvailability.playableItemId {
+            await loadFavoriteState(itemId: itemId)
+        }
+    }
+
+    private func loadFavoriteState(itemId: String) async {
+        guard let client = jellyfinService.client else { return }
+        let item = try? await client.getItem(itemId: itemId)
+        withAnimation(.smooth(duration: 0.3)) {
+            isFavorite = item?.userData?.isFavorite == true
+        }
     }
 }

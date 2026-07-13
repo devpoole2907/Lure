@@ -145,7 +145,8 @@ struct DiscoverView: View {
                         items: vm.trending,
                         apiClient: apiClient,
                         transitionNamespace: navigationTransitionNamespace,
-                        headerValue: .trending
+                        headerValue: .trending,
+                        extendsBeyondParentPadding: false
                     )
                     MediaSliderView(
                         title: "Popular Movies",
@@ -153,7 +154,8 @@ struct DiscoverView: View {
                         items: vm.popularMovies,
                         apiClient: apiClient,
                         transitionNamespace: navigationTransitionNamespace,
-                        headerValue: .popularMovies
+                        headerValue: .popularMovies,
+                        extendsBeyondParentPadding: false
                     )
                     MediaSliderView(
                         title: "Popular TV",
@@ -161,7 +163,8 @@ struct DiscoverView: View {
                         items: vm.popularTV,
                         apiClient: apiClient,
                         transitionNamespace: navigationTransitionNamespace,
-                        headerValue: .popularTV
+                        headerValue: .popularTV,
+                        extendsBeyondParentPadding: false
                     )
                     MediaSliderView(
                         title: "New Releases",
@@ -169,7 +172,8 @@ struct DiscoverView: View {
                         items: vm.newReleases,
                         apiClient: apiClient,
                         transitionNamespace: navigationTransitionNamespace,
-                        headerValue: .newReleases
+                        headerValue: .newReleases,
+                        extendsBeyondParentPadding: false
                     )
                     MediaSliderView(
                         title: "Upcoming",
@@ -177,7 +181,8 @@ struct DiscoverView: View {
                         items: vm.upcomingMovies,
                         apiClient: apiClient,
                         transitionNamespace: navigationTransitionNamespace,
-                        headerValue: .upcoming
+                        headerValue: .upcoming,
+                        extendsBeyondParentPadding: false
                     )
                     if !vm.collections.isEmpty {
                         collectionSlider(vm.collections)

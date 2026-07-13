@@ -17,6 +17,7 @@ final class MovieDetailViewModel {
     private(set) var mediaQuality: MediaQualityInfo?
     private(set) var resumePositionSeconds: Double = 0
     private(set) var heroArtwork: MediaArtwork?
+    private(set) var isFavorite = false
 
     /// True when Jellyfin has a saved playback position partway through the film,
     /// so the Watch button should offer to continue instead of restart.
@@ -134,6 +135,9 @@ final class MovieDetailViewModel {
             throw JellyfinError.noCredentials
         }
         try await client.addFavorite(itemId: itemId)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+            isFavorite = true
+        }
     }
 
     private func resolvePlaybackAvailability(for movie: SeerrMovieDetail) async {
@@ -141,11 +145,13 @@ final class MovieDetailViewModel {
             playbackAvailability = .unknown
             mediaQuality = nil
             resumePositionSeconds = 0
+            isFavorite = false
             return
         }
         playbackAvailability = .checking
         mediaQuality = nil
         resumePositionSeconds = 0
+        isFavorite = false
         playbackAvailability = await jellyfinService.resolvePlaybackAvailability(
             tmdbId: tmdbId,
             mediaType: "movie",
@@ -167,9 +173,11 @@ final class MovieDetailViewModel {
 
         let quality = MediaQualityInfo(mediaSources: info?.mediaSources)
         let resume = item?.resumePositionSeconds ?? 0
+        let favorite = item?.userData?.isFavorite == true
         withAnimation(.smooth(duration: 0.3)) {
             mediaQuality = quality
             resumePositionSeconds = resume
+            isFavorite = favorite
         }
     }
 }

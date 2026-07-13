@@ -138,16 +138,25 @@ struct DetailPosterHeroView: View {
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
+                        .background {
+                            Circle()
+                                .fill(secondaryAction.isHighlighted ? Color.green : Color.clear)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.72), value: secondaryAction.isHighlighted)
+                        }
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay {
                             Circle()
-                                .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+                                .strokeBorder(secondaryAction.isHighlighted ? .white.opacity(0.55) : .white.opacity(0.18), lineWidth: 0.8)
                         }
+                        .scaleEffect(secondaryAction.isHighlighted ? 1.04 : 1)
+                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: secondaryAction.isHighlighted)
                 }
                 .buttonStyle(.plain)
                 .disabled(!secondaryAction.isEnabled)
-                .opacity(secondaryAction.isEnabled ? 1 : 0.45)
+                .opacity(secondaryAction.isEnabled || secondaryAction.isHighlighted ? 1 : 0.45)
                 .accessibilityLabel(secondaryAction.title)
+                .animation(.spring(response: 0.3, dampingFraction: 0.72), value: secondaryAction.isHighlighted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)

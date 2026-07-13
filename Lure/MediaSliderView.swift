@@ -7,6 +7,7 @@ struct MediaSliderView: View {
     let apiClient: SeerrAPIClient
     var transitionNamespace: Namespace.ID? = nil
     var headerValue: DiscoverSectionDestination? = nil
+    var extendsBeyondParentPadding = true
 
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
@@ -62,7 +63,7 @@ struct MediaSliderView: View {
                     }
                     .padding(.horizontal, horizontalBleed)
                 }
-                .padding(.horizontal, -horizontalBleed)
+                .padding(.horizontal, extendsBeyondParentPadding ? -horizontalBleed : 0)
             }
         }
     }

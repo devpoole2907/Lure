@@ -271,9 +271,10 @@ struct TVDetailView: View {
 
     private func favoriteAction(for show: SeerrTVDetail) -> DetailPosterHeroAction {
         DetailPosterHeroAction(
-            title: "Add to Favorites",
-            systemImage: "plus",
-            isEnabled: vm.playbackAvailability.playableItemId != nil
+            title: vm.isFavorite ? "In Favorites" : "Add to Favorites",
+            systemImage: vm.isFavorite ? "checkmark" : "plus",
+            isEnabled: vm.playbackAvailability.playableItemId != nil && !vm.isFavorite,
+            isHighlighted: vm.isFavorite
         ) {
             addToFavorites(title: show.displayTitle)
         }
