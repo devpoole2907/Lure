@@ -58,6 +58,10 @@ struct EpisodeDetailView: View {
                 heroSection
 
                 VStack(alignment: .center, spacing: 20) {
+                    if !episodeCast.isEmpty {
+                        castCard(episodeCast)
+                    }
+
                     let rows = infoRows
                     if !rows.isEmpty {
                         rowsCard(header: "Info", icon: "info.circle", rows: rows)
@@ -183,6 +187,13 @@ struct EpisodeDetailView: View {
         return rows
     }
 
+    private var episodeCast: [JellyfinPerson] {
+        guard let people = episode?.people else { return [] }
+        let actors = people.filter { ($0.type ?? "").localizedCaseInsensitiveContains("Actor") }
+        let cast = actors.isEmpty ? people : actors
+        return Array(cast.prefix(24))
+    }
+
     private var fileSizeText: String? {
         guard let size = mediaSource?.size, size > 0 else { return nil }
         return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
@@ -260,5 +271,60 @@ struct EpisodeDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func castCard(_ cast: [JellyfinPerson]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Cast", systemImage: "person.2")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(cast) { person in
+                        VStack(spacing: 4) {
+                            AsyncImage(url: personImageURL(for: person)) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Circle()
+                                    .fill(.quaternary)
+                                    .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
+                            }
+                            .frame(width: 56, height: 56)
+                            .clipShape(Circle())
+
+                            Text(person.name ?? "")
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .frame(width: 76)
+
+                            Text(person.role ?? "")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .frame(width: 76)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+            .horizontalSoftEdges()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func personImageURL(for person: JellyfinPerson) -> URL? {
+        guard let client = jellyfinClient,
+              let id = person.jellyfinId,
+              person.primaryImageTag != nil else {
+            return nil
+        }
+        return client.primaryImageURL(itemId: id, width: 160)
     }
 }

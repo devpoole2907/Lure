@@ -67,7 +67,7 @@ actor JellyfinAPIClient {
     func getItem(itemId: String) async throws -> JellyfinItem {
         let response: JellyfinItemsResponse = try await get(
             "/Users/\(userId)/Items",
-            params: ["Ids": itemId, "Fields": "UserData,RunTimeTicks,SeriesId,SeriesName,SeasonId,ProviderIds,ProductionYear,Overview,CommunityRating,IndexNumber,ParentIndexNumber"]
+            params: ["Ids": itemId, "Fields": "UserData,RunTimeTicks,SeriesId,SeriesName,SeasonId,ProviderIds,ProductionYear,Overview,CommunityRating,IndexNumber,ParentIndexNumber,People"]
         )
         guard let item = response.items?.first else { throw JellyfinError.itemNotFound }
         return item
@@ -205,7 +205,7 @@ actor JellyfinAPIClient {
     func getEpisodes(seriesId: String, seasonId: String) async throws -> [JellyfinItem] {
         let response: JellyfinEpisodesResponse = try await get(
             "/Shows/\(seriesId)/Episodes",
-            params: ["SeasonId": seasonId, "UserId": userId, "Fields": "UserData,Overview,RunTimeTicks,CommunityRating,SeriesId,SeriesName"]
+            params: ["SeasonId": seasonId, "UserId": userId, "Fields": "UserData,Overview,RunTimeTicks,CommunityRating,SeriesId,SeriesName,People"]
         )
         return response.items ?? []
     }

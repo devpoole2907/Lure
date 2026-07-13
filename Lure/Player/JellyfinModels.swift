@@ -56,6 +56,7 @@ struct JellyfinItem: Decodable, Sendable {
     let dateCreated: String?
     let communityRating: Double?
     let overview: String?
+    let people: [JellyfinPerson]?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -73,6 +74,7 @@ struct JellyfinItem: Decodable, Sendable {
         case dateCreated = "DateCreated"
         case communityRating = "CommunityRating"
         case overview = "Overview"
+        case people = "People"
     }
 
     var resumePositionSeconds: Double {
@@ -108,6 +110,26 @@ struct JellyfinItem: Decodable, Sendable {
         let m = Int(pos) / 60
         let s2 = Int(pos) % 60
         return "\(m):\(String(format: "%02d", s2))"
+    }
+}
+
+struct JellyfinPerson: Decodable, Identifiable, Sendable {
+    let jellyfinId: String?
+    let name: String?
+    let role: String?
+    let type: String?
+    let primaryImageTag: String?
+
+    var id: String {
+        jellyfinId ?? [name, role, type].compactMap(\.self).joined(separator: "|")
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case jellyfinId = "Id"
+        case name = "Name"
+        case role = "Role"
+        case type = "Type"
+        case primaryImageTag = "PrimaryImageTag"
     }
 }
 
