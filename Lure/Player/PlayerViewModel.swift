@@ -8,6 +8,15 @@ import UIKit
 import AppKit
 #endif
 
+private typealias StreamCandidate = (
+    url: URL,
+    isDirect: Bool,
+    label: String,
+    playMethod: String,
+    playSessionId: String,
+    mediaSourceId: String
+)
+
 @MainActor
 @Observable
 final class PlayerViewModel {
@@ -201,8 +210,8 @@ final class PlayerViewModel {
             #endif
 
             // Build stream URL
-            var streamCandidates: [(url: URL, isDirect: Bool, label: String, playMethod: String)] = []
-            var directFallbackCandidates: [(url: URL, isDirect: Bool, label: String, playMethod: String)] = []
+            var streamCandidates: [StreamCandidate] = []
+            var directFallbackCandidates: [StreamCandidate] = []
             if mediaSource.supportsDirectPlay == true {
                 if let url = client.streamURL(
                     itemId: self.itemId,
@@ -211,7 +220,7 @@ final class PlayerViewModel {
                     isStatic: true,
                     container: mediaSource.container
                 ) {
-                    streamCandidates.append((url, true, "static direct play stream.\(mediaSource.container ?? "mp4")", "DirectPlay"))
+                    streamCandidates.append((url, true, "static direct play stream.\(mediaSource.container ?? "mp4")", "DirectPlay", playSessionId, self.mediaSourceId))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate static direct play: \(url.absoluteString)")
                     #endif
@@ -224,7 +233,7 @@ final class PlayerViewModel {
                     container: mediaSource.container,
                     useContainerExtension: false
                 ) {
-                    directFallbackCandidates.append((fallbackURL, true, "static direct play fallback stream", "DirectPlay"))
+                    directFallbackCandidates.append((fallbackURL, true, "static direct play fallback stream", "DirectPlay", playSessionId, self.mediaSourceId))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate static direct play fallback: \(fallbackURL.absoluteString)")
                     #endif
@@ -238,7 +247,7 @@ final class PlayerViewModel {
                     isStatic: false,
                     container: mediaSource.container
                 ) {
-                    streamCandidates.append((url, true, "non-static direct stream stream.\(mediaSource.container ?? "mp4")", "DirectStream"))
+                    streamCandidates.append((url, true, "non-static direct stream stream.\(mediaSource.container ?? "mp4")", "DirectStream", playSessionId, self.mediaSourceId))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate non-static direct stream: \(url.absoluteString)")
                     #endif
@@ -251,7 +260,7 @@ final class PlayerViewModel {
                     container: mediaSource.container,
                     useContainerExtension: false
                 ) {
-                    directFallbackCandidates.append((fallbackURL, true, "non-static direct stream fallback stream", "DirectStream"))
+                    directFallbackCandidates.append((fallbackURL, true, "non-static direct stream fallback stream", "DirectStream", playSessionId, self.mediaSourceId))
                     #if DEBUG
                     print("[PlayerViewModel] Candidate non-static direct stream fallback: \(fallbackURL.absoluteString)")
                     #endif
@@ -259,9 +268,28 @@ final class PlayerViewModel {
             }
             if let transPath = mediaSource.transcodingUrl,
                let url = client.transcodingURL(path: transPath) {
-                streamCandidates.append((url, false, "transcode", "Transcode"))
+                streamCandidates.append((url, false, "transcode", "Transcode", playSessionId, self.mediaSourceId))
                 #if DEBUG
                 print("[PlayerViewModel] Candidate transcode: \(url.absoluteString)")
+                #endif
+            }
+            if mediaSource.transcodingUrl == nil,
+               shouldRequestTranscodeFallback(for: mediaSource),
+               let fallback = try? await client.getPlaybackInfo(
+                    itemId: self.itemId,
+                    startPositionSeconds: resumePosition,
+                    maxStreamingBitrate: 40_000_000,
+                    enableDirectPlay: false,
+                    enableDirectStream: false,
+                    allowVideoStreamCopy: false
+               ),
+               let fallbackSessionId = fallback.playSessionId,
+               let fallbackSource = fallback.mediaSources?.first,
+               let transPath = fallbackSource.transcodingUrl,
+               let url = client.transcodingURL(path: transPath) {
+                streamCandidates.append((url, false, "40 Mbps transcode fallback", "Transcode", fallbackSessionId, fallbackSource.id ?? self.mediaSourceId))
+                #if DEBUG
+                print("[PlayerViewModel] Candidate forced transcode fallback: \(url.absoluteString)")
                 #endif
             }
             streamCandidates.append(contentsOf: directFallbackCandidates)
@@ -377,7 +405,6 @@ final class PlayerViewModel {
                             #endif
                         }
                     }
-                    playMethod = candidate.playMethod
                     engine.play()
                     let startupTimeout = candidate.isDirect
                         ? directCandidateStartupTimeoutSeconds
@@ -389,6 +416,9 @@ final class PlayerViewModel {
                     guard startupSucceeded else {
                         throw PlayerStartupTimeoutError(label: candidate.label, seconds: startupTimeout)
                     }
+                    playMethod = candidate.playMethod
+                    self.playSessionId = candidate.playSessionId
+                    self.mediaSourceId = candidate.mediaSourceId
                     #if DEBUG
                     print("[PlayerViewModel] Loaded and started via \(candidate.label)")
                     #endif
@@ -418,7 +448,7 @@ final class PlayerViewModel {
             // Report start to Jellyfin
             await client.reportPlaybackStart(
                 itemId: self.itemId,
-                playSessionId: playSessionId,
+                playSessionId: self.playSessionId,
                 mediaSourceId: self.mediaSourceId,
                 positionSeconds: resumePosition,
                 playMethod: playMethod
@@ -893,6 +923,17 @@ final class PlayerViewModel {
             languages.append("en")
         }
         return languages
+    }
+
+    private func shouldRequestTranscodeFallback(for mediaSource: JellyfinMediaSource) -> Bool {
+        let videoStreams = mediaSource.mediaStreams?.filter { $0.type == "Video" } ?? []
+        let largestVideo = videoStreams.max { lhs, rhs in
+            (lhs.width ?? 0) * (lhs.height ?? 0) < (rhs.width ?? 0) * (rhs.height ?? 0)
+        }
+        let width = largestVideo?.width ?? 0
+        let height = largestVideo?.height ?? 0
+        let bitrate = max(mediaSource.bitrate ?? 0, largestVideo?.bitRate ?? 0)
+        return width >= 3000 || height >= 1600 || bitrate >= 40_000_000
     }
 
     // MARK: - Private: Segment Checking

@@ -305,17 +305,24 @@ actor JellyfinAPIClient {
 
     // MARK: - Playback
 
-    func getPlaybackInfo(itemId: String, startPositionSeconds: Double = 0) async throws -> JellyfinPlaybackInfoResponse {
+    func getPlaybackInfo(
+        itemId: String,
+        startPositionSeconds: Double = 0,
+        maxStreamingBitrate: Int = 200_000_000,
+        enableDirectPlay: Bool = true,
+        enableDirectStream: Bool = true,
+        allowVideoStreamCopy: Bool = true
+    ) async throws -> JellyfinPlaybackInfoResponse {
         let startTicks = startPositionSeconds > 0 ? Int64(startPositionSeconds * 10_000_000) : nil
         let body = JellyfinPlaybackInfoBody(
-            deviceProfile: .aetherEngine,
+            deviceProfile: .aetherEngine(maxBitrate: maxStreamingBitrate),
             userId: userId,
-            maxStreamingBitrate: 200_000_000,
+            maxStreamingBitrate: maxStreamingBitrate,
             startTimeTicks: startTicks,
-            enableDirectPlay: true,
-            enableDirectStream: true,
+            enableDirectPlay: enableDirectPlay,
+            enableDirectStream: enableDirectStream,
             enableTranscoding: true,
-            allowVideoStreamCopy: true,
+            allowVideoStreamCopy: allowVideoStreamCopy,
             allowAudioStreamCopy: true,
             autoOpenLiveStream: true
         )

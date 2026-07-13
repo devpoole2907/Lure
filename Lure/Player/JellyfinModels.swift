@@ -189,71 +189,73 @@ struct JellyfinDeviceProfile: Encodable {
         case containerProfiles = "ContainerProfiles"
     }
 
-    static let aetherEngine = JellyfinDeviceProfile(
-        name: "Lure (AetherEngine)",
-        maxStaticBitrate: 200_000_000,
-        maxStreamingBitrate: 200_000_000,
-        directPlayProfiles: [
-            JellyfinDirectPlayProfile(
-                container: "mp4,m4v,mov,mkv,matroska,avi,mpegts,ts,ogg,webm,flv",
-                type: "Video",
-                videoCodec: "h264,hevc,av1,vp9",
-                audioCodec: "aac,ac3,eac3,mp3,flac,opus,vorbis,alac,truehd,mlp,dts,dca,dts-hd,dtshd,pcm_s16le,pcm_s24le,pcm_f32le,pcm"
-            ),
-            JellyfinDirectPlayProfile(
-                container: "mp3,aac,m4a,m4b,flac,alac,wav,opus,ogg",
-                type: "Audio",
-                videoCodec: nil,
-                audioCodec: nil
-            )
-        ],
-        transcodingProfiles: [
-            JellyfinTranscodingProfile(
-                container: "mp4",
-                type: "Video",
-                audioVideoProtocol: "http",
-                videoCodec: "h264,hevc,av1,vp9",
-                audioCodec: "aac,ac3,eac3",
-                context: "Streaming"
-            ),
-            JellyfinTranscodingProfile(
-                container: "mp3",
-                type: "Audio",
-                audioVideoProtocol: "http",
-                videoCodec: nil,
-                audioCodec: "mp3",
-                context: "Streaming"
-            )
-        ],
-        codecProfiles: [
-            JellyfinCodecProfile(
-                type: "Video",
-                codec: "hevc",
-                conditions: [
-                    JellyfinCodecCondition(
-                        condition: "EqualsAny",
-                        property: "VideoProfile",
-                        value: "main|main 10|main10",
-                        isRequired: false
-                    )
-                ]
-            )
-        ],
-        subtitleProfiles: [
-            JellyfinSubtitleProfile(format: "srt", method: "Embed"),
-            JellyfinSubtitleProfile(format: "ass", method: "Embed"),
-            JellyfinSubtitleProfile(format: "ssa", method: "Embed"),
-            JellyfinSubtitleProfile(format: "vtt", method: "Embed"),
-            JellyfinSubtitleProfile(format: "pgs", method: "Embed"),
-            JellyfinSubtitleProfile(format: "pgssub", method: "Embed"),
-            JellyfinSubtitleProfile(format: "dvbsub", method: "Embed"),
-            JellyfinSubtitleProfile(format: "dvdsub", method: "Embed"),
-            JellyfinSubtitleProfile(format: "srt", method: "External"),
-            JellyfinSubtitleProfile(format: "ass", method: "External"),
-            JellyfinSubtitleProfile(format: "vtt", method: "External")
-        ],
-        containerProfiles: []
-    )
+    static func aetherEngine(maxBitrate: Int = 200_000_000) -> JellyfinDeviceProfile {
+        JellyfinDeviceProfile(
+            name: "Lure (AetherEngine)",
+            maxStaticBitrate: maxBitrate,
+            maxStreamingBitrate: maxBitrate,
+            directPlayProfiles: [
+                JellyfinDirectPlayProfile(
+                    container: "mp4,m4v,mov,mkv,matroska,avi,mpegts,ts,ogg,webm,flv",
+                    type: "Video",
+                    videoCodec: "h264,hevc,av1,vp9",
+                    audioCodec: "aac,ac3,eac3,mp3,flac,opus,vorbis,alac,truehd,mlp,dts,dca,dts-hd,dtshd,pcm_s16le,pcm_s24le,pcm_f32le,pcm"
+                ),
+                JellyfinDirectPlayProfile(
+                    container: "mp3,aac,m4a,m4b,flac,alac,wav,opus,ogg",
+                    type: "Audio",
+                    videoCodec: nil,
+                    audioCodec: nil
+                )
+            ],
+            transcodingProfiles: [
+                JellyfinTranscodingProfile(
+                    container: "mp4",
+                    type: "Video",
+                    audioVideoProtocol: "http",
+                    videoCodec: "h264,hevc,av1,vp9",
+                    audioCodec: "aac,ac3,eac3",
+                    context: "Streaming"
+                ),
+                JellyfinTranscodingProfile(
+                    container: "mp3",
+                    type: "Audio",
+                    audioVideoProtocol: "http",
+                    videoCodec: nil,
+                    audioCodec: "mp3",
+                    context: "Streaming"
+                )
+            ],
+            codecProfiles: [
+                JellyfinCodecProfile(
+                    type: "Video",
+                    codec: "hevc",
+                    conditions: [
+                        JellyfinCodecCondition(
+                            condition: "EqualsAny",
+                            property: "VideoProfile",
+                            value: "main|main 10|main10",
+                            isRequired: false
+                        )
+                    ]
+                )
+            ],
+            subtitleProfiles: [
+                JellyfinSubtitleProfile(format: "srt", method: "Embed"),
+                JellyfinSubtitleProfile(format: "ass", method: "Embed"),
+                JellyfinSubtitleProfile(format: "ssa", method: "Embed"),
+                JellyfinSubtitleProfile(format: "vtt", method: "Embed"),
+                JellyfinSubtitleProfile(format: "pgs", method: "Embed"),
+                JellyfinSubtitleProfile(format: "pgssub", method: "Embed"),
+                JellyfinSubtitleProfile(format: "dvbsub", method: "Embed"),
+                JellyfinSubtitleProfile(format: "dvdsub", method: "Embed"),
+                JellyfinSubtitleProfile(format: "srt", method: "External"),
+                JellyfinSubtitleProfile(format: "ass", method: "External"),
+                JellyfinSubtitleProfile(format: "vtt", method: "External")
+            ],
+            containerProfiles: []
+        )
+    }
 }
 
 struct JellyfinDirectPlayProfile: Encodable {
@@ -339,6 +341,7 @@ struct JellyfinMediaSource: Decodable, Sendable {
     let transcodingUrl: String?
     let mediaStreams: [JellyfinMediaStream]?
     let runTimeTicks: Int64?
+    let bitrate: Int?
     enum CodingKeys: String, CodingKey {
         case id = "Id"
         case name = "Name"
@@ -348,6 +351,7 @@ struct JellyfinMediaSource: Decodable, Sendable {
         case transcodingUrl = "TranscodingUrl"
         case mediaStreams = "MediaStreams"
         case runTimeTicks = "RunTimeTicks"
+        case bitrate = "Bitrate"
     }
 }
 
