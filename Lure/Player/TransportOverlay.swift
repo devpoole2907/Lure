@@ -14,6 +14,8 @@ struct TransportOverlay: View {
     @State private var controlsVisible = true
     #if os(tvOS)
     @FocusState private var focusedControl: TVTransportFocus?
+    @State private var tvScrubbing = false
+    @State private var tvScrubPosition: Double = 0
     #endif
 
     private let rates: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
@@ -79,7 +81,39 @@ struct TransportOverlay: View {
         ) {
             subtitlePickerActions
         }
-        .onAppear { resetHideTimer() }
+        .onAppear {
+            resetHideTimer()
+            #if os(tvOS)
+            focusedControl = .playPause
+            #endif
+        }
+        .onDisappear {
+            hideTask?.cancel()
+        }
+        #if os(tvOS)
+        .onPlayPauseCommand {
+            vm.togglePlayPause()
+            showTVControls(focusing: .playPause)
+        }
+        .onExitCommand {
+            handleTVExitCommand()
+        }
+        .onMoveCommand { direction in
+            handleTVMoveCommand(direction)
+        }
+        .onChange(of: focusedControl) { _, _ in
+            guard controlsVisible else { return }
+            resetHideTimer()
+        }
+        .onChange(of: vm.showNextEpisodeCountdown) { _, visible in
+            guard visible else { return }
+            focusTVOverlayAction(.nextPlay)
+        }
+        .onChange(of: vm.activeIntroSegment != nil) { _, visible in
+            guard visible, !vm.showNextEpisodeCountdown else { return }
+            focusTVOverlayAction(.skipIntro)
+        }
+        #endif
     }
 
     // MARK: - Top Bar
@@ -92,6 +126,9 @@ struct TransportOverlay: View {
                 .frame(height: 44)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Close player")
+                #if os(tvOS)
+                .focused($focusedControl, equals: .done)
+                #endif
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(vm.title)
@@ -130,12 +167,18 @@ struct TransportOverlay: View {
             skipButton(systemImage: "gobackward.15", label: "Skip back 15 seconds") {
                 Task { await vm.skip(by: -15) }
             }
+            #if os(tvOS)
+            .focused($focusedControl, equals: .rewind)
+            #endif
 
             playPauseButton
 
             skipButton(systemImage: "goforward.15", label: "Skip forward 15 seconds") {
                 Task { await vm.skip(by: 15) }
             }
+            #if os(tvOS)
+            .focused($focusedControl, equals: .forward)
+            #endif
         }
         #if os(tvOS)
         .focusSection()
@@ -216,30 +259,68 @@ struct TransportOverlay: View {
             .tint(.white)
             .accessibilityLabel("Seek position")
             #else
-            // tvOS: show a progress bar (seek is handled via Siri Remote focus/swipe)
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.25))
-                    Capsule()
-                        .fill(.white)
-                        .frame(width: proxy.size.width * (vm.duration > 0 ? min(vm.currentTime / vm.duration, 1) : 0))
-                }
-                .frame(height: 4)
-                .frame(maxHeight: .infinity, alignment: .center)
-            }
-            .frame(height: 20)
-            .accessibilityLabel("Seek position")
+            tvScrubber
             #endif
 
             HStack {
+                #if os(tvOS)
+                Text(formatTime(tvDisplayedTime))
+                Spacer()
+                Text("-\(formatTime(max(0, vm.duration - tvDisplayedTime)))")
+                #else
                 Text(formatTime(vm.currentTime))
                 Spacer()
                 Text("-\(formatTime(max(0, vm.duration - vm.currentTime)))")
+                #endif
             }
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.white.opacity(0.7))
         }
     }
+
+    #if os(tvOS)
+    private var tvScrubber: some View {
+        Button {
+            toggleTVScrub()
+        } label: {
+            VStack(spacing: 8) {
+                if tvScrubbing {
+                    Text(formatTime(tvScrubPosition))
+                        .font(.title3.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .transition(.opacity)
+                }
+
+                GeometryReader { proxy in
+                    let progress = tvDisplayedProgress
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(.white.opacity(focusedControl == .scrubber ? 0.34 : 0.25))
+
+                        Capsule()
+                            .fill(.white)
+                            .frame(width: proxy.size.width * progress)
+
+                        Circle()
+                            .fill(.white)
+                            .frame(width: tvScrubbing || focusedControl == .scrubber ? 16 : 10, height: tvScrubbing || focusedControl == .scrubber ? 16 : 10)
+                            .offset(x: max(0, min(proxy.size.width - 16, proxy.size.width * progress - 8)))
+                            .opacity(tvScrubbing || focusedControl == .scrubber ? 1 : 0)
+                    }
+                    .frame(height: tvScrubbing || focusedControl == .scrubber ? 8 : 4)
+                    .frame(maxHeight: .infinity, alignment: .center)
+                }
+                .frame(height: 24)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focused($focusedControl, equals: .scrubber)
+        .disabled(vm.duration <= 0)
+        .accessibilityLabel(tvScrubbing ? "Commit seek" : "Seek position")
+        .accessibilityValue(formatTime(tvDisplayedTime))
+    }
+    #endif
 
     private var bottomButtons: some View {
         HStack(spacing: 20) {
@@ -255,6 +336,9 @@ struct TransportOverlay: View {
                     .padding(.vertical, 6)
                     .background(.white.opacity(0.15), in: Capsule())
             }
+            #if os(tvOS)
+            .focused($focusedControl, equals: .subtitles)
+            #endif
 
             // Audio track
             Button {
@@ -269,6 +353,9 @@ struct TransportOverlay: View {
                     .background(.white.opacity(0.15), in: Capsule())
             }
             .disabled(vm.audioTracks.isEmpty)
+            #if os(tvOS)
+            .focused($focusedControl, equals: .audio)
+            #endif
 
             Spacer()
 
@@ -295,6 +382,9 @@ struct TransportOverlay: View {
                     .background(.white.opacity(0.15), in: Capsule())
             }
             .accessibilityLabel("Playback speed: \(rateLabel(vm.playbackRate))")
+            #if os(tvOS)
+            .focused($focusedControl, equals: .rate)
+            #endif
 
             // Aspect ratio
             Button {
@@ -308,6 +398,9 @@ struct TransportOverlay: View {
                     .background(.white.opacity(0.15), in: Circle())
             }
             .accessibilityLabel(vm.videoGravity == .resizeAspect ? "Fill screen" : "Fit to screen")
+            #if os(tvOS)
+            .focused($focusedControl, equals: .aspect)
+            #endif
         }
         #if os(tvOS)
         .focusSection()
@@ -335,6 +428,9 @@ struct TransportOverlay: View {
                                 .strokeBorder(.white.opacity(0.5), lineWidth: 1)
                         )
                 }
+                #if os(tvOS)
+                .focused($focusedControl, equals: .skipIntro)
+                #endif
                 .padding(.trailing, 24)
                 .padding(.bottom, 120)
             }
@@ -366,6 +462,9 @@ struct TransportOverlay: View {
                         }
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.white.opacity(0.7))
+                        #if os(tvOS)
+                        .focused($focusedControl, equals: .nextCancel)
+                        #endif
 
                         Button("Play Now (\(vm.nextEpisodeCountdown)s)") {
                             Task { await vm.playNextEpisode() }
@@ -375,6 +474,9 @@ struct TransportOverlay: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(.white.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
+                        #if os(tvOS)
+                        .focused($focusedControl, equals: .nextPlay)
+                        #endif
                     }
                 }
                 .padding(16)
@@ -452,10 +554,25 @@ struct TransportOverlay: View {
     // MARK: - Helpers
 
     private func toggleControls() {
+        #if os(tvOS)
+        if tvScrubbing {
+            cancelTVScrub(scheduleHide: false)
+        }
+        #endif
         withAnimation(.easeInOut(duration: 0.2)) {
             controlsVisible.toggle()
         }
-        if controlsVisible { resetHideTimer() }
+        if controlsVisible {
+            #if os(tvOS)
+            focusedControl = .playPause
+            #endif
+            resetHideTimer()
+        } else {
+            hideTask?.cancel()
+            #if os(tvOS)
+            focusedControl = nil
+            #endif
+        }
     }
 
     private func resetHideTimer() {
@@ -463,11 +580,129 @@ struct TransportOverlay: View {
         hideTask = Task {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
+            #if os(tvOS)
+            guard !tvScrubbing, !vm.showNextEpisodeCountdown, vm.activeIntroSegment == nil else { return }
+            #endif
             withAnimation(.easeInOut(duration: 0.3)) {
                 controlsVisible = false
             }
+            #if os(tvOS)
+            focusedControl = nil
+            #endif
         }
     }
+
+    #if os(tvOS)
+    private var tvDisplayedTime: Double {
+        tvScrubbing ? tvScrubPosition : vm.currentTime
+    }
+
+    private var tvDisplayedProgress: CGFloat {
+        guard vm.duration > 0 else { return 0 }
+        return CGFloat(max(0, min(tvDisplayedTime / vm.duration, 1)))
+    }
+
+    private var tvScrubStep: Double {
+        guard vm.duration > 0 else { return 15 }
+        return max(10, min(60, vm.duration / 120))
+    }
+
+    private func showTVControls(focusing focus: TVTransportFocus? = nil) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            controlsVisible = true
+        }
+        focusedControl = focus ?? focusedControl ?? .playPause
+        resetHideTimer()
+    }
+
+    private func focusTVOverlayAction(_ focus: TVTransportFocus) {
+        tvScrubbing = false
+        hideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            controlsVisible = false
+        }
+        focusedControl = focus
+    }
+
+    private func handleTVExitCommand() {
+        if tvScrubbing {
+            cancelTVScrub()
+            return
+        }
+
+        if vm.showNextEpisodeCountdown {
+            vm.cancelNextEpisodeCountdown()
+            if vm.activeIntroSegment != nil {
+                focusTVOverlayAction(.skipIntro)
+            } else {
+                showTVControls(focusing: .playPause)
+            }
+            return
+        }
+
+        if controlsVisible {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                controlsVisible = false
+            }
+            hideTask?.cancel()
+            focusedControl = nil
+            return
+        }
+
+        onDismiss()
+    }
+
+    private func handleTVMoveCommand(_ direction: MoveCommandDirection) {
+        if tvScrubbing {
+            switch direction {
+            case .left:
+                adjustTVScrub(by: -tvScrubStep)
+            case .right:
+                adjustTVScrub(by: tvScrubStep)
+            default:
+                break
+            }
+            return
+        }
+
+        if !controlsVisible {
+            showTVControls()
+        } else {
+            resetHideTimer()
+        }
+    }
+
+    private func toggleTVScrub() {
+        guard vm.duration > 0 else { return }
+        if tvScrubbing {
+            let target = tvScrubPosition
+            tvScrubbing = false
+            Task {
+                await vm.seek(to: target)
+                resetHideTimer()
+            }
+        } else {
+            tvScrubPosition = max(0, min(vm.currentTime, vm.duration))
+            tvScrubbing = true
+            showTVControls(focusing: .scrubber)
+            hideTask?.cancel()
+        }
+    }
+
+    private func adjustTVScrub(by seconds: Double) {
+        guard vm.duration > 0 else { return }
+        tvScrubPosition = max(0, min(vm.duration, tvScrubPosition + seconds))
+        hideTask?.cancel()
+    }
+
+    private func cancelTVScrub(scheduleHide: Bool = true) {
+        tvScrubbing = false
+        tvScrubPosition = max(0, min(vm.currentTime, vm.duration))
+        if scheduleHide {
+            resetHideTimer()
+        }
+    }
+    #endif
 
     private func formatTime(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
@@ -489,6 +724,17 @@ struct TransportOverlay: View {
 
 #if os(tvOS)
 private enum TVTransportFocus: Hashable {
+    case done
+    case rewind
     case playPause
+    case forward
+    case scrubber
+    case subtitles
+    case audio
+    case rate
+    case aspect
+    case skipIntro
+    case nextCancel
+    case nextPlay
 }
 #endif
