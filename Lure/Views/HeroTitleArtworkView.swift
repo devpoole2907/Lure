@@ -9,19 +9,32 @@ struct HeroTitleArtworkView: View {
     var reportTitleBottom: Bool = false
 
     var body: some View {
+        ZStack(alignment: .bottom) {
+            if logoURL != nil {
+                logoReadabilityScrim
+            }
+
+            titleContent
+        }
+        .frame(maxWidth: maxWidth, minHeight: maxLogoHeight, maxHeight: maxLogoHeight, alignment: .bottom)
+        .background(titleBottomReporter)
+    }
+
+    @ViewBuilder
+    private var titleContent: some View {
         Group {
             if let logoURL {
-                CachedRemoteImage(url: logoURL, contentMode: .fit) {
+                CachedRemoteImage(url: logoURL, contentMode: .fit, trimsTransparentPadding: true) {
                     fallbackTitle
                 }
-                .frame(maxWidth: maxWidth, maxHeight: maxLogoHeight)
+                .frame(maxWidth: maxWidth, maxHeight: maxLogoHeight, alignment: .bottom)
                 .shadow(color: .black.opacity(0.45), radius: 14, y: 5)
                 .accessibilityLabel(title)
             } else {
                 fallbackTitle
+                    .frame(maxWidth: maxWidth)
             }
         }
-        .background(titleBottomReporter)
     }
 
     private var fallbackTitle: some View {
@@ -32,6 +45,34 @@ struct HeroTitleArtworkView: View {
             .lineLimit(2)
             .minimumScaleFactor(0.7)
             .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+    }
+
+    private var logoReadabilityScrim: some View {
+        Rectangle()
+            .fill(.linearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black.opacity(0.34), location: 0.24),
+                    .init(color: .black.opacity(0.34), location: 0.76),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ))
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.28),
+                        .init(color: .black, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .frame(maxWidth: maxWidth, minHeight: maxLogoHeight * 0.78, maxHeight: maxLogoHeight * 0.78)
+            .blur(radius: 14)
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder

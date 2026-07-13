@@ -10,9 +10,11 @@ private typealias RemotePlatformImage = NSImage
 struct CachedRemoteImage<Placeholder: View>: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    var trimsTransparentPadding: Bool = false
     @ViewBuilder var placeholder: Placeholder
 
     @State private var image: RemotePlatformImage?
+    @State private var loadedRequest: ImageRequest?
 
     var body: some View {
         Group {
@@ -25,26 +27,35 @@ struct CachedRemoteImage<Placeholder: View>: View {
                 placeholder
             }
         }
-        .task(id: url) {
+        .task(id: ImageRequest(url: url, trimsTransparentPadding: trimsTransparentPadding)) {
             await load()
         }
     }
 
     @MainActor
     private func load() async {
+        let request = ImageRequest(url: url, trimsTransparentPadding: trimsTransparentPadding)
         guard let url else {
             image = nil
+            loadedRequest = request
             return
+        }
+
+        if loadedRequest != request {
+            image = nil
         }
 
         do {
             let data = try await LureImageCache.shared.imageData(for: url)
-            let decodedImage = await Task.detached(priority: .userInitiated) {
-                RemotePlatformImage(data: data)
+            let decodedImage = await Task.detached(priority: .userInitiated) { () -> RemotePlatformImage? in
+                guard let image = RemotePlatformImage(data: data) else { return nil }
+                guard trimsTransparentPadding else { return image }
+                return image.trimmingTransparentPadding() ?? image
             }.value
             guard let decodedImage else { return }
             withAnimation(.easeInOut(duration: 0.18)) {
                 image = decodedImage
+                loadedRequest = request
             }
         } catch is CancellationError {
             return
@@ -52,6 +63,11 @@ struct CachedRemoteImage<Placeholder: View>: View {
             image = nil
         }
     }
+}
+
+private struct ImageRequest: Hashable {
+    let url: URL?
+    let trimsTransparentPadding: Bool
 }
 
 private extension Image {
@@ -62,4 +78,91 @@ private extension Image {
         self.init(nsImage: remotePlatformImage)
         #endif
     }
+}
+
+#if canImport(UIKit)
+private extension UIImage {
+    func trimmingTransparentPadding(alphaThreshold: UInt8 = 3) -> UIImage? {
+        guard let cgImage,
+              let trimRect = transparentContentRect(in: cgImage, alphaThreshold: alphaThreshold),
+              let cropped = cgImage.cropping(to: trimRect)
+        else {
+            return nil
+        }
+
+        guard trimRect.width < CGFloat(cgImage.width) || trimRect.height < CGFloat(cgImage.height) else {
+            return self
+        }
+
+        return UIImage(cgImage: cropped, scale: scale, orientation: imageOrientation)
+    }
+}
+#elseif canImport(AppKit)
+private extension NSImage {
+    func trimmingTransparentPadding(alphaThreshold: UInt8 = 3) -> NSImage? {
+        var proposedRect = CGRect(origin: .zero, size: size)
+        guard let cgImage = cgImage(forProposedRect: &proposedRect, context: nil, hints: nil),
+              let trimRect = transparentContentRect(in: cgImage, alphaThreshold: alphaThreshold),
+              let cropped = cgImage.cropping(to: trimRect)
+        else {
+            return nil
+        }
+
+        guard trimRect.width < CGFloat(cgImage.width) || trimRect.height < CGFloat(cgImage.height) else {
+            return self
+        }
+
+        let croppedSize = CGSize(
+            width: size.width * trimRect.width / CGFloat(cgImage.width),
+            height: size.height * trimRect.height / CGFloat(cgImage.height)
+        )
+        return NSImage(cgImage: cropped, size: croppedSize)
+    }
+}
+#endif
+
+private func transparentContentRect(in image: CGImage, alphaThreshold: UInt8) -> CGRect? {
+    let width = image.width
+    let height = image.height
+    guard width > 0, height > 0 else { return nil }
+
+    let bytesPerPixel = 4
+    let bytesPerRow = width * bytesPerPixel
+    var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+
+    guard let context = CGContext(
+        data: &pixels,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo
+    ) else {
+        return nil
+    }
+
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+    var minX = width
+    var minY = height
+    var maxX = -1
+    var maxY = -1
+
+    for y in 0..<height {
+        let rowStart = y * bytesPerRow
+        for x in 0..<width {
+            let alpha = pixels[rowStart + x * bytesPerPixel + 3]
+            guard alpha > alphaThreshold else { continue }
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, x)
+            maxY = max(maxY, y)
+        }
+    }
+
+    guard maxX >= minX, maxY >= minY else { return nil }
+    return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
 }
