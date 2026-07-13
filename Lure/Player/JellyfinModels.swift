@@ -196,10 +196,10 @@ struct JellyfinDeviceProfile: Encodable {
             maxStreamingBitrate: maxBitrate,
             directPlayProfiles: [
                 JellyfinDirectPlayProfile(
-                    container: "mp4,m4v,mov,mkv,matroska,avi,mpegts,ts,ogg,webm,flv",
+                    container: "mp4,m4v,mov,mkv,matroska,avi,mpegts,ts,m2ts,mts,3gp,3g2,vob,ogg,webm,flv",
                     type: "Video",
-                    videoCodec: "h264,hevc,av1,vp9",
-                    audioCodec: "aac,ac3,eac3,mp3,flac,opus,vorbis,alac,truehd,mlp,dts,dca,dts-hd,dtshd,pcm_s16le,pcm_s24le,pcm_f32le,pcm"
+                    videoCodec: "h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,vc1",
+                    audioCodec: "aac,ac3,eac3,mp3,mp2,flac,opus,vorbis,alac,truehd,mlp,dts,dca,dts-hd,dtshd,pcm_s16le,pcm_s24le,pcm_f32le,pcm"
                 ),
                 JellyfinDirectPlayProfile(
                     container: "mp3,aac,m4a,m4b,flac,alac,wav,opus,ogg",
@@ -335,7 +335,9 @@ struct JellyfinPlaybackInfoResponse: Decodable, Sendable {
 struct JellyfinMediaSource: Decodable, Sendable {
     let id: String?
     let name: String?
+    let path: String?
     let container: String?
+    let size: Int64?
     let supportsDirectPlay: Bool?
     let supportsDirectStream: Bool?
     let transcodingUrl: String?
@@ -345,7 +347,9 @@ struct JellyfinMediaSource: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id = "Id"
         case name = "Name"
+        case path = "Path"
         case container = "Container"
+        case size = "Size"
         case supportsDirectPlay = "SupportsDirectPlay"
         case supportsDirectStream = "SupportsDirectStream"
         case transcodingUrl = "TranscodingUrl"

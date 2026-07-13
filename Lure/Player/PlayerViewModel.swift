@@ -20,6 +20,9 @@ private typealias StreamCandidate = (
 @MainActor
 @Observable
 final class PlayerViewModel {
+    #if DEBUG
+    nonisolated(unsafe) private static var didInstallEngineLogHandler = false
+    #endif
 
     // MARK: - Engine state (mirrored from AetherEngine @Published)
     var state: PlaybackState = .idle
@@ -105,7 +108,6 @@ final class PlayerViewModel {
     private let lifecycleObserverBag = LifecycleObserverBag()
     private let directCandidateLoadTimeoutSeconds: Double = 24
     private let transcodeCandidateLoadTimeoutSeconds: Double = 75
-    private let directCandidateStartupTimeoutSeconds: Double = 16
     private let transcodeCandidateStartupTimeoutSeconds: Double = 35
     #if DEBUG
     private var lastLoggedPlaybackSecond = -1
@@ -114,6 +116,9 @@ final class PlayerViewModel {
     // MARK: - Init
 
     init(jellyfinService: JellyfinService) throws {
+        #if DEBUG
+        Self.installEngineLogHandlerIfNeeded()
+        #endif
         engine = try AetherEngine()
         #if os(iOS)
         // AetherEngine 4.12.1 sets .longFormAudio which blocks PiP (engine #116, fixed in 5.0.1); override until we bump to 5.x
@@ -204,7 +209,11 @@ final class PlayerViewModel {
             #if DEBUG
             print("[PlayerViewModel] Source: container=\(mediaSource.container ?? "nil"), directPlay=\(mediaSource.supportsDirectPlay ?? false), directStream=\(mediaSource.supportsDirectStream ?? false), transcodingURL=\(mediaSource.transcodingUrl != nil)")
             if let transcodingUrl = mediaSource.transcodingUrl {
-                print("[PlayerViewModel] TranscodingURL: \(transcodingUrl.prefix(160))")
+                if let url = client.transcodingURL(path: transcodingUrl) {
+                    print("[PlayerViewModel] TranscodingURL: \(Self.diagnosticURL(url))")
+                } else {
+                    print("[PlayerViewModel] TranscodingURL: <unresolved>")
+                }
             }
             logMediaStreams(mediaSource.mediaStreams)
             #endif
@@ -222,7 +231,7 @@ final class PlayerViewModel {
                 ) {
                     streamCandidates.append((url, true, "static direct play stream.\(mediaSource.container ?? "mp4")", "DirectPlay", playSessionId, self.mediaSourceId))
                     #if DEBUG
-                    print("[PlayerViewModel] Candidate static direct play: \(url.absoluteString)")
+                    print("[PlayerViewModel] Candidate static direct play: \(Self.diagnosticURL(url))")
                     #endif
                 }
                 if let fallbackURL = client.streamURL(
@@ -235,7 +244,7 @@ final class PlayerViewModel {
                 ) {
                     directFallbackCandidates.append((fallbackURL, true, "static direct play fallback stream", "DirectPlay", playSessionId, self.mediaSourceId))
                     #if DEBUG
-                    print("[PlayerViewModel] Candidate static direct play fallback: \(fallbackURL.absoluteString)")
+                    print("[PlayerViewModel] Candidate static direct play fallback: \(Self.diagnosticURL(fallbackURL))")
                     #endif
                 }
             }
@@ -249,7 +258,7 @@ final class PlayerViewModel {
                 ) {
                     streamCandidates.append((url, true, "non-static direct stream stream.\(mediaSource.container ?? "mp4")", "DirectStream", playSessionId, self.mediaSourceId))
                     #if DEBUG
-                    print("[PlayerViewModel] Candidate non-static direct stream: \(url.absoluteString)")
+                    print("[PlayerViewModel] Candidate non-static direct stream: \(Self.diagnosticURL(url))")
                     #endif
                 }
                 if let fallbackURL = client.streamURL(
@@ -262,7 +271,7 @@ final class PlayerViewModel {
                 ) {
                     directFallbackCandidates.append((fallbackURL, true, "non-static direct stream fallback stream", "DirectStream", playSessionId, self.mediaSourceId))
                     #if DEBUG
-                    print("[PlayerViewModel] Candidate non-static direct stream fallback: \(fallbackURL.absoluteString)")
+                    print("[PlayerViewModel] Candidate non-static direct stream fallback: \(Self.diagnosticURL(fallbackURL))")
                     #endif
                 }
             }
@@ -270,26 +279,7 @@ final class PlayerViewModel {
                let url = client.transcodingURL(path: transPath) {
                 streamCandidates.append((url, false, "transcode", "Transcode", playSessionId, self.mediaSourceId))
                 #if DEBUG
-                print("[PlayerViewModel] Candidate transcode: \(url.absoluteString)")
-                #endif
-            }
-            if mediaSource.transcodingUrl == nil,
-               shouldRequestTranscodeFallback(for: mediaSource),
-               let fallback = try? await client.getPlaybackInfo(
-                    itemId: self.itemId,
-                    startPositionSeconds: resumePosition,
-                    maxStreamingBitrate: 40_000_000,
-                    enableDirectPlay: false,
-                    enableDirectStream: false,
-                    allowVideoStreamCopy: false
-               ),
-               let fallbackSessionId = fallback.playSessionId,
-               let fallbackSource = fallback.mediaSources?.first,
-               let transPath = fallbackSource.transcodingUrl,
-               let url = client.transcodingURL(path: transPath) {
-                streamCandidates.append((url, false, "40 Mbps transcode fallback", "Transcode", fallbackSessionId, fallbackSource.id ?? self.mediaSourceId))
-                #if DEBUG
-                print("[PlayerViewModel] Candidate forced transcode fallback: \(url.absoluteString)")
+                print("[PlayerViewModel] Candidate transcode: \(Self.diagnosticURL(url))")
                 #endif
             }
             streamCandidates.append(contentsOf: directFallbackCandidates)
@@ -344,8 +334,8 @@ final class PlayerViewModel {
             defer { suppressEngineErrors = false }
             for candidate in streamCandidates {
                 #if DEBUG
-                print("[PlayerViewModel] Trying \(candidate.label): \(candidate.url.absoluteString)")
-                await client.playbackURLDiagnostics(candidate.url)
+                print("[PlayerViewModel] Trying \(candidate.label): \(Self.diagnosticURL(candidate.url))")
+                Task { await client.playbackURLDiagnostics(candidate.url) }
                 #endif
                 startStartupDiagnostics(streamURL: candidate.url, startPosition: startPosition)
                 do {
@@ -362,18 +352,23 @@ final class PlayerViewModel {
                     // below because a missing audio stream is playback-breaking; sparse
                     // subtitles are allowed to resolve late or be absent rather than blocking
                     // startup.
+                    let probeBudget = Self.probeBudget(for: candidate, mediaSource: mediaSource)
+                    let loadOptions = LoadOptions(
+                        suppressDisplayCriteria: false,
+                        matchContentEnabled: Self.matchContentEnabled,
+                        panelIsInHDRMode: panelIsInHDRMode,
+                        audioBridgeMode: .surroundCompat,
+                        probesize: probeBudget.probesize,
+                        maxAnalyzeDuration: probeBudget.maxAnalyzeDuration,
+                        preferredAudioLanguages: preferredAudioLanguages,
+                        externalSubtitles: externalSubtitleTracks
+                    )
                     let probe = try await loadEngineCandidate(
                         candidate.label,
                         url: candidate.url,
                         startPosition: startPosition,
                         timeoutSeconds: candidate.isDirect ? directCandidateLoadTimeoutSeconds : transcodeCandidateLoadTimeoutSeconds,
-                        options: LoadOptions(
-                            panelIsInHDRMode: panelIsInHDRMode,
-                            probesize: 16 * 1024 * 1024,
-                            maxAnalyzeDuration: 10 * 1_000_000,
-                            preferredAudioLanguages: preferredAudioLanguages,
-                            externalSubtitles: externalSubtitleTracks
-                        )
+                        options: loadOptions
                     )
                     if let probe {
                         videoSize = Self.videoSize(from: probe)
@@ -405,16 +400,14 @@ final class PlayerViewModel {
                             #endif
                         }
                     }
-                    engine.play()
-                    let startupTimeout = candidate.isDirect
-                        ? directCandidateStartupTimeoutSeconds
-                        : transcodeCandidateStartupTimeoutSeconds
-                    let startupSucceeded = await waitForStartupEvidence(
-                        candidate.label,
-                        timeoutSeconds: startupTimeout
-                    )
-                    guard startupSucceeded else {
-                        throw PlayerStartupTimeoutError(label: candidate.label, seconds: startupTimeout)
+                    if !candidate.isDirect {
+                        let startupSucceeded = await waitForStartupEvidence(
+                            candidate.label,
+                            timeoutSeconds: transcodeCandidateStartupTimeoutSeconds
+                        )
+                        guard startupSucceeded else {
+                            throw PlayerStartupTimeoutError(label: candidate.label, seconds: transcodeCandidateStartupTimeoutSeconds)
+                        }
                     }
                     playMethod = candidate.playMethod
                     self.playSessionId = candidate.playSessionId
@@ -443,6 +436,9 @@ final class PlayerViewModel {
             #endif
 
             await recoverStartupIfNeeded(startPosition: startPosition)
+            if case .error(let message) = state {
+                throw PlayerStartupFailedError(message: message)
+            }
             isLoading = false
 
             // Report start to Jellyfin
@@ -503,16 +499,24 @@ final class PlayerViewModel {
     }
 
     #if DEBUG
+    private static func installEngineLogHandlerIfNeeded() {
+        guard !didInstallEngineLogHandler else { return }
+        didInstallEngineLogHandler = true
+        EngineLog.handler = { line in
+            print(Self.redactedDiagnosticLine(line))
+        }
+    }
+
     private func startStartupDiagnostics(streamURL: URL, startPosition: Double?) {
         startupDiagnosticsTask?.cancel()
         startupDiagnosticsTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            print("[PlayerDiagnostics] begin url=\(streamURL.absoluteString) start=\(startPosition.map { String(format: "%.3f", $0) } ?? "nil")")
+            print("[PlayerDiagnostics] begin url=\(Self.diagnosticURL(streamURL)) start=\(startPosition.map { String(format: "%.3f", $0) } ?? "nil")")
             for tick in 0..<18 {
                 guard !Task.isCancelled else { return }
                 let audioSummary = self.audioTracks.map { "\($0.id):\($0.codec):\($0.language ?? "und")" }.joined(separator: ",")
                 let subtitleSummary = self.subtitleTracks.map { "\($0.id):\($0.codec):\($0.language ?? "und")" }.joined(separator: ",")
-                print("[PlayerDiagnostics] t=\(String(format: "%.1f", Double(tick) * 0.5))s state=\(String(describing: self.state)) loading=\(self.isLoading) current=\(String(format: "%.3f", self.currentTime)) duration=\(String(format: "%.3f", self.duration)) progress=\(String(format: "%.3f", self.progress)) format=\(self.videoFormat) audioTracks=[\(audioSummary)] subtitleTracks=[\(subtitleSummary)] layer=\(self.displayLayerStatus())")
+                print("[PlayerDiagnostics] t=\(String(format: "%.1f", Double(tick) * 0.5))s state=\(String(describing: self.state)) loading=\(self.isLoading) current=\(String(format: "%.3f", self.currentTime)) duration=\(String(format: "%.3f", self.duration)) progress=\(String(format: "%.3f", self.progress)) format=\(self.videoFormat) audioTracks=[\(audioSummary)] subtitleTracks=[\(subtitleSummary)] layer=\(self.displayLayerStatus()) av=\(self.avPlayerDiagnosticStatus())")
                 try? await Task.sleep(for: .milliseconds(500))
             }
             print("[PlayerDiagnostics] end")
@@ -539,6 +543,51 @@ final class PlayerViewModel {
         // The engine no longer exposes its display layer; report the active backend
         // and decoders instead, which is what we actually want to diagnose now.
         return "backend=\(engine.playbackBackend) videoDecoder=\(engine.activeVideoDecoder ?? "nil") audioDecoder=\(engine.activeAudioDecoder ?? "nil")"
+    }
+
+    private func avPlayerDiagnosticStatus() -> String {
+        guard let player = engine.currentAVPlayer else { return "player=nil" }
+        let item = player.currentItem
+        let itemStatus = item.map { Self.avPlayerItemStatusDescription($0.status) } ?? "nil"
+        let timeControl = Self.timeControlStatusDescription(player.timeControlStatus)
+        let waiting = player.reasonForWaitingToPlay?.rawValue ?? "nil"
+        let error = item?.error.map { Self.redactedDiagnosticLine($0.localizedDescription) } ?? "nil"
+        let events = item?.errorLog()?.events.suffix(2).map { event in
+            let comment = event.errorComment ?? "nil"
+            let uri = event.uri ?? "nil"
+            return "\(event.errorStatusCode):\(event.errorDomain):\(comment):\(uri)"
+        }.joined(separator: " | ") ?? "none"
+        return "item=\(itemStatus) tcs=\(timeControl) waiting=\(waiting) itemError=\(error) errorLog=\(Self.redactedDiagnosticLine(events))"
+    }
+
+    private static func avPlayerItemStatusDescription(_ status: AVPlayerItem.Status) -> String {
+        switch status {
+        case .unknown: "unknown"
+        case .readyToPlay: "ready"
+        case .failed: "failed"
+        @unknown default: "unknown(\(status.rawValue))"
+        }
+    }
+
+    private static func timeControlStatusDescription(_ status: AVPlayer.TimeControlStatus) -> String {
+        switch status {
+        case .paused: "paused"
+        case .waitingToPlayAtSpecifiedRate: "waiting"
+        case .playing: "playing"
+        @unknown default: "unknown(\(status.rawValue))"
+        }
+    }
+
+    nonisolated private static func redactedDiagnosticLine(_ line: String) -> String {
+        var redacted = line
+        for key in ["api_key", "ApiKey", "apikey", "PlaySessionId"] {
+            redacted = redacted.replacingOccurrences(
+                of: "\(key)=[^&\\s]+",
+                with: "\(key)=<redacted>",
+                options: .regularExpression
+            )
+        }
+        return redacted
     }
     #endif
 
@@ -925,15 +974,45 @@ final class PlayerViewModel {
         return languages
     }
 
-    private func shouldRequestTranscodeFallback(for mediaSource: JellyfinMediaSource) -> Bool {
-        let videoStreams = mediaSource.mediaStreams?.filter { $0.type == "Video" } ?? []
-        let largestVideo = videoStreams.max { lhs, rhs in
-            (lhs.width ?? 0) * (lhs.height ?? 0) < (rhs.width ?? 0) * (rhs.height ?? 0)
+    private static var matchContentEnabled: Bool {
+        #if os(tvOS)
+        guard let window = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows })
+            .first
+        else { return true }
+        return window.avDisplayManager.isDisplayCriteriaMatchingEnabled
+        #else
+        return true
+        #endif
+    }
+
+    private static func probeBudget(
+        for candidate: StreamCandidate,
+        mediaSource: JellyfinMediaSource
+    ) -> (probesize: Int64?, maxAnalyzeDuration: Int64?) {
+        guard candidate.isDirect else { return (nil, nil) }
+        let path = mediaSource.path?.lowercased() ?? ""
+        let isExternalURL = path.hasPrefix("http://") || path.hasPrefix("https://")
+        let isSizedServerFile = (mediaSource.size ?? 0) > 0 && !isExternalURL
+        guard isSizedServerFile else { return (nil, nil) }
+        return (16 * 1024 * 1024, 10 * 1_000_000)
+    }
+
+    private static func diagnosticURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems
+        else { return url.absoluteString }
+
+        components.queryItems = queryItems.map { item in
+            switch item.name.lowercased() {
+            case "api_key", "apikey", "playsessionid":
+                URLQueryItem(name: item.name, value: "<redacted>")
+            default:
+                item
+            }
         }
-        let width = largestVideo?.width ?? 0
-        let height = largestVideo?.height ?? 0
-        let bitrate = max(mediaSource.bitrate ?? 0, largestVideo?.bitRate ?? 0)
-        return width >= 3000 || height >= 1600 || bitrate >= 40_000_000
+        return components.url?.absoluteString ?? url.absoluteString
     }
 
     // MARK: - Private: Segment Checking
@@ -1064,5 +1143,13 @@ private struct PlayerStartupTimeoutError: LocalizedError {
 
     var errorDescription: String? {
         "Timed out starting \(label) after \(Int(seconds)) seconds"
+    }
+}
+
+private struct PlayerStartupFailedError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        message
     }
 }

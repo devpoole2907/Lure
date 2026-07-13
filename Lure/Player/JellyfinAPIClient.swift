@@ -390,21 +390,32 @@ actor JellyfinAPIClient {
 
     func playbackURLDiagnostics(_ url: URL) async {
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("bytes=0-4095", forHTTPHeaderField: "Range")
+        request.httpMethod = "HEAD"
         request.timeoutInterval = 10
         do {
-            let (data, response) = try await session.data(for: request)
+            let (_, response) = try await session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? "nil"
-            let preview = String(data: data.prefix(500), encoding: .utf8) ?? "<\(data.count) binary bytes>"
-            print("[JellyfinAPIClient] playback preflight status=\(status) contentType=\(contentType) bytes=\(data.count) url=\(url.absoluteString)")
-            if !(200...299).contains(status) {
-                print("[JellyfinAPIClient] playback preflight body=\(preview)")
-            }
+            let length = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Length") ?? "nil"
+            print("[JellyfinAPIClient] playback preflight status=\(status) contentType=\(contentType) contentLength=\(length) url=\(redactedPlaybackURL(url))")
         } catch {
-            print("[JellyfinAPIClient] playback preflight failed url=\(url.absoluteString) error=\(error.localizedDescription)")
+            print("[JellyfinAPIClient] playback preflight failed url=\(redactedPlaybackURL(url)) error=\(error.localizedDescription)")
         }
+    }
+
+    private nonisolated func redactedPlaybackURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems
+        else { return url.absoluteString }
+        components.queryItems = queryItems.map { item in
+            switch item.name.lowercased() {
+            case "api_key", "apikey", "playsessionid":
+                URLQueryItem(name: item.name, value: "<redacted>")
+            default:
+                item
+            }
+        }
+        return components.url?.absoluteString ?? url.absoluteString
     }
 
     // MARK: - Media Segments

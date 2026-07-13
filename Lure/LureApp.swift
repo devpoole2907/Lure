@@ -64,10 +64,24 @@ struct LureApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if DebugPlaybackHarnessView.isEnabled {
+                DebugPlaybackHarnessView(
+                    jellyfinService: jellyfinService,
+                    playerCoordinator: playerCoordinator
+                )
+            } else {
+                ContentView(
+                    jellyfinService: jellyfinService,
+                    playerCoordinator: playerCoordinator
+                )
+            }
+            #else
             ContentView(
                 jellyfinService: jellyfinService,
                 playerCoordinator: playerCoordinator
             )
+            #endif
         }
         .modelContainer(modelContainer)
 
@@ -87,3 +101,77 @@ struct LureApp: App {
         #endif
     }
 }
+
+#if DEBUG
+private struct DebugPlaybackHarnessView: View {
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment["LURE_DEBUG_JELLYFIN_ITEM_ID"]?.isEmpty == false
+    }
+
+    let jellyfinService: JellyfinService
+    let playerCoordinator: PlayerCoordinator
+
+    @State private var notificationCenter = InAppNotificationCenter()
+    @State private var didStart = false
+    @State private var status = "Preparing debug playback..."
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView()
+                    .tint(.white)
+                    .controlSize(.large)
+                Text(status)
+                    .foregroundStyle(.white)
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+        }
+        .playerPresentation()
+        .environment(notificationCenter)
+        .environment(jellyfinService)
+        .environment(playerCoordinator)
+        .task { await startIfNeeded() }
+    }
+
+    @MainActor
+    private func startIfNeeded() async {
+        guard !didStart else { return }
+        didStart = true
+
+        let env = ProcessInfo.processInfo.environment
+        guard let server = env["LURE_DEBUG_JELLYFIN_SERVER"], !server.isEmpty,
+              let username = env["LURE_DEBUG_JELLYFIN_USERNAME"], !username.isEmpty,
+              let password = env["LURE_DEBUG_JELLYFIN_PASSWORD"], !password.isEmpty,
+              let itemId = env["LURE_DEBUG_JELLYFIN_ITEM_ID"], !itemId.isEmpty
+        else {
+            status = "Missing LURE_DEBUG_JELLYFIN_* launch environment."
+            return
+        }
+
+        let title = env["LURE_DEBUG_JELLYFIN_TITLE"] ?? "Debug Playback"
+        let mediaType = env["LURE_DEBUG_JELLYFIN_MEDIA_TYPE"] ?? "movie"
+
+        do {
+            status = "Signing into Jellyfin..."
+            let credentials = try await JellyfinAPIClient.authenticate(
+                serverURL: server,
+                username: username,
+                password: password
+            )
+            try await credentials.save()
+            await jellyfinService.reload()
+            status = "Starting \(title)..."
+            playerCoordinator.present(
+                itemId: itemId,
+                title: title,
+                mediaType: mediaType
+            )
+        } catch {
+            status = "Debug playback failed: \(error.localizedDescription)"
+        }
+    }
+}
+#endif
