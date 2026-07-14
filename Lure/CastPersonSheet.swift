@@ -294,6 +294,11 @@ struct CastPersonSheet: View {
             // scroll the page back up to the biography/header. Long bios get the
             // MORE/LESS pill; short ones make the card itself focusable.
             .focusable(!showsToggle)
+            // Focus section: swiping up from anywhere in the credit shelves
+            // funnels focus to the pill. Without it the upward focus search
+            // from a horizontally distant shelf card misses the small pill
+            // entirely and focus gets stuck in the shelves.
+            .focusSection()
             #else
             if shouldShowFullBiographyLink(for: biography) {
                 NavigationLink {
