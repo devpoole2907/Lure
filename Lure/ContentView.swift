@@ -3,6 +3,9 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+#if os(macOS)
+    @Environment(MacSettingsPresenter.self) private var macSettingsPresenter
+#endif
     @Query private var servers: [LureServerProfile]
     @State private var authViewModel = AuthViewModel()
     @State private var isRestoringSession = true
@@ -19,6 +22,9 @@ struct ContentView: View {
     let watchTogetherCoordinator: WatchTogetherCoordinator
 
     var body: some View {
+#if os(macOS)
+        @Bindable var settingsPresenter = macSettingsPresenter
+#endif
         ZStack {
             Group {
                 if isRestoringSession {
@@ -38,18 +44,7 @@ struct ContentView: View {
                     LureTabView(
                         apiClient: client,
                         currentUser: user,
-                        onLogout: {
-                            // Drop straight back to onboarding (checked before the
-                            // logged-in branch, so no expired-session flash), then
-                            // tear down the session in the background. The swap is
-                            // animated via `.animation(value: hasFinishedOnboarding)`.
-                            hasFinishedOnboarding = false
-                            router.reset()
-                            Task {
-                                await authViewModel.logout(profile: servers.first(where: \.isActive), modelContext: modelContext)
-                                await jellyfinService.clearCredentials()
-                            }
-                        }
+                        onLogout: signOutAndReset
                     )
                     .playerPresentation()
                     .environment(notificationCenter)
@@ -120,18 +115,27 @@ struct ContentView: View {
                 Text("You're already signed in. Continuing will sign you out of your current servers and connect to the ones from this invite.")
             }
 
-            // Banner overlay
+            // Banner overlay (tvOS shows these as alerts via lureBannerAlertHost)
+            #if !os(tvOS)
             if let banner = notificationCenter.currentBanner {
-                VStack {
-                    LureNotificationBanner(item: banner) {
-                        notificationCenter.dismiss()
-                    }
-                    .padding(.top, 8)
-                    Spacer()
+                LureNotificationOverlay(item: banner) {
+                    notificationCenter.dismiss()
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(.lureNotificationBanner)
             }
+            #endif
         }
+        .lureBannerAlertHost(notificationCenter)
+#if os(macOS)
+        .sheet(isPresented: $settingsPresenter.isPresented) {
+            MacSettingsSheet(
+                apiClient: authViewModel.apiClient,
+                currentUser: authViewModel.currentUser,
+                onLogout: signOutAndReset
+            )
+            .environment(jellyfinService)
+        }
+#endif
     }
 
     private var signInPrompt: some View {
@@ -188,6 +192,17 @@ struct ContentView: View {
 
         await jellyfinReload
         isRestoringSession = false
+    }
+
+    private func signOutAndReset() {
+        // Drop straight back to onboarding (checked before the logged-in branch, so
+        // no expired-session flash), then tear down the session in the background.
+        hasFinishedOnboarding = false
+        router.reset()
+        Task {
+            await authViewModel.logout(profile: servers.first(where: \.isActive), modelContext: modelContext)
+            await jellyfinService.clearCredentials()
+        }
     }
 
     private func handleDeepLink(_ url: URL) {

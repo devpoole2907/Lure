@@ -23,10 +23,22 @@ final class LureRouter {
     var discoverPath = NavigationPath()
     var morePath: [MoreDestination] = []
 
+    /// Set when a `lure://item/<jellyfinId>` or `lure://play/<jellyfinId>` deep
+    /// link arrives (e.g. from the tvOS Top Shelf). Consumers such as
+    /// `DiscoverView` observe this, look up the item, navigate to its detail,
+    /// and then clear the value.
+    var pendingJellyfinItemId: String? = nil
+
+    /// Set alongside `pendingJellyfinItemId` when the intent is immediate
+    /// playback (`lure://play/<id>`).
+    var pendingJellyfinItemAutoPlay: Bool = false
+
     func reset() {
         selectedTab = .discover
         discoverPath = NavigationPath()
         morePath = []
+        pendingJellyfinItemId = nil
+        pendingJellyfinItemAutoPlay = false
     }
 
     @discardableResult
@@ -37,6 +49,17 @@ final class LureRouter {
             .filter { !$0.isEmpty }
             .map { $0.lowercased() }
         let route = routeParts.joined(separator: "/")
+
+        // lure://item/<jellyfinItemId> — open item detail (from Top Shelf displayAction)
+        // lure://play/<jellyfinItemId>  — open item detail with auto-play intent
+        if routeParts.count == 2 && (routeParts[0] == "item" || routeParts[0] == "play") {
+            let jellyfinId = routeParts[1]
+            selectedTab = .discover
+            discoverPath = NavigationPath()
+            pendingJellyfinItemId = jellyfinId
+            pendingJellyfinItemAutoPlay = routeParts[0] == "play"
+            return true
+        }
 
         switch route {
         case "discover", "":

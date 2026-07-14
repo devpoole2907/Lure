@@ -30,23 +30,23 @@ struct SetupWizardView: View {
     }
 
     private var welcomeIntroScreen: some View {
-        VStack(spacing: 32) {
-            VStack(spacing: 12) {
+        VStack(spacing: welcomeIntroSpacing) {
+            VStack(spacing: welcomeHeaderSpacing) {
                 Image(systemName: "film.stack")
-                    .font(.system(size: 56))
+                    .font(welcomeIconFont)
                     .foregroundStyle(.tint)
 
                 Text("Welcome to Lure")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
+                    .font(welcomeTitleFont)
+                    .bold()
 
                 Text("Request and discover media.")
-                    .font(.subheadline)
+                    .font(welcomeSubtitleFont)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: featureRowSpacing) {
                 ForEach(LureServiceIdentity.allCases, id: \.self) { service in
                     featureRow(service)
                 }
@@ -63,6 +63,7 @@ struct SetupWizardView: View {
             .foregroundStyle(.tint)
         }
         .padding(onboardingContentPadding)
+        .padding(.bottom, onboardingBottomPadding)
         .frame(maxWidth: onboardingContentMaxWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .prominentBottomButton("Get Started") {
@@ -70,19 +71,155 @@ struct SetupWizardView: View {
         }
     }
 
+    private var welcomeIntroSpacing: CGFloat {
+        #if os(tvOS)
+        52
+        #else
+        32
+        #endif
+    }
+
+    private var welcomeHeaderSpacing: CGFloat {
+        #if os(tvOS)
+        18
+        #else
+        12
+        #endif
+    }
+
+    private var welcomeIconFont: Font {
+        #if os(tvOS)
+        .system(size: 88, weight: .semibold)
+        #else
+        .system(size: 56)
+        #endif
+    }
+
+    private var welcomeTitleFont: Font {
+        #if os(tvOS)
+        .system(size: 64, weight: .bold)
+        #else
+        .largeTitle
+        #endif
+    }
+
+    private var welcomeSubtitleFont: Font {
+        #if os(tvOS)
+        .title3
+        #else
+        .subheadline
+        #endif
+    }
+
+    private var featureRowSpacing: CGFloat {
+        #if os(tvOS)
+        20
+        #else
+        16
+        #endif
+    }
+
     private var onboardingContentPadding: CGFloat {
-        #if os(macOS)
+        #if os(tvOS)
+        90
+        #elseif os(macOS)
         40
         #else
         32
         #endif
     }
 
+    private var onboardingBottomPadding: CGFloat {
+        #if os(tvOS)
+        130
+        #else
+        0
+        #endif
+    }
+
     private var onboardingContentMaxWidth: CGFloat {
-        #if os(macOS)
+        #if os(tvOS)
+        940
+        #elseif os(macOS)
         480
         #else
         440
+        #endif
+    }
+
+    private var featureIconFont: Font {
+        #if os(tvOS)
+        .system(size: 36, weight: .semibold)
+        #else
+        .title2
+        #endif
+    }
+
+    private var featureTitleFont: Font {
+        #if os(tvOS)
+        .title3.weight(.semibold)
+        #else
+        .subheadline.weight(.semibold)
+        #endif
+    }
+
+    private var featureSubtitleFont: Font {
+        #if os(tvOS)
+        .body
+        #else
+        .caption
+        #endif
+    }
+
+    private var featureIconWidth: CGFloat {
+        #if os(tvOS)
+        58
+        #else
+        36
+        #endif
+    }
+
+    private var featureRowHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        24
+        #else
+        0
+        #endif
+    }
+
+    private var featureRowVerticalPadding: CGFloat {
+        #if os(tvOS)
+        20
+        #elseif os(macOS)
+        2
+        #else
+        0
+        #endif
+    }
+
+    private var featureRowMinHeight: CGFloat? {
+        #if os(tvOS)
+        96
+        #else
+        nil
+        #endif
+    }
+
+    private var featureRowCornerRadius: CGFloat {
+        #if os(tvOS)
+        24
+        #else
+        0
+        #endif
+    }
+
+    @ViewBuilder
+    private var featureRowBackground: some View {
+        #if os(tvOS)
+        RoundedRectangle(cornerRadius: featureRowCornerRadius)
+            .fill(.regularMaterial)
+        #else
+        EmptyView()
         #endif
     }
 
@@ -90,22 +227,23 @@ struct SetupWizardView: View {
     private func featureRow(_ service: LureServiceIdentity) -> some View {
         HStack(spacing: 14) {
             Image(systemName: service.systemImage)
-                .font(.title2)
+                .font(featureIconFont)
                 .foregroundStyle(service.brandColor)
-                .frame(width: 36)
+                .frame(width: featureIconWidth)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(service.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(featureTitleFont)
                 Text(service.tagline)
-                    .font(.caption)
+                    .font(featureSubtitleFont)
                     .foregroundStyle(.secondary)
             }
         }
-        #if os(macOS)
-        .padding(.vertical, 2)
-        #endif
+        .padding(.horizontal, featureRowHorizontalPadding)
+        .padding(.vertical, featureRowVerticalPadding)
+        .frame(minHeight: featureRowMinHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(featureRowBackground)
     }
 }
 
@@ -125,20 +263,20 @@ private struct ServiceSelectionScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                VStack(spacing: 10) {
+            VStack(spacing: serviceContentSpacing) {
+                VStack(spacing: 14) {
                     Text("Choose Your Services")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
+                        .font(serviceTitleFont)
+                        .bold()
                         .multilineTextAlignment(.center)
 
                     Text("Set up the services you want to use, then continue into the app.")
-                        .font(.subheadline)
+                        .font(serviceSubtitleFont)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
 
-                VStack(spacing: 12) {
+                VStack(spacing: setupRowSpacing) {
                     setupRow(
                         .seerr,
                         description: "Required — discover and request media",
@@ -153,11 +291,16 @@ private struct ServiceSelectionScreen: View {
                 }
             }
             .padding(onboardingContentPadding)
+            .padding(.bottom, onboardingBottomPadding)
             .frame(maxWidth: onboardingContentMaxWidth)
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #if os(tvOS)
+        .navigationTitle("")
+        #else
         .navigationTitle("Choose Services")
+        #endif
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -173,19 +316,139 @@ private struct ServiceSelectionScreen: View {
         }
     }
 
+    private var serviceContentSpacing: CGFloat {
+        #if os(tvOS)
+        48
+        #else
+        24
+        #endif
+    }
+
+    private var setupRowSpacing: CGFloat {
+        #if os(tvOS)
+        24
+        #else
+        12
+        #endif
+    }
+
+    private var serviceTitleFont: Font {
+        #if os(tvOS)
+        .system(size: 56, weight: .bold)
+        #else
+        .largeTitle
+        #endif
+    }
+
+    private var serviceSubtitleFont: Font {
+        #if os(tvOS)
+        .title3
+        #else
+        .subheadline
+        #endif
+    }
+
     private var onboardingContentPadding: CGFloat {
-        #if os(macOS)
+        #if os(tvOS)
+        90
+        #elseif os(macOS)
         40
         #else
         32
         #endif
     }
 
+    private var onboardingBottomPadding: CGFloat {
+        #if os(tvOS)
+        150
+        #else
+        0
+        #endif
+    }
+
     private var onboardingContentMaxWidth: CGFloat {
-        #if os(macOS)
+        #if os(tvOS)
+        1040
+        #elseif os(macOS)
         500
         #else
         440
+        #endif
+    }
+
+    private var setupIconFont: Font {
+        #if os(tvOS)
+        .system(size: 42, weight: .semibold)
+        #else
+        .title2
+        #endif
+    }
+
+    private var setupTitleFont: Font {
+        #if os(tvOS)
+        .title2.weight(.semibold)
+        #else
+        .subheadline.weight(.semibold)
+        #endif
+    }
+
+    private var setupDescriptionFont: Font {
+        #if os(tvOS)
+        .body
+        #else
+        .caption
+        #endif
+    }
+
+    private var setupStatusFont: Font {
+        #if os(tvOS)
+        .system(size: 34, weight: .semibold)
+        #else
+        .title3
+        #endif
+    }
+
+    private var setupIconWidth: CGFloat {
+        #if os(tvOS)
+        70
+        #else
+        36
+        #endif
+    }
+
+    private var setupRowHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        30
+        #else
+        16
+        #endif
+    }
+
+    private var setupRowVerticalPadding: CGFloat {
+        #if os(tvOS)
+        26
+        #else
+        14
+        #endif
+    }
+
+    private var setupRowMinHeight: CGFloat {
+        #if os(tvOS)
+        124
+        #elseif os(macOS)
+        64
+        #else
+        0
+        #endif
+    }
+
+    @ViewBuilder
+    private func setupRowBackground() -> some View {
+        #if os(tvOS)
+        RoundedRectangle(cornerRadius: 26)
+            .fill(.regularMaterial)
+        #else
+        EmptyView()
         #endif
     }
 
@@ -197,39 +460,45 @@ private struct ServiceSelectionScreen: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 14) {
+            HStack(spacing: 18) {
                 Image(systemName: service.systemImage)
-                    .font(.title2)
+                    .font(setupIconFont)
                     .foregroundStyle(service.brandColor)
-                    .frame(width: 36)
+                    .frame(width: setupIconWidth)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(service.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(setupTitleFont)
                         .foregroundStyle(.primary)
                     Text(description)
-                        .font(.caption)
+                        .font(setupDescriptionFont)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
                 Image(systemName: isConfigured ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(setupStatusFont)
                     .foregroundStyle(isConfigured ? Color.green : Color.secondary.opacity(0.4))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, setupRowHorizontalPadding)
+            .padding(.vertical, setupRowVerticalPadding)
+            .frame(minHeight: setupRowMinHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             #if os(macOS)
-            .frame(minHeight: 64)
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 12))
+            #elseif os(tvOS)
+            .background(setupRowBackground())
             #else
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
             #endif
         }
+        #if os(tvOS)
+        .buttonStyle(.card)
+        #else
         .buttonStyle(.plain)
+        #endif
     }
 }
 
@@ -263,6 +532,27 @@ private struct InvitePasteSheet: View {
                 }
 
                 OnboardingMacValidationError(error: error)
+            }
+        }
+        #elseif os(tvOS)
+        AppSheetShell(title: "Enter Invite") {
+            OnboardingTVFormContent(width: 900) {
+                Text("Paste the invite link you were sent. It sets up your servers automatically.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                OnboardingTVFieldGroup("Invite Link") {
+                    TextField("lure://invite?...", text: $text, axis: .vertical)
+                        .autocorrectionDisabled()
+                        .lineLimit(1...4)
+                }
+
+                OnboardingTVValidationError(error: error)
+
+                OnboardingTVPrimaryButton(width: 320, isDisabled: isSubmitDisabled, action: submit) {
+                    Text("Continue")
+                }
             }
         }
         #else

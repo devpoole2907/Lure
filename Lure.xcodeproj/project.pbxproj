@@ -8,10 +8,42 @@
 
 /* Begin PBXBuildFile section */
 		7CE96B932FADCA7900EB6586 /* AetherEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE96B922FADCA7900EB6586 /* AetherEngine */; };
+		AA0001012FBBAA0100000001 /* LureTopShelfProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001002FBBAA0100000001 /* LureTopShelfProvider.swift */; };
+		AA0001032FBBAA0100000001 /* TopShelfCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001022FBBAA0100000001 /* TopShelfCredentialStore.swift */; };
+		AA0001052FBBAA0100000001 /* LureTopShelf.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AA0001042FBBAA0100000001 /* LureTopShelf.appex */; platformFilters = (tvos, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0001062FBBAA0100000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7C7703392F9EF8DB009C7CF0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0001082FBBAA0100000001;
+			remoteInfo = LureTopShelf;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0001072FBBAA0100000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0001052FBBAA0100000001 /* LureTopShelf.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		7C7703412F9EF8DB009C7CF0 /* Lure.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lure.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0001002FBBAA0100000001 /* LureTopShelfProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LureTopShelfProvider.swift; sourceTree = "<group>"; };
+		AA0001022FBBAA0100000001 /* TopShelfCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TopShelfCredentialStore.swift; path = ../Lure/TopShelfCredentialStore.swift; sourceTree = "<group>"; };
+		AA0001042FBBAA0100000001 /* LureTopShelf.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LureTopShelf.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0001092FBBAA0100000001 /* LureTopShelf.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LureTopShelf.entitlements; sourceTree = "<group>"; };
+		AA00010A2FBBAA0100000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -44,6 +76,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA00010B2FBBAA0100000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -51,6 +90,7 @@
 			isa = PBXGroup;
 			children = (
 				7C7703432F9EF8DB009C7CF0 /* Lure */,
+				AA00010C2FBBAA0100000001 /* LureTopShelf */,
 				7C7703422F9EF8DB009C7CF0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -59,8 +99,20 @@
 			isa = PBXGroup;
 			children = (
 				7C7703412F9EF8DB009C7CF0 /* Lure.app */,
+				AA0001042FBBAA0100000001 /* LureTopShelf.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA00010C2FBBAA0100000001 /* LureTopShelf */ = {
+			isa = PBXGroup;
+			children = (
+				AA0001002FBBAA0100000001 /* LureTopShelfProvider.swift */,
+				AA0001022FBBAA0100000001 /* TopShelfCredentialStore.swift */,
+				AA0001092FBBAA0100000001 /* LureTopShelf.entitlements */,
+				AA00010A2FBBAA0100000001 /* Info.plist */,
+			);
+			path = LureTopShelf;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -73,10 +125,12 @@
 				7C77033D2F9EF8DB009C7CF0 /* Sources */,
 				7C77033E2F9EF8DB009C7CF0 /* Frameworks */,
 				7C77033F2F9EF8DB009C7CF0 /* Resources */,
+				AA0001072FBBAA0100000001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA00010D2FBBAA0100000001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7C7703432F9EF8DB009C7CF0 /* Lure */,
@@ -89,6 +143,23 @@
 			productReference = 7C7703412F9EF8DB009C7CF0 /* Lure.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0001082FBBAA0100000001 /* LureTopShelf */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA00010E2FBBAA0100000001 /* Build configuration list for PBXNativeTarget "LureTopShelf" */;
+			buildPhases = (
+				AA00010F2FBBAA0100000001 /* Sources */,
+				AA00010B2FBBAA0100000001 /* Frameworks */,
+				AA0001102FBBAA0100000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LureTopShelf;
+			productName = LureTopShelf;
+			productReference = AA0001042FBBAA0100000001 /* LureTopShelf.appex */;
+			productType = "com.apple.product-type.tv-app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -100,6 +171,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					7C7703402F9EF8DB009C7CF0 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
+					AA0001082FBBAA0100000001 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
 				};
@@ -122,12 +196,20 @@
 			projectRoot = "";
 			targets = (
 				7C7703402F9EF8DB009C7CF0 /* Lure */,
+				AA0001082FBBAA0100000001 /* LureTopShelf */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7C77033F2F9EF8DB009C7CF0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0001102FBBAA0100000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -144,7 +226,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA00010F2FBBAA0100000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0001012FBBAA0100000001 /* LureTopShelfProvider.swift in Sources */,
+				AA0001032FBBAA0100000001 /* TopShelfCredentialStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA00010D2FBBAA0100000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				tvos,
+			);
+			target = AA0001082FBBAA0100000001 /* LureTopShelf */;
+			targetProxy = AA0001062FBBAA0100000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		7C77034A2F9EF8DC009C7CF0 /* Debug */ = {
@@ -341,6 +443,51 @@
 			};
 			name = Release;
 		};
+		AA0001112FBBAA0100000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LureTopShelf/LureTopShelf.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = L9DB7QA9DE;
+				"EXCLUDED_ARCHS[sdk=appletvsimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LureTopShelf/Info.plist;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.poole.james.Lure.TopShelf;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		AA0001122FBBAA0100000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LureTopShelf/LureTopShelf.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = L9DB7QA9DE;
+				"EXCLUDED_ARCHS[sdk=appletvsimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LureTopShelf/Info.plist;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.poole.james.Lure.TopShelf;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = appletvos;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -358,6 +505,15 @@
 			buildConfigurations = (
 				7C77034D2F9EF8DC009C7CF0 /* Debug */,
 				7C77034E2F9EF8DC009C7CF0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA00010E2FBBAA0100000001 /* Build configuration list for PBXNativeTarget "LureTopShelf" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0001112FBBAA0100000001 /* Debug */,
+				AA0001122FBBAA0100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

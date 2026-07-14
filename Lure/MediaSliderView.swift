@@ -11,12 +11,26 @@ struct MediaSliderView: View {
 
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
+    #if os(tvOS)
+    private let horizontalBleed: CGFloat = 90
+    private let cardSpacing: CGFloat = 40
+    /// Virtual repeat factor so shelf rows loop "for ages" with the Siri Remote.
+    private let wrapRepeatCount = 20
+    #else
     private let horizontalBleed: CGFloat = 16
+    private let cardSpacing: CGFloat = 12
+    #endif
 
     var body: some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 if let title, !title.isEmpty {
+                    #if os(tvOS)
+                    // tvOS: shelf headers are plain, non-focusable text. A focusable
+                    // NavigationLink header renders as a giant full-width white
+                    // plate when focused; deep browsing lives in Search instead.
+                    headerLabel(title: title, isNavigable: false)
+                    #else
                     if let headerValue {
                         NavigationLink(value: headerValue) {
                             headerLabel(title: title, isNavigable: true)
@@ -25,46 +39,85 @@ struct MediaSliderView: View {
                     } else {
                         headerLabel(title: title, isNavigable: false)
                     }
+                    #endif
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 12) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                            let destination = MediaDestination(
-                                mediaType: item.mediaType,
-                                tmdbId: item.tmdbId,
-                                title: item.title,
-                                posterURL: item.posterURL,
-                                sourceID: navigationSourceID(for: item, index: index)
-                            )
-
-                            let link = NavigationLink(value: destination) {
-                                titleCard(for: item, destination: destination)
-                            }
-                            .buttonStyle(.plain)
-
-                            if item.hasRequestContextActions {
-                                link.contextMenu {
-                                    MediaRequestContextMenu(
-                                        mediaType: item.mediaType,
-                                        tmdbId: item.tmdbId,
-                                        title: item.title,
-                                        mediaInfo: item.mediaInfo,
-                                        isKnownAvailable: item.mediaInfo?.isAvailable == true,
-                                        apiClient: apiClient,
-                                        notificationCenter: notificationCenter,
-                                        requestsCoordinator: requestsCoordinator
-                                    )
-                                }
-                            } else {
-                                link
-                            }
-                        }
-                    }
-                    .padding(.horizontal, horizontalBleed)
-                }
-                .padding(.horizontal, extendsBeyondParentPadding ? -horizontalBleed : 0)
+                shelfRow
             }
+        }
+    }
+
+    private var shelfRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: cardSpacing) {
+                #if os(tvOS)
+                // Virtual wrap-around: repeat the item list N times so focus can
+                // keep travelling right indefinitely. IDs use the virtual index
+                // so each repeated cell stays unique.
+                let virtualCount = shouldWrapItems ? items.count * wrapRepeatCount : items.count
+                ForEach(0..<virtualCount, id: \.self) { virtualIndex in
+                    let itemIndex = shouldWrapItems ? virtualIndex % items.count : virtualIndex
+                    cell(for: items[itemIndex], index: virtualIndex)
+                }
+                #else
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    cell(for: item, index: index)
+                }
+                #endif
+            }
+            .padding(.horizontal, rowContentHorizontalPadding)
+            #if os(tvOS)
+            // Vertical headroom so the focus scale-up never clips.
+            .padding(.vertical, 30)
+            #endif
+        }
+        #if os(tvOS)
+        .contentMargins(.horizontal, 0, for: .scrollContent)
+        // The row bleeds past the tvOS safe area so the leading content margin
+        // (90pt) measures from the ABSOLUTE screen edge — matching the hero —
+        // and trailing content scrolls all the way to the screen edge.
+        .padding(.horizontal, extendsBeyondParentPadding ? -horizontalBleed : 0)
+        .scrollClipDisabled()
+        .mediaSliderHorizontalSafeAreaBehavior(extendsBeyondParentPadding)
+        #else
+        .padding(.horizontal, extendsBeyondParentPadding ? -horizontalBleed : 0)
+        #endif
+    }
+
+    @ViewBuilder
+    private func cell(for item: SeerrMediaItem, index: Int) -> some View {
+        let destination = MediaDestination(
+            mediaType: item.mediaType,
+            tmdbId: item.tmdbId,
+            title: item.title,
+            posterURL: item.posterURL,
+            sourceID: navigationSourceID(for: item, index: index)
+        )
+
+        let link = NavigationLink(value: destination) {
+            titleCard(for: item, destination: destination)
+        }
+        #if os(tvOS)
+        .buttonStyle(TVPosterFocusButtonStyle())
+        #else
+        .buttonStyle(.plain)
+        #endif
+
+        if item.hasRequestContextActions {
+            link.contextMenu {
+                MediaRequestContextMenu(
+                    mediaType: item.mediaType,
+                    tmdbId: item.tmdbId,
+                    title: item.title,
+                    mediaInfo: item.mediaInfo,
+                    isKnownAvailable: item.mediaInfo?.isAvailable == true,
+                    apiClient: apiClient,
+                    notificationCenter: notificationCenter,
+                    requestsCoordinator: requestsCoordinator
+                )
+            }
+        } else {
+            link
         }
     }
 
@@ -76,8 +129,12 @@ struct MediaSliderView: View {
                     .foregroundStyle(.secondary)
             }
             Text(title)
+                #if os(tvOS)
+                .font(.title3.bold())
+                #else
                 .font(.title3)
                 .fontWeight(.bold)
+                #endif
                 .foregroundStyle(.primary)
             if isNavigable {
                 Image(systemName: "chevron.right")
@@ -85,7 +142,13 @@ struct MediaSliderView: View {
                     .foregroundStyle(.tertiary)
             }
         }
+        #if os(tvOS)
+        // The parent already sits at the tvOS safe area (~90pt absolute), which
+        // matches the hero text column — no extra padding.
+        .padding(.horizontal, 0)
+        #else
         .padding(.horizontal, 16)
+        #endif
         .contentShape(Rectangle())
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -103,7 +166,36 @@ struct MediaSliderView: View {
     private func navigationSourceID(for item: SeerrMediaItem, index: Int) -> String {
         "\(title ?? "media-slider")-\(index)-\(item.id)"
     }
+
+    private var rowContentHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        extendsBeyondParentPadding ? horizontalBleed : 0
+        #else
+        horizontalBleed
+        #endif
+    }
+
+    private var shouldWrapItems: Bool {
+        #if os(tvOS)
+        items.count > 6
+        #else
+        false
+        #endif
+    }
 }
+
+#if os(tvOS)
+private extension View {
+    @ViewBuilder
+    func mediaSliderHorizontalSafeAreaBehavior(_ shouldIgnore: Bool) -> some View {
+        if shouldIgnore {
+            ignoresSafeArea(edges: .horizontal)
+        } else {
+            self
+        }
+    }
+}
+#endif
 
 /// Navigation value for media detail routing
 struct MediaDestination: Hashable {

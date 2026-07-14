@@ -32,12 +32,6 @@ struct LureTabView: View {
                     UserProfileView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
                 }
             }
-
-            Tab("Settings", systemImage: "gearshape", value: LureTab.settings) {
-                NavigationStack {
-                    SettingsView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
-                }
-            }
             #else
             Tab("Discover", systemImage: "film", value: LureTab.discover) {
                 activeOnly(.discover, selection: router.selectedTab) {
@@ -93,3 +87,35 @@ struct LureTabView: View {
         #endif
     }
 }
+
+#if DEBUG
+#Preview("Tab View — Discover") {
+    let router = PreviewSupport.router(tab: .discover)
+    let jellyfinService = PreviewSupport.jellyfinService
+    LureTabView(
+        apiClient: PreviewSupport.apiClient,
+        currentUser: PreviewSupport.regularUser,
+        onLogout: {}
+    )
+    .environment(router)
+    .environment(jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.playerCoordinator)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+
+#Preview("Tab View — Search") {
+    let router = PreviewSupport.router(tab: .search)
+    let jellyfinService = PreviewSupport.jellyfinService
+    LureTabView(
+        apiClient: PreviewSupport.apiClient,
+        currentUser: PreviewSupport.regularUser,
+        onLogout: {}
+    )
+    .environment(router)
+    .environment(jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.playerCoordinator)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

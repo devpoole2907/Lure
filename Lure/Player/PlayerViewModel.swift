@@ -85,6 +85,10 @@ final class PlayerViewModel {
     /// play button is otherwise dead at end of media with no explanation. Reset at the
     /// top of `load()`.
     var playbackEnded: Bool = false
+    /// Set in `stop()`, cleared in `load()`: marks this VM's session as intentionally
+    /// over so `reloadAfterForeground()` can never resurrect audio for a player whose
+    /// UI is gone. (`playNextEpisode()`'s stop-then-load cycle clears it again.)
+    private var hasStopped: Bool = false
 
     // Current track selections (for UI state)
     var selectedAudioTrackId: Int? = nil
@@ -192,6 +196,7 @@ final class PlayerViewModel {
         errorMessage = nil
         isLoading = true
         playbackEnded = false
+        hasStopped = false
         videoSize = nil
         selectedAudioTrackId = nil
         selectedSubtitleTrackId = nil
@@ -645,14 +650,19 @@ final class PlayerViewModel {
         // `guard state == .paused` already makes the observer a no-op while stopped.
         // Removing them here left every episode after the first without foreground
         // recovery. They live for the VM's lifetime via `lifecycleObserverBag`.
+        // Silence playback BEFORE the stop report: the report is a network call,
+        // and audio kept playing while it ran (or hung) — closing the player could
+        // leave a ghost audio session that resumed on the next foreground.
+        let finalPosition = currentTime
+        hasStopped = true
+        engine.stop()
         if reportToJellyfin, let client = jellyfinClient, !itemId.isEmpty, !playSessionId.isEmpty {
             await client.reportStopped(
                 itemId: itemId,
                 playSessionId: playSessionId,
-                positionSeconds: currentTime
+                positionSeconds: finalPosition
             )
         }
-        engine.stop()
     }
 
     // MARK: - Playback Controls
@@ -738,7 +748,10 @@ final class PlayerViewModel {
 
     @MainActor
     func reloadAfterForeground() async {
-        guard state == .paused, !itemId.isEmpty else { return }
+        // `hasStopped` (not just `state`) gates the resume: a VM whose player UI
+        // was torn down must never revive audio on foreground, even if a stray
+        // reference is keeping it alive with the engine reporting `.paused`.
+        guard !hasStopped, state == .paused, !itemId.isEmpty else { return }
         do {
             try await engine.reloadAtCurrentPosition()
         } catch {

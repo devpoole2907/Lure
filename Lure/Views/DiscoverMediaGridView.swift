@@ -1,17 +1,33 @@
 import SwiftUI
 
 enum ThreeColumnMediaGrid {
+    #if os(tvOS)
+    // tvOS: 6 columns of shelf-sized posters. The container already sits inside
+    // the ~90pt safe area, so no extra horizontal padding is added.
+    static let horizontalPadding: CGFloat = 0
+    static let columnSpacing: CGFloat = 40
+    static let rowSpacing: CGFloat = 48
+    static let columnCount = 6
+    #else
     static let horizontalPadding: CGFloat = 16
     static let columnSpacing: CGFloat = 12
     static let rowSpacing: CGFloat = 20
+    static let columnCount = 3
+    #endif
 
     static let columns = Array(
         repeating: GridItem(.flexible(), spacing: columnSpacing, alignment: .top),
-        count: 3
+        count: columnCount
     )
 
     static func posterWidth(for containerWidth: CGFloat) -> CGFloat {
-        max(92, floor((containerWidth - horizontalPadding * 2 - columnSpacing * 2) / 3))
+        max(
+            92,
+            floor(
+                (containerWidth - horizontalPadding * 2 - columnSpacing * CGFloat(columnCount - 1))
+                    / CGFloat(columnCount)
+            )
+        )
     }
 }
 
@@ -67,12 +83,12 @@ struct DiscoverMediaGridView: View {
                                 .buttonStyle(.bordered)
                             }
                             .frame(maxWidth: .infinity)
-                            .gridCellColumns(3)
+                            .gridCellColumns(ThreeColumnMediaGrid.columnCount)
                             .padding(.vertical, 8)
                         } else {
                             ProgressView()
                                 .frame(maxWidth: .infinity)
-                                .gridCellColumns(3)
+                                .gridCellColumns(ThreeColumnMediaGrid.columnCount)
                                 .task { await loadNextPage() }
                         }
                     }
@@ -80,8 +96,15 @@ struct DiscoverMediaGridView: View {
                 .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
                 .padding(.vertical, 12)
             }
+#if os(macOS)
+            .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
+#if os(tvOS)
+            // Focused cards scale up; don't clip them at the scroll edges.
+            .scrollClipDisabled()
+#endif
         }
-        .navigationTitle(title)
+        .lureNavigationTitle(title)
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -132,7 +155,11 @@ struct DiscoverMediaGridView: View {
                 )
             }
         }
+        #if os(tvOS)
+        .buttonStyle(TVPosterFocusButtonStyle())
+        #else
         .buttonStyle(.plain)
+        #endif
 
         if let apiClient, item.hasRequestContextActions {
             link.contextMenu {
@@ -152,4 +179,3 @@ struct DiscoverMediaGridView: View {
         }
     }
 }
-

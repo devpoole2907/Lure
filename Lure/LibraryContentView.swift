@@ -51,6 +51,9 @@ struct LibraryContentView: View {
             }
             .padding(.vertical, 8)
         }
+#if os(macOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
     }
 
     // MARK: - Category Nav Links
@@ -141,7 +144,11 @@ struct LibraryContentView: View {
                     )) {
                         LibraryPosterCell(item: item)
                     }
+                    #if os(tvOS)
+                    .buttonStyle(TVPosterFocusButtonStyle())
+                    #else
                     .buttonStyle(.plain)
+                    #endif
                     .contextMenu {
                         LibraryItemRequestContextMenu(
                             item: item,

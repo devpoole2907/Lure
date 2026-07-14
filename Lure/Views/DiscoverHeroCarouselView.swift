@@ -10,18 +10,55 @@ struct DiscoverHeroCarouselView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(JellyfinService.self) private var jellyfinService
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var artworkByItemID: [String: MediaArtwork] = [:]
     @State private var containerWidth: CGFloat = 0
-
+    @State private var heroFavoriteStates: [String: Bool] = [:]
+    @State private var heroFavoriteItemIDs: [String: String] = [:]
+    @State private var heroFavoriteActionsInFlight: Set<String> = []
+    @State private var autoAdvanceResetToken = 0
+    #if os(tvOS)
+    @FocusState private var heroFocus: HeroFocusTarget?
+    #endif
     private var heroItems: [SeerrMediaItem] {
         Array(items.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }.prefix(8))
     }
 
+    #if os(tvOS)
+    /// Focusable slots in a hero panel's action row, keyed by the item id so
+    /// each carousel panel gets distinct focus identities.
+    private enum HeroFocusTarget: Hashable {
+        case details(String)
+        case favorite(String)
+        case next(String)
+        case previousEdge(String)
+        case nextEdge(String)
+
+        var itemID: String {
+            switch self {
+            case .details(let id), .favorite(let id), .next(let id),
+                 .previousEdge(let id), .nextEdge(let id):
+                id
+            }
+        }
+
+        var isEdgeCatcher: Bool {
+            switch self {
+            case .previousEdge, .nextEdge: true
+            case .details, .favorite, .next: false
+            }
+        }
+    }
+
+    private var heroEdgeCatcherOffset: CGFloat { 52 }
+    #endif
+
     var body: some View {
         if !heroItems.isEmpty {
             ZStack(alignment: .bottom) {
-                AppleTVCarousel(scrollPositionID: $scrollTargetID) {
+                AppleTVCarousel(fullBleed: heroCarouselFullBleed, scrollPositionID: $scrollTargetID) {
                     ForEach(Array(heroItems.enumerated()), id: \.element.id) { index, item in
                         let destination = MediaDestination(
                             mediaType: item.mediaType,
@@ -31,26 +68,30 @@ struct DiscoverHeroCarouselView: View {
                             sourceID: "discover-hero-\(index)-\(item.id)"
                         )
 
-                        NavigationLink(value: destination) {
-                            heroPanel(for: item, destination: destination)
-                        }
+                        heroPanel(for: item, destination: destination)
                         .id(item.id)
-                        .buttonStyle(.plain)
                     }
                 } scrollProgress: { progress in
                     activeIndex = min(max(Int(progress.rounded()), 0), heroItems.count - 1)
                 }
                 .onScrollPhaseChange { _, newPhase in
                     scrollPhase = newPhase
+                    if newPhase == .interacting {
+                        resetAutoAdvanceTimer()
+                    }
                 }
 
                 PageControlView(numberOfPages: heroItems.count, currentPage: activeIndex)
                     .frame(height: 24)
                     .padding(.bottom, 18)
                     .allowsHitTesting(false)
+
             }
             .frame(height: carouselHeight + verticalOffset)
             .offset(y: -verticalOffset)
+            #if os(tvOS)
+            .ignoresSafeArea(edges: .all)
+            #endif
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
             } action: { _, width in
@@ -60,12 +101,20 @@ struct DiscoverHeroCarouselView: View {
             .onChange(of: isActive) { _, nowActive in
                 if nowActive { restoreScrollPosition() }
             }
+            #if os(tvOS)
+            .onChange(of: heroFocus) { oldValue, newValue in
+                handleHeroFocusChange(from: oldValue, to: newValue)
+            }
+            #endif
             .task(id: heroItems.map(\.id).joined(separator: "|")) {
                 syncCarouselSelection()
                 await loadHeroArtwork()
                 await preloadHeroImages()
             }
-            .task(id: "\(heroItems.map(\.id).joined(separator: "|"))|\(isActive)") {
+            .task(id: "\(heroItems.map(\.id).joined(separator: "|"))|\(jellyfinService.hasCredentials)") {
+                await loadHeroFavoriteStates()
+            }
+            .task(id: "\(heroItems.map(\.id).joined(separator: "|"))|\(isActive)|\(autoAdvanceResetToken)") {
                 await autoAdvanceCarousel()
             }
         }
@@ -74,21 +123,31 @@ struct DiscoverHeroCarouselView: View {
     @ViewBuilder
     private func heroPanel(for item: SeerrMediaItem, destination: MediaDestination) -> some View {
         if let transitionNamespace {
-            panelContent(for: item)
+            panelContent(for: item, destination: destination)
                 .matchedTransitionSource(id: destination, in: transitionNamespace)
         } else {
-            panelContent(for: item)
+            panelContent(for: item, destination: destination)
         }
     }
 
-    private func panelContent(for item: SeerrMediaItem) -> some View {
+    private func panelContent(for item: SeerrMediaItem, destination: MediaDestination) -> some View {
         GeometryReader { proxy in
             let size = proxy.size
 
             ZStack(alignment: .bottom) {
+                #if os(macOS)
+                NavigationLink(value: destination) {
+                    heroImage(for: item)
+                        .frame(width: size.width, height: size.height)
+                        .clipped()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(item.title)")
+                #else
                 heroImage(for: item)
                     .frame(width: size.width, height: size.height)
                     .clipped()
+                #endif
 
                 LinearGradient(
                     colors: [
@@ -99,12 +158,17 @@ struct DiscoverHeroCarouselView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .allowsHitTesting(false)
 
-                bottomContent(for: item)
+                bottomContent(for: item, destination: destination)
             }
             .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
+            #if os(tvOS)
+            .accessibilityElement(children: .contain)
+            #else
             .accessibilityElement(children: .combine)
+            #endif
             .accessibilityLabel(accessibilityLabel(for: item))
         }
     }
@@ -119,7 +183,7 @@ struct DiscoverHeroCarouselView: View {
         ZStack {
             Rectangle()
                 .fill(.linearGradient(
-                    colors: [.black, .indigo.opacity(0.45), .black],
+                    colors: heroPlaceholderColors(for: item),
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ))
@@ -129,8 +193,23 @@ struct DiscoverHeroCarouselView: View {
         }
     }
 
-    private func bottomContent(for item: SeerrMediaItem) -> some View {
+    /// Derive a per-item placeholder color from the item ID so the carousel
+    /// doesn't show identical black frames when artwork hasn't loaded.
+    private func heroPlaceholderColors(for item: SeerrMediaItem) -> [Color] {
+        let palettes: [[Color]] = [
+            [.indigo, .purple.opacity(0.8), .black],
+            [.blue.opacity(0.9), .indigo.opacity(0.7), .black],
+            [.teal.opacity(0.8), .blue.opacity(0.6), .black],
+            [.purple.opacity(0.9), .pink.opacity(0.5), .black]
+        ]
+        let index = abs(item.tmdbId) % palettes.count
+        return palettes[index]
+    }
+
+    private func bottomContent(for item: SeerrMediaItem, destination: MediaDestination) -> some View {
         let isActive = heroItems[safe: activeIndex]?.id == item.id
+        let isMarked = isHeroMarked(item)
+        let isFavoriteEnabled = isHeroFavoriteEnabled(item)
 
         return VStack(alignment: heroContentAlignment, spacing: 10) {
             HeroTitleArtworkView(
@@ -140,30 +219,131 @@ struct DiscoverHeroCarouselView: View {
                 maxLogoHeight: heroLogoMaxHeight,
                 horizontalAlignment: heroContentAlignment
             )
-
-            HStack(spacing: 8) {
-                Text(item.mediaType == "tv" ? "TV Show" : "Movie")
-                if let year = item.year {
-                    Text("·")
-                    Text(year)
-                }
-                if let rating = item.voteAverage, rating > 0 {
-                    Text("·")
-                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                        .labelStyle(.titleAndIcon)
-                }
-            }
-            .font(.callout.weight(.medium))
-            .foregroundStyle(.white.opacity(0.82))
             .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
 
-            Label("Details", systemImage: "info.circle.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.black)
-                .padding(.horizontal, 22)
-                .frame(height: 42)
-                .background(.white, in: Capsule())
-                .padding(.top, 4)
+            heroMetadata(for: item)
+
+            #if os(macOS)
+            if let synopsis = synopsis(for: item) {
+                Text(synopsis)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.74))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 2)
+            }
+            #endif
+            #if os(tvOS)
+            if let synopsis = synopsis(for: item) {
+                Text(synopsis)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+            }
+            #endif
+
+            HStack(spacing: heroButtonSpacing) {
+                NavigationLink(value: destination) {
+                    #if os(tvOS)
+                    TVHeroCapsuleLabel(title: "Details", systemImage: "info.circle.fill")
+                    #else
+                    HStack(spacing: 4) {
+                        Image(systemName: "info.circle.fill")
+                        Text("Details")
+                    }
+                        .font(heroButtonFont)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, heroButtonHorizontalPadding)
+                        .frame(height: heroButtonHeight)
+                        .background(.white, in: Capsule())
+                    #endif
+                }
+                #if os(tvOS)
+                .buttonStyle(TVHeroActionButtonStyle())
+                .focused($heroFocus, equals: .details(item.id))
+                #else
+                .buttonStyle(.plain)
+                #endif
+                .disabled(!isActive)
+
+                Button {
+                    toggleHeroMarker(for: item)
+                } label: {
+                    #if os(tvOS)
+                    TVHeroCircleIconLabel(
+                        systemImage: isMarked ? "checkmark" : "plus",
+                        isHighlighted: isMarked
+                    )
+                    #else
+                    Image(systemName: isMarked ? "checkmark" : "plus")
+                        .font(heroSecondaryButtonIconFont)
+                        .foregroundStyle(.white)
+                        .frame(width: heroSecondaryButtonSize, height: heroSecondaryButtonSize)
+                        .background {
+                            Circle()
+                                .fill(isMarked ? Color.green : Color.clear)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isMarked)
+                        }
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay {
+                            Circle()
+                                .strokeBorder(isMarked ? .white.opacity(0.55) : .white.opacity(0.18), lineWidth: 0.8)
+                        }
+                        .scaleEffect(isMarked ? 1.04 : 1)
+                        .contentTransition(.symbolEffect(.replace))
+                        .symbolEffect(.bounce, value: isMarked)
+                    #endif
+                }
+                #if os(tvOS)
+                .buttonStyle(TVHeroActionButtonStyle())
+                .focused($heroFocus, equals: .favorite(item.id))
+                #else
+                .buttonStyle(.plain)
+                .contentShape(Circle())
+                #endif
+                .disabled(!isActive || heroFavoriteActionsInFlight.contains(item.id))
+                .opacity(isFavoriteEnabled || isMarked ? 1 : 0.72)
+                .accessibilityLabel(isMarked ? "Remove from Favorites" : "Add to Favorites")
+                .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isMarked)
+
+                #if os(tvOS)
+                Button {
+                    moveCarousel(by: 1, wraps: true, resetsTimer: true)
+                } label: {
+                    TVHeroCircleIconLabel(systemImage: "chevron.right")
+                }
+                .buttonStyle(TVHeroActionButtonStyle())
+                .focused($heroFocus, equals: .next(item.id))
+                .disabled(!isActive || heroItems.count < 2)
+                .accessibilityLabel("Next featured title")
+                #endif
+            }
+            #if os(tvOS)
+            // Invisible focus catchers just past the row's ends. Swiping right
+            // off the chevron advances the carousel; swiping left off Details
+            // goes back — except on the first item, where the catcher is not
+            // focusable so the system's default left-edge behavior (revealing
+            // the tab bar) still applies.
+            .overlay(alignment: .leading) {
+                heroEdgeCatcher(.previousEdge(item.id), isEnabled: isActive && activeIndex > 0)
+                    .offset(x: -heroEdgeCatcherOffset)
+            }
+            .overlay(alignment: .trailing) {
+                heroEdgeCatcher(.nextEdge(item.id), isEnabled: isActive && heroItems.count > 1)
+                    .offset(x: heroEdgeCatcherOffset)
+            }
+            #endif
+            .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
+            .padding(.top, 4)
+            #if os(tvOS)
+            .focusSection()
+            #endif
         }
         .foregroundStyle(.white)
         .frame(maxWidth: heroContentMaxWidth, alignment: heroFrameAlignment)
@@ -172,24 +352,230 @@ struct DiscoverHeroCarouselView: View {
         .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
         .compositingGroup()
         .opacity(isActive ? 1 : 0)
-        .animation(isActive ? .linear(duration: 0.18) : .none) { content in
-            content.opacity(scrollPhase != .interacting ? 1 : 0)
+    }
+
+    private func heroMetadata(for item: SeerrMediaItem) -> some View {
+        HStack(spacing: 8) {
+            Text(item.mediaType == "tv" ? "TV Show" : "Movie")
+            if let year = item.year {
+                Text("·")
+                Text(year)
+            }
+            if let rating = item.voteAverage, rating > 0 {
+                Text("·")
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                    Text(String(format: "%.1f", rating))
+                }
+            }
         }
+        .font(.callout.weight(.medium))
+        .foregroundStyle(.white.opacity(0.82))
+        .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
+    }
+
+    private func isHeroMarked(_ item: SeerrMediaItem) -> Bool {
+        heroFavoriteStates[item.id] ?? false
+    }
+
+    private func isHeroFavoriteEnabled(_ item: SeerrMediaItem) -> Bool {
+        guard !heroFavoriteActionsInFlight.contains(item.id) else { return false }
+        guard item.canResolveHeroFavorite, jellyfinService.hasCredentials else { return false }
+        return true
+    }
+
+    private func toggleHeroMarker(for item: SeerrMediaItem) {
+        resetAutoAdvanceTimer()
+
+        guard !heroFavoriteActionsInFlight.contains(item.id) else { return }
+        guard jellyfinService.hasCredentials else {
+            notificationCenter.show(LureBannerItem(
+                title: "Jellyfin Not Connected",
+                message: "Connect Jellyfin in Settings to manage favorites.",
+                style: .info
+            ))
+            return
+        }
+        guard item.canResolveHeroFavorite else {
+            notificationCenter.show(LureBannerItem(
+                title: "Not in Your Library Yet",
+                message: "Favorites become available when this title is added to Jellyfin.",
+                style: .info
+            ))
+            return
+        }
+
+        Task { @MainActor in
+            heroFavoriteActionsInFlight.insert(item.id)
+            defer { heroFavoriteActionsInFlight.remove(item.id) }
+
+            do {
+                guard let itemID = try await resolveHeroFavoriteItemID(for: item) else {
+                    throw JellyfinError.itemNotFound
+                }
+                guard let client = jellyfinService.client else {
+                    throw JellyfinError.noCredentials
+                }
+
+                let newValue = !isHeroMarked(item)
+                if newValue {
+                    try await client.addFavorite(itemId: itemID)
+                } else {
+                    try await client.removeFavorite(itemId: itemID)
+                }
+
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                    heroFavoriteStates[item.id] = newValue
+                }
+                notificationCenter.show(LureBannerItem(
+                    title: newValue ? "Added to Favorites" : "Removed from Favorites",
+                    message: item.title,
+                    style: newValue ? .success : .info
+                ))
+            } catch {
+                notificationCenter.show(LureBannerItem(
+                    title: "Favorites Update Failed",
+                    message: error.localizedDescription,
+                    style: .error
+                ))
+            }
+        }
+    }
+
+    private func resetAutoAdvanceTimer() {
+        autoAdvanceResetToken &+= 1
+    }
+
+    #if os(tvOS)
+    private func heroEdgeCatcher(_ target: HeroFocusTarget, isEnabled: Bool) -> some View {
+        Color.clear
+            .frame(width: 40, height: 52)
+            .focusable(isEnabled)
+            .focused($heroFocus, equals: target)
+            .accessibilityHidden(true)
+    }
+
+    /// Treats focus landing on an edge catcher as a swipe past the end of the
+    /// action row and pages the carousel. Focus arriving on a catcher from
+    /// anywhere other than this row's own buttons (e.g. swiping up from a shelf
+    /// below) is bounced to the Details button without paging.
+    private func handleHeroFocusChange(from oldValue: HeroFocusTarget?, to newValue: HeroFocusTarget?) {
+        guard let newValue, newValue.isEdgeCatcher else { return }
+
+        guard let oldValue, !oldValue.isEdgeCatcher, oldValue.itemID == newValue.itemID else {
+            heroFocus = .details(newValue.itemID)
+            return
+        }
+
+        if case .nextEdge = newValue {
+            moveCarousel(by: 1, wraps: true, resetsTimer: true)
+        } else {
+            moveCarousel(by: -1, wraps: false, resetsTimer: true)
+        }
+
+        guard let landingID = heroItems[safe: activeIndex]?.id else { return }
+        Task { @MainActor in
+            // Give the newly active panel a beat to enable its buttons before
+            // re-targeting focus; otherwise the assignment is dropped.
+            try? await Task.sleep(for: .milliseconds(80))
+            heroFocus = .details(landingID)
+        }
+    }
+    #endif
+
+    private func synopsis(for item: SeerrMediaItem) -> String? {
+        let overview: String?
+        switch item {
+        case .movie(let movie):
+            overview = movie.overview
+        case .tv(let show):
+            overview = show.overview
+        case .person:
+            overview = nil
+        }
+        let trimmed = overview?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    @MainActor
+    private func loadHeroFavoriteStates() async {
+        guard jellyfinService.hasCredentials else {
+            heroFavoriteStates = [:]
+            heroFavoriteItemIDs = [:]
+            heroFavoriteActionsInFlight = []
+            return
+        }
+
+        var states = heroFavoriteStates
+        var itemIDs = heroFavoriteItemIDs
+
+        for item in heroItems where item.canResolveHeroFavorite {
+            guard let itemID = try? await resolveHeroFavoriteItemID(for: item) else { continue }
+            itemIDs[item.id] = itemID
+
+            guard let client = jellyfinService.client,
+                  let jellyfinItem = try? await client.getItem(itemId: itemID)
+            else { continue }
+
+            states[item.id] = jellyfinItem.userData?.isFavorite == true
+        }
+
+        let currentIDs = Set(heroItems.map(\.id))
+        heroFavoriteItemIDs = itemIDs.filter { currentIDs.contains($0.key) }
+        heroFavoriteStates = states.filter { currentIDs.contains($0.key) }
+    }
+
+    @MainActor
+    private func resolveHeroFavoriteItemID(for item: SeerrMediaItem) async throws -> String? {
+        if let cached = heroFavoriteItemIDs[item.id] {
+            return cached
+        }
+
+        guard item.canResolveHeroFavorite else { return nil }
+        guard let itemID = try await jellyfinService.findItemId(
+            serviceUrl: item.mediaInfo?.serviceUrl,
+            tmdbId: item.tmdbId,
+            mediaType: item.mediaType,
+            title: item.title,
+            releaseYear: item.year.flatMap(Int.init)
+        ) else {
+            return nil
+        }
+
+        heroFavoriteItemIDs[item.id] = itemID
+        return itemID
     }
 
     private func backdropURL(for item: SeerrMediaItem) -> URL? {
         switch item {
         case .movie(let movie):
+            #if os(tvOS)
+            ImageURL.backdrop(movie.backdropPath, size: .original)
+            #else
             movie.backdropURL
+            #endif
         case .tv(let show):
+            #if os(tvOS)
+            ImageURL.backdrop(show.backdropPath, size: .original)
+            #else
             show.backdropURL
+            #endif
         case .person:
             nil
         }
     }
 
     private func heroImageURL(for item: SeerrMediaItem) -> URL? {
-        artworkByItemID[item.id]?.backdropURL ?? backdropURL(for: item) ?? item.posterURL
+        let url = artworkByItemID[item.id]?.backdropURL
+            ?? backdropURL(for: item)
+            ?? item.posterURL
+        #if os(tvOS)
+        // The TV hero fills the whole 1920pt canvas — always fetch TMDB art at
+        // original size, whichever source it resolved from.
+        return ImageURL.originalTMDBImageURL(url)
+        #else
+        return url
+        #endif
     }
 
     private func preloadHeroImages() async {
@@ -251,6 +637,9 @@ struct DiscoverHeroCarouselView: View {
     /// the user last had open.
     @MainActor
     private func restoreScrollPosition() {
+        #if os(tvOS)
+        return
+        #else
         guard let target = scrollTargetID,
               heroItems.contains(where: { $0.id == target }) else { return }
 
@@ -269,6 +658,7 @@ struct DiscoverHeroCarouselView: View {
                 try? await Task.sleep(for: .milliseconds(110))
             }
         }
+        #endif
     }
 
     @MainActor
@@ -288,14 +678,42 @@ struct DiscoverHeroCarouselView: View {
         guard heroItems.count > 1, !reduceMotion else { return }
 
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(7))
             guard !Task.isCancelled, isActive, scrollPhase == .idle else { continue }
 
-            let nextIndex = (activeIndex + 1) % heroItems.count
-            withAnimation(.smooth(duration: 0.55)) {
-                activeIndex = nextIndex
-                scrollTargetID = heroItems[nextIndex].id
-            }
+            moveCarousel(by: 1, wraps: true, resetsTimer: false)
+        }
+    }
+
+    @MainActor
+    private func moveCarousel(by offset: Int, wraps: Bool, resetsTimer: Bool) {
+        guard heroItems.count > 1 else { return }
+        if resetsTimer {
+            resetAutoAdvanceTimer()
+        }
+
+        let currentIndex = scrollTargetID.flatMap { id in
+            heroItems.firstIndex(where: { $0.id == id })
+        } ?? activeIndex
+        let proposedIndex = currentIndex + offset
+        let targetIndex: Int
+        if wraps {
+            targetIndex = (proposedIndex % heroItems.count + heroItems.count) % heroItems.count
+        } else {
+            targetIndex = min(max(proposedIndex, 0), heroItems.count - 1)
+        }
+
+        setCarouselIndex(targetIndex, currentIndex: currentIndex)
+    }
+
+    @MainActor
+    private func setCarouselIndex(_ targetIndex: Int, currentIndex: Int? = nil) {
+        guard heroItems.indices.contains(targetIndex) else { return }
+        let resolvedCurrentIndex = currentIndex ?? activeIndex
+        guard targetIndex != resolvedCurrentIndex || scrollTargetID != heroItems[targetIndex].id else { return }
+        withAnimation(.smooth(duration: 0.45)) {
+            activeIndex = targetIndex
+            scrollTargetID = heroItems[targetIndex].id
         }
     }
 
@@ -307,10 +725,32 @@ struct DiscoverHeroCarouselView: View {
         return components.joined(separator: ", ")
     }
 
+    private var heroCarouselFullBleed: Bool {
+        #if os(tvOS)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    private var heroButtonSpacing: CGFloat { 12 }
+
+    // Non-tvOS metrics; the tvOS row uses the shared TVHeroCapsuleLabel /
+    // TVHeroCircleIconLabel so it always matches the detail heroes 1:1.
+    private var heroButtonFont: Font { .subheadline.weight(.semibold) }
+    private var heroButtonHorizontalPadding: CGFloat { 22 }
+    private var heroButtonHeight: CGFloat { 42 }
+    private var heroSecondaryButtonIconFont: Font { .title3.weight(.semibold) }
+    private var heroSecondaryButtonSize: CGFloat { 44 }
+
     private var carouselHeight: CGFloat {
         #if os(macOS)
         guard containerWidth > 0 else { return 540 }
         return min(max(containerWidth * 0.48, 420), 640)
+        #elseif os(tvOS)
+        // tvOS canvas is 1920×1080; hero fills ~75% of screen height
+        guard containerWidth > 0 else { return 800 }
+        return min(max(containerWidth * 0.46, 600), 860)
         #else
         horizontalSizeClass == .compact ? 610 : 740
         #endif
@@ -318,6 +758,8 @@ struct DiscoverHeroCarouselView: View {
 
     private var heroContentAlignment: HorizontalAlignment {
         #if os(macOS)
+        .leading
+        #elseif os(tvOS)
         .leading
         #else
         .center
@@ -327,6 +769,8 @@ struct DiscoverHeroCarouselView: View {
     private var heroFrameAlignment: Alignment {
         #if os(macOS)
         .leading
+        #elseif os(tvOS)
+        .leading
         #else
         .center
         #endif
@@ -335,6 +779,8 @@ struct DiscoverHeroCarouselView: View {
     private var heroContentMaxWidth: CGFloat {
         #if os(macOS)
         500
+        #elseif os(tvOS)
+        900
         #else
         520
         #endif
@@ -342,7 +788,9 @@ struct DiscoverHeroCarouselView: View {
 
     private var heroTitleMaxWidth: CGFloat {
         #if os(macOS)
-        430
+        heroContentMaxWidth * 0.7
+        #elseif os(tvOS)
+        800
         #else
         430
         #endif
@@ -350,7 +798,9 @@ struct DiscoverHeroCarouselView: View {
 
     private var heroLogoMaxHeight: CGFloat {
         #if os(macOS)
-        104
+        73
+        #elseif os(tvOS)
+        180
         #else
         132
         #endif
@@ -359,6 +809,8 @@ struct DiscoverHeroCarouselView: View {
     private var heroHorizontalPadding: CGFloat {
         #if os(macOS)
         56
+        #elseif os(tvOS)
+        90
         #else
         28
         #endif
@@ -366,10 +818,25 @@ struct DiscoverHeroCarouselView: View {
 
     private var heroBottomPadding: CGFloat {
         #if os(macOS)
-        76
+        68
+        #elseif os(tvOS)
+        80
         #else
         58
         #endif
+    }
+}
+
+private extension SeerrMediaItem {
+    var canResolveHeroFavorite: Bool {
+        switch self {
+        case .movie(let movie):
+            movie.mediaInfo?.isAvailable == true
+        case .tv(let show):
+            show.mediaInfo?.hasPlayableTVContent == true
+        case .person:
+            false
+        }
     }
 }
 
@@ -378,3 +845,122 @@ private extension Array {
         indices.contains(index) ? self[index] : nil
     }
 }
+
+#if DEBUG
+#Preview("Discover Hero Carousel") {
+    @Previewable @State var activeIndex = 0
+    @Previewable @State var scrollTarget: String? = PreviewSupport.sampleItems.first?.id
+
+    NavigationStack {
+        ScrollView {
+            DiscoverHeroCarouselView(
+                items: PreviewSupport.sampleItems,
+                activeIndex: $activeIndex,
+                scrollTargetID: $scrollTarget
+            )
+        }
+        .ignoresSafeArea(edges: .top)
+        .background(Color.black)
+    }
+    .environment(PreviewSupport.jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+}
+
+#Preview("Discover Hero Carousel — Single Item") {
+    @Previewable @State var activeIndex = 0
+    @Previewable @State var scrollTarget: String? = nil
+
+    NavigationStack {
+        ScrollView {
+            DiscoverHeroCarouselView(
+                items: [PreviewSupport.movieItem()],
+                activeIndex: $activeIndex,
+                scrollTargetID: $scrollTarget
+            )
+        }
+        .ignoresSafeArea(edges: .top)
+        .background(Color.black)
+    }
+    .environment(PreviewSupport.jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+}
+
+#if os(tvOS)
+/// Static tvOS hero panel preview — bypasses the AppleTVCarousel GeometryReader
+/// so the layout and title overlay are always visible in Xcode previews.
+#Preview("Discover Hero Carousel — Static Panel (tvOS)") {
+    HeroCarouselStaticPreview()
+}
+
+private struct HeroCarouselStaticPreview: View {
+    private let item = PreviewSupport.movieItem()
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // Placeholder background (simulates artwork loading)
+            Rectangle()
+                .fill(.linearGradient(
+                    colors: [.indigo, .purple.opacity(0.8), .black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.28), .black.opacity(0.78)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            // Content overlay (mirrors bottomContent layout)
+            VStack(alignment: .leading, spacing: 10) {
+                HeroTitleArtworkView(
+                    title: item.title,
+                    logoURL: nil,
+                    maxWidth: 800,
+                    maxLogoHeight: 180,
+                    horizontalAlignment: .leading
+                )
+
+                HStack(spacing: 8) {
+                    Text(item.mediaType == "tv" ? "TV Show" : "Movie")
+                    if let year = item.year {
+                        Text("·")
+                        Text(year)
+                    }
+                    if let rating = item.voteAverage, rating > 0 {
+                        Text("·")
+                        Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.white.opacity(0.82))
+
+                Text("A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy.")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+
+                HStack(spacing: 12) {
+                    TVHeroCapsuleLabel(title: "Details", systemImage: "info.circle.fill")
+                    TVHeroCircleIconLabel(systemImage: "plus")
+                    TVHeroCircleIconLabel(systemImage: "chevron.right")
+                }
+                .padding(.top, 4)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(.horizontal, 90)
+            .padding(.bottom, 80)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 800)
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
+    }
+}
+#endif
+#endif

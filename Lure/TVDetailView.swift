@@ -1,5 +1,151 @@
 import SwiftUI
 
+// MARK: - Previews
+
+#if DEBUG
+/// A lightweight stand-in for `TVDetailView` that renders the full scroll layout
+/// without requiring a live VM or network call. Mirrors the same hero + cards structure
+/// with the canned `SeerrTVDetail.previewShow` fixture.
+private struct TVDetailPreviewSurface: View {
+    let show: SeerrTVDetail
+
+    @State private var heroVerticalOffset: CGFloat = 0
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: previewStackAlignment, spacing: 20) {
+                heroSection
+            }
+        }
+        #if os(tvOS)
+        .ignoresSafeArea(edges: [.top, .horizontal])
+        #else
+        .ignoresSafeArea(edges: .top)
+        #endif
+        .background { artBackground }
+        .environment(\.colorScheme, .dark)
+        .onScrollGeometryChange(for: CGFloat.self) {
+            $0.contentOffset.y + $0.contentInsets.top
+        } action: { _, newValue in
+            heroVerticalOffset = max(-newValue, 0)
+        }
+    }
+
+    private var previewStackAlignment: HorizontalAlignment {
+        #if os(tvOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var previewContentAlignment: HorizontalAlignment {
+        #if os(tvOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var previewFrameAlignment: Alignment {
+        #if os(tvOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var previewContentMaxWidth: CGFloat {
+        #if os(tvOS)
+        .infinity
+        #else
+        720
+        #endif
+    }
+
+    private var previewHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        90
+        #else
+        16
+        #endif
+    }
+
+    private var heroSection: some View {
+        DetailPosterHeroView(
+            title: show.displayTitle,
+            artworkURL: nil,
+            logoURL: nil,
+            mediaTypeLabel: "TV Show",
+            year: show.year,
+            runtime: heroMetadataDetail(for: show),
+            rating: nil,
+            overview: show.overview,
+            badges: showBadges,
+            genres: show.genres?.compactMap(\.name) ?? [],
+            ratingItems: PreviewSupport.sampleRatingItems,
+            verticalOffset: heroVerticalOffset,
+            primaryAction: show.hasPlayableContent
+                ? PreviewSupport.playAction
+                : PreviewSupport.requestAction,
+            secondaryAction: PreviewSupport.addToFavoritesAction
+        )
+    }
+
+    private var showBadges: [DetailBadge] {
+        var badges: [DetailBadge] = []
+        if let rating = show.contentRatingText {
+            badges.append(DetailBadge(icon: "shield", label: rating, color: .yellow))
+        }
+        return badges
+    }
+
+    private func heroMetadataDetail(for show: SeerrTVDetail) -> String? {
+        var components: [String] = []
+        if let seasons = show.numberOfSeasons {
+            components.append("\(seasons) \(seasons == 1 ? "Season" : "Seasons")")
+        }
+        if let status = shortShowStatus(show.status) {
+            components.append(status)
+        }
+        return components.isEmpty ? nil : components.joined(separator: " · ")
+    }
+
+    private func shortShowStatus(_ status: String?) -> String? {
+        switch status {
+        case "Returning Series": return "Ongoing"
+        case "Planned": return "Planned"
+        case "Ended": return "Ended"
+        case "Canceled": return "Canceled"
+        default: return status
+        }
+    }
+
+    private var artBackground: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [.black, .purple.opacity(0.45), .black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .ignoresSafeArea()
+    }
+}
+
+#Preview("TV Detail — Partially Available") {
+    TVDetailPreviewSurface(show: .previewShow)
+}
+
+#Preview("TV Detail — Loading") {
+    ProgressView("Loading…")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
+}
+#endif
+
 struct TVDetailView: View {
     let tmdbId: Int
     let apiClient: SeerrAPIClient
@@ -56,7 +202,7 @@ struct TVDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.show?.id)
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
-        .navigationTitle(showNavTitle ? (vm.show?.displayTitle ?? initialTitle ?? "TV Show") : "")
+        .lureNavigationTitle(showNavTitle ? (vm.show?.displayTitle ?? initialTitle ?? "TV Show") : "")
         .onPreferenceChange(HeroTitleBottomKey.self) { maxY in
             // Ignore the default sentinel emitted when the hero is recycled off-screen
             // (LazyVStack) so the title stays put once we've scrolled well past it.
@@ -70,6 +216,9 @@ struct TVDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
 #endif
+        #if !os(tvOS)
+        // tvOS toolbar items can't receive Siri Remote focus; Report an Issue
+        // lives inline at the bottom of the content there instead.
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Menu {
@@ -84,6 +233,7 @@ struct TVDetailView: View {
                 }
             }
         }
+        #endif
         .sheet(isPresented: $showReportSheet) {
             ReportIssueSheet(
                 mediaId: vm.show?.mediaInfo?.id,
@@ -106,6 +256,20 @@ struct TVDetailView: View {
                 apiClient: apiClient
             )
         }
+        #if os(tvOS)
+        // Cast opens via value-based push (NavigationLink in castCard). Using
+        // navigationDestination(item:) here corrupts the stack order when the
+        // pushed person view itself pushes value-based MediaDestinations.
+        .navigationDestination(for: CastPersonRoute.self) { route in
+            CastPersonSheet(
+                personId: route.personId,
+                fallbackName: route.fallbackName,
+                fallbackProfileURL: route.fallbackProfileURL,
+                apiClient: apiClient,
+                presentation: .detail
+            )
+        }
+        #endif
         .task { await vm.load() }
         .onChange(of: vm.requestSuccess) { _, success in
             if success {
@@ -240,10 +404,17 @@ struct TVDetailView: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        #if os(tvOS)
+        .ignoresSafeArea(edges: [.top, .horizontal])
+        #else
+        .ignoresSafeArea(edges: .top)
+        #endif
 #if os(iOS)
         .scrollEdgeEffectStyle(.soft, for: .all)
 #endif
-        .ignoresSafeArea(edges: .top)
+#if os(macOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
         } action: { _, newValue in
@@ -256,6 +427,8 @@ struct TVDetailView: View {
     private var detailStackAlignment: HorizontalAlignment {
         #if os(macOS)
         .leading
+        #elseif os(tvOS)
+        .leading
         #else
         .center
         #endif
@@ -263,6 +436,8 @@ struct TVDetailView: View {
 
     private var detailContentHorizontalAlignment: HorizontalAlignment {
         #if os(macOS)
+        .leading
+        #elseif os(tvOS)
         .leading
         #else
         .center
@@ -272,6 +447,8 @@ struct TVDetailView: View {
     private var detailFrameAlignment: Alignment {
         #if os(macOS)
         .leading
+        #elseif os(tvOS)
+        .leading
         #else
         .center
         #endif
@@ -279,7 +456,9 @@ struct TVDetailView: View {
 
     private var detailContentMaxWidth: CGFloat {
         #if os(macOS)
-        1120
+        .infinity
+        #elseif os(tvOS)
+        .infinity
         #else
         720
         #endif
@@ -288,6 +467,9 @@ struct TVDetailView: View {
     private var detailContentHorizontalPadding: CGFloat {
         #if os(macOS)
         44
+        #elseif os(tvOS)
+        // Match the tvOS safe area (~90pt)
+        90
         #else
         16
         #endif
@@ -302,7 +484,7 @@ struct TVDetailView: View {
             logoURL: vm.heroArtwork?.logoURL,
             mediaTypeLabel: "TV Show",
             year: show.year,
-            runtime: nil,
+            runtime: heroMetadataDetail(for: show),
             rating: nil,
             overview: show.overview,
             badges: showBadges(show),
@@ -380,10 +562,18 @@ struct TVDetailView: View {
         if let rating = show.contentRatingText {
             badges.append(DetailBadge(icon: "shield", label: rating, color: .yellow))
         }
-        if let status = shortShowStatus(show.status) {
-            badges.append(DetailBadge(icon: "circle.fill", label: status, color: .secondary))
-        }
         return badges
+    }
+
+    private func heroMetadataDetail(for show: SeerrTVDetail) -> String? {
+        var components: [String] = []
+        if let seasons = show.numberOfSeasons {
+            components.append("\(seasons) \(seasons == 1 ? "Season" : "Seasons")")
+        }
+        if let status = shortShowStatus(show.status) {
+            components.append(status)
+        }
+        return components.isEmpty ? nil : components.joined(separator: " · ")
     }
 
     private func heroRatingItems(for show: SeerrTVDetail) -> [DetailHeroRatingItem] {
@@ -419,8 +609,6 @@ struct TVDetailView: View {
             )
         }
 
-        statsCard(show)
-
         if let providers = show.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -443,7 +631,34 @@ struct TVDetailView: View {
             MediaSliderView(title: "You Might Also Like", items: vm.recommendations, apiClient: apiClient)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
+
+        #if os(tvOS)
+        reportIssueButton
+        #endif
     }
+
+    #if os(tvOS)
+    /// Inline replacement for the toolbar's Report an Issue menu, which the
+    /// tvOS focus engine can't reach.
+    private var reportIssueButton: some View {
+        HStack {
+            Button {
+                showReportSheet = true
+            } label: {
+                Label("Report an Issue", systemImage: "exclamationmark.triangle")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .frame(height: 52)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+            .buttonStyle(TVHeroActionButtonStyle())
+
+            Spacer()
+        }
+        .padding(.top, 8)
+    }
+    #endif
 
     // MARK: - Request Card
 
@@ -648,32 +863,6 @@ struct TVDetailView: View {
         }
     }
 
-    // MARK: - Stats Card
-
-    private func statsCard(_ show: SeerrTVDetail) -> some View {
-        HStack(spacing: 0) {
-            if let year = show.year {
-                statCell(value: year, label: "Year")
-                cardDivider
-            }
-            if let seasons = show.numberOfSeasons {
-                statCell(value: "\(seasons)", label: seasons == 1 ? "Season" : "Seasons")
-                cardDivider
-            }
-            statCell(
-                value: shortShowStatus(show.status)
-                    ?? show.mediaInfo?.requestStatusLabel
-                    ?? (show.mediaInfo?.mediaStatus?.isUserVisible == true
-                        ? show.mediaInfo?.mediaStatus?.displayName ?? "Not Requested"
-                        : "Not Requested"),
-                label: "Series Status"
-            )
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-    }
-
     // MARK: - Watch Providers Card
 
     private func namedProviders(_ providers: SeerrWatchProviders) -> [SeerrWatchProvider]? {
@@ -732,46 +921,92 @@ struct TVDetailView: View {
     // MARK: - Cast Card
 
     private func castCard(_ cast: [SeerrCastMember]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        #if os(tvOS)
+        let avatarSize: CGFloat = 150
+        let cellWidth: CGFloat = 180
+        let cellHeight: CGFloat = 280
+        let nameTextHeight: CGFloat = 58
+        let roleTextHeight: CGFloat = 54
+        let castSpacing: CGFloat = 36
+        let nameFont = Font.body.weight(.semibold)
+        let roleFont = Font.callout
+        #else
+        let avatarSize: CGFloat = 56
+        let cellWidth: CGFloat = 70
+        let cellHeight: CGFloat = 132
+        let nameTextHeight: CGFloat = 30
+        let roleTextHeight: CGFloat = 30
+        let castSpacing: CGFloat = 12
+        let nameFont = Font.caption2
+        let roleFont = Font.caption2
+        #endif
+
+        return VStack(alignment: .leading, spacing: 10) {
             sectionLabel("Cast", icon: "person.2")
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(spacing: castSpacing) {
                     ForEach(cast) { member in
-                        Button {
-                            selectedCastMember = member
-                        } label: {
-                            VStack(spacing: 4) {
-                                AsyncImage(url: member.profileURL) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Circle().fill(.quaternary)
-                                        .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
-                                }
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-
-                                Text(member.name ?? "")
-                                    .font(.caption2)
-                                    .lineLimit(1)
-                                    .frame(width: 70)
-                                Text(member.character ?? "")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .frame(width: 70)
+                        let cell = VStack(spacing: 4) {
+                            AsyncImage(url: member.profileURL) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Circle().fill(.quaternary)
+                                    .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
                             }
+                            .frame(width: avatarSize, height: avatarSize)
+                            .clipShape(Circle())
+
+                            Text(member.name ?? "")
+                                .font(nameFont)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: cellWidth, height: nameTextHeight, alignment: .top)
+                            Text(member.character ?? "")
+                                .font(roleFont)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: cellWidth, height: roleTextHeight, alignment: .top)
+                        }
+                        .frame(width: cellWidth, height: cellHeight, alignment: .top)
+                        .contentShape(Rectangle())
+
+                        #if os(tvOS)
+                        // Value-based push — keeps the navigation stack ordering
+                        // sane when the person view pushes further destinations.
+                        NavigationLink(value: CastPersonRoute(member: member)) {
+                            cell
+                        }
+                        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.08))
+                        #else
+                        Button {
+                            openCastMember(member)
+                        } label: {
+                            cell
                         }
                         .buttonStyle(.plain)
+                        #endif
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
             }
+            #if os(tvOS)
+            .clipShape(Rectangle())
+            #else
             .horizontalSoftEdges()
+            #endif
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        #if os(tvOS)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        #endif
+    }
+
+    private func openCastMember(_ member: SeerrCastMember) {
+        selectedCastMember = member
     }
 
     // MARK: - Info Rows Data
@@ -804,31 +1039,37 @@ struct TVDetailView: View {
             .foregroundStyle(.white)
     }
 
-    private var cardDivider: some View {
-        Rectangle().fill(.separator).frame(width: 0.5, height: 26)
-    }
-
-    private func statCell(value: String, label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     private func rowsCard(header: String, icon: String, rows: [(String, String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        #if os(tvOS)
+        let horizontalPadding: CGFloat = 28
+        let headerTopPadding: CGFloat = 22
+        let headerBottomPadding: CGFloat = 12
+        let rowVerticalPadding: CGFloat = 14
+        let rowSpacing: CGFloat = 14
+        let iconWidth: CGFloat = 24
+        let dividerLeadingPadding: CGFloat = 66
+        #else
+        let horizontalPadding: CGFloat = 16
+        let headerTopPadding: CGFloat = 14
+        let headerBottomPadding: CGFloat = 8
+        let rowVerticalPadding: CGFloat = 11
+        let rowSpacing: CGFloat = 10
+        let iconWidth: CGFloat = 16
+        let dividerLeadingPadding: CGFloat = 42
+        #endif
+
+        return VStack(alignment: .leading, spacing: 0) {
             sectionLabel(header, icon: icon)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, headerTopPadding)
+                .padding(.bottom, headerBottomPadding)
 
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                HStack(spacing: 10) {
+                HStack(spacing: rowSpacing) {
                     Image(systemName: row.0)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, alignment: .center)
+                        .frame(width: iconWidth, alignment: .center)
                     Text(row.1)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -838,11 +1079,11 @@ struct TVDetailView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, rowVerticalPadding)
 
                 if index < rows.count - 1 {
-                    Divider().padding(.leading, 42)
+                    Divider().padding(.leading, dividerLeadingPadding)
                 }
             }
 
@@ -918,7 +1159,7 @@ struct TVRequestSheet: View {
                     }
                 }
             }
-            .navigationTitle("Request Seasons")
+            .lureNavigationTitle("Request Seasons")
 #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -957,3 +1198,14 @@ struct TVRequestSheet: View {
         .buttonStyle(.plain)
     }
 }
+
+#if DEBUG
+#Preview("TV Request Sheet") {
+    let vm = TVDetailViewModel(
+        previewShow: .previewShow,
+        apiClient: PreviewSupport.apiClient,
+        jellyfinService: PreviewSupport.jellyfinService
+    )
+    TVRequestSheet(viewModel: vm)
+}
+#endif

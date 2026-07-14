@@ -46,6 +46,32 @@ struct AppSheetShell<Content: View>: View {
     var body: some View {
         NavigationStack {
             content
+                #if os(tvOS)
+                // On tvOS sheets must have an opaque background so the underlying
+                // screen's NavigationStack titles never bleed through the sheet.
+                .background(Color.black.opacity(0.95))
+                .navigationTitle(title)
+                .toolbar {
+                    if showsCancel {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(cancelTitle) { dismiss() }
+                                .buttonStyle(.plain)
+                        }
+                    }
+
+                    if let confirmTitle, let onConfirm {
+                        ToolbarItem(placement: .confirmationAction) {
+                            if isConfirmLoading {
+                                ProgressView()
+                            } else {
+                                Button(confirmTitle, action: onConfirm)
+                                    .disabled(isConfirmDisabled)
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                #else
                 .navigationTitle(title)
                 .appSheetNavigationSubtitle(subtitle)
                 #if os(iOS)
@@ -69,11 +95,14 @@ struct AppSheetShell<Content: View>: View {
                         }
                     }
                 }
+                #endif
         }
         .presentationDetents(detents)
         .presentationDragIndicator(dragIndicator)
         #if os(macOS)
         .frame(minWidth: 420, idealWidth: 460, maxWidth: 540)
+        #elseif os(tvOS)
+        .frame(minWidth: 1100, idealWidth: 1200, maxWidth: 1300, minHeight: 700)
         #endif
     }
 }

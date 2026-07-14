@@ -29,7 +29,7 @@ struct SearchGenreResultsView: View {
                 }
             }
         }
-        .navigationTitle(destination.title)
+        .lureNavigationTitle(destination.title)
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif

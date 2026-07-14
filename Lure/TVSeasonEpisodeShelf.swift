@@ -9,7 +9,14 @@ struct TVSeasonEpisodeShelf: View {
 
     @State private var selectedSeasonNumber: Int
     @State private var jellyfinEpisodesBySeasonNumber: [Int: [JellyfinItem]] = [:]
-    private let horizontalBleed: CGFloat = 16
+
+    private var horizontalBleed: CGFloat {
+        #if os(tvOS)
+        0
+        #else
+        16
+        #endif
+    }
 
     init(
         show: SeerrTVDetail,
@@ -45,11 +52,11 @@ struct TVSeasonEpisodeShelf: View {
 
     var body: some View {
         if let selectedSeason, !episodeNumbers(for: selectedSeason).isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: shelfSpacing) {
                 seasonPicker
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 14) {
+                    LazyHStack(alignment: .top, spacing: cardSpacing) {
                         ForEach(episodeNumbers(for: selectedSeason), id: \.self) { episodeNumber in
                             TVSeasonEpisodeCard(
                                 show: show,
@@ -64,8 +71,16 @@ struct TVSeasonEpisodeShelf: View {
                         }
                     }
                     .padding(.horizontal, horizontalBleed)
+                    #if os(tvOS)
+                    // Extra padding so focused cards don't clip against the scroll edge
+                    .padding(.vertical, 20)
+                    #endif
                 }
+                #if os(tvOS)
+                .scrollClipDisabled()
+                #else
                 .padding(.horizontal, -horizontalBleed)
+                #endif
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .onAppear(perform: validateSelection)
@@ -78,7 +93,27 @@ struct TVSeasonEpisodeShelf: View {
         }
     }
 
+    private var shelfSpacing: CGFloat {
+        #if os(tvOS)
+        20
+        #else
+        12
+        #endif
+    }
+
+    private var cardSpacing: CGFloat {
+        #if os(tvOS)
+        40
+        #else
+        14
+        #endif
+    }
+
     private var seasonPicker: some View {
+        defaultSeasonPicker
+    }
+
+    private var defaultSeasonPicker: some View {
         Picker(selection: $selectedSeasonNumber) {
             ForEach(seasons) { season in
                 Text(seasonTitle(season)).tag(season.seasonNumber)
@@ -91,6 +126,9 @@ struct TVSeasonEpisodeShelf: View {
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundStyle(.primary)
+                #if os(tvOS)
+                Spacer(minLength: 24)
+                #endif
                 Image(systemName: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
@@ -181,8 +219,22 @@ private struct TVSeasonEpisodeCard: View {
     let onOpenEpisodeDetail: (JellyfinItem?) -> Void
     @State private var isMarkingWatched = false
 
-    private static let cardWidth: CGFloat = 320
-    private static let cardHeight: CGFloat = 300
+    private static var cardWidth: CGFloat {
+        #if os(tvOS)
+        460
+        #else
+        320
+        #endif
+    }
+
+    private static var cardHeight: CGFloat {
+        #if os(tvOS)
+        350
+        #else
+        300
+        #endif
+    }
+
     private static let cornerRadius: CGFloat = 24
 
     private var imageURL: URL? {
@@ -197,6 +249,33 @@ private struct TVSeasonEpisodeCard: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        tvBody
+        #else
+        defaultBody
+        #endif
+    }
+
+    #if os(tvOS)
+    // A Menu with a primary action gives tvOS native Select-versus-long-press
+    // behavior: Select opens details, while holding Select reveals episode actions.
+    private var tvBody: some View {
+        Menu {
+            episodeMenuCommands
+        } label: {
+            cardVisual
+        } primaryAction: {
+            onOpenEpisodeDetail(jellyfinEpisode)
+        }
+        .menuStyle(.button)
+        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.04))
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint("Opens episode details. Long-press for playback and more actions.")
+        .frame(width: Self.cardWidth, height: Self.cardHeight)
+    }
+    #endif
+
+    private var defaultBody: some View {
         ZStack(alignment: .bottomTrailing) {
             cardVisual
                 .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
@@ -265,17 +344,20 @@ private struct TVSeasonEpisodeCard: View {
                 Text(episodeOverview)
                     .font(.body)
                     .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(3)
+                    .lineLimit(episodeOverviewLineLimit)
                     .lineSpacing(2)
                     .minimumScaleFactor(0.86)
             }
 
             HStack(alignment: .center, spacing: 8) {
                 if let durationText {
-                    Label(durationText, systemImage: "play.fill")
-                        .labelStyle(.titleAndIcon)
-                        .font(.title3.bold())
-                        .foregroundStyle(.white.opacity(0.84))
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                            .font(.caption.weight(.bold))
+                        Text(durationText)
+                            .font(.callout.weight(.semibold))
+                    }
+                    .foregroundStyle(.white.opacity(0.82))
                 }
 
                 Spacer(minLength: 16)
@@ -286,27 +368,17 @@ private struct TVSeasonEpisodeCard: View {
         .padding(.trailing, 34)
     }
 
+    private var episodeOverviewLineLimit: Int {
+        #if os(tvOS)
+        4
+        #else
+        3
+        #endif
+    }
+
     private var episodeMenu: some View {
         Menu {
-            Button("Play episode", systemImage: "play.fill") {
-                if let jellyfinEpisode {
-                    onPlay(jellyfinEpisode)
-                }
-            }
-            .disabled(jellyfinEpisode == nil)
-
-            Button("Go to episode", systemImage: "info.circle") {
-                onOpenEpisodeDetail(jellyfinEpisode)
-            }
-            .disabled(jellyfinEpisode?.id == nil)
-
-            Button("Mark as watched", systemImage: "checkmark.circle") {
-                markAsWatched()
-            }
-            .disabled(jellyfinEpisode?.id == nil || isMarkingWatched)
-
-            Button("Download", systemImage: "arrow.down.circle") {}
-                .disabled(true)
+            episodeMenuCommands
         } label: {
             Label("Episode Options", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)
@@ -319,6 +391,31 @@ private struct TVSeasonEpisodeCard: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .contentShape(Circle())
+    }
+
+    @ViewBuilder
+    private var episodeMenuCommands: some View {
+        Button("Play episode", systemImage: "play.fill") {
+            if let jellyfinEpisode {
+                onPlay(jellyfinEpisode)
+            }
+        }
+        .disabled(jellyfinEpisode == nil)
+
+        #if !os(tvOS)
+        Button("Go to episode", systemImage: "info.circle") {
+            onOpenEpisodeDetail(jellyfinEpisode)
+        }
+        .disabled(jellyfinEpisode?.id == nil)
+        #endif
+
+        Button("Mark as watched", systemImage: "checkmark.circle") {
+            markAsWatched()
+        }
+        .disabled(jellyfinEpisode?.id == nil || isMarkingWatched)
+
+        Button("Download", systemImage: "arrow.down.circle") {}
+            .disabled(true)
     }
 
     private func markAsWatched() {

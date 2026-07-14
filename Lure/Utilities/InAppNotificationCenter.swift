@@ -13,12 +13,16 @@ final class InAppNotificationCenter {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             currentBanner = item
         }
+        // tvOS presents items as alerts (see `lureBannerAlertHost`); those stay
+        // up until the user presses OK, so no auto-dismiss there.
+        #if !os(tvOS)
         let id = item.id
         dismissTask = Task { [weak self] in
             try? await Task.sleep(for: Self.autoDismissDelay)
             guard let self, !Task.isCancelled, currentBanner?.id == id else { return }
             dismiss()
         }
+        #endif
     }
 
     func dismiss() {
@@ -119,3 +123,89 @@ struct LureNotificationBanner: View {
         }
     }
 }
+
+struct LureNotificationOverlay: View {
+    let item: LureBannerItem
+    let onDismiss: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            #if os(macOS)
+            ZStack(alignment: .bottom) {
+                Color.clear
+                    .allowsHitTesting(false)
+
+                LureNotificationBanner(item: item, onDismiss: onDismiss)
+                    .frame(maxWidth: max(360, proxy.size.width * 0.6))
+                    .padding(.bottom, 18)
+            }
+            #else
+            ZStack(alignment: .top) {
+                Color.clear
+                    .allowsHitTesting(false)
+
+                LureNotificationBanner(item: item, onDismiss: onDismiss)
+                    .padding(.top, 8)
+            }
+            #endif
+        }
+        .ignoresSafeArea()
+    }
+}
+
+extension AnyTransition {
+    static var lureNotificationBanner: AnyTransition {
+        #if os(macOS)
+        .move(edge: .bottom).combined(with: .opacity)
+        #else
+        .move(edge: .top).combined(with: .opacity)
+        #endif
+    }
+}
+
+extension View {
+    /// tvOS presentation for the notification center: a standard alert with an
+    /// OK button. Floating banners can't receive Siri Remote focus, so on tvOS
+    /// they'd be informational-only and unclearable. No-op on other platforms,
+    /// where hosts render `LureNotificationOverlay` banners instead.
+    @ViewBuilder
+    func lureBannerAlertHost(_ center: InAppNotificationCenter?) -> some View {
+        #if os(tvOS)
+        alert(
+            center?.currentBanner?.title ?? "",
+            isPresented: Binding(
+                get: { center?.currentBanner != nil },
+                set: { isPresented in
+                    if !isPresented { center?.dismiss() }
+                }
+            )
+        ) {
+            Button("OK") { center?.dismiss() }
+        } message: {
+            if let message = center?.currentBanner?.message {
+                Text(message)
+            }
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG
+#Preview("Notification Overlay") {
+    ZStack {
+        Color.gray.opacity(0.16)
+            .ignoresSafeArea()
+
+        LureNotificationOverlay(
+            item: LureBannerItem(
+                title: "Request Failed",
+                message: "Network error: cancelled",
+                style: .error
+            )
+        ) {}
+    }
+    .frame(width: 1280, height: 720)
+}
+#endif

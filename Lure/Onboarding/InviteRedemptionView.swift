@@ -116,6 +116,62 @@ struct InviteRedemptionView: View {
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #elseif os(tvOS)
+        OnboardingTVFormContent(width: 1040) {
+            invitedHeader
+
+            OnboardingTVSection("This invite will set up") {
+                VStack(alignment: .leading, spacing: 16) {
+                    serverRow(.seerr, url: invite.seerrURL)
+                    if let jellyfinURL = invite.jellyfinURL, invite.hasJellyfin {
+                        Divider()
+                        serverRow(.jellyfin, url: jellyfinURL)
+                    }
+                }
+            }
+
+            OnboardingTVSection("Sign In") {
+                VStack(spacing: 16) {
+                    TextField("Username", text: $viewModel.username)
+                        .autocorrectionDisabled()
+                    SecureField("Password", text: $viewModel.password)
+                }
+                .font(.title3)
+            }
+
+            if invite.hasJellyfin {
+                OnboardingTVSection("Jellyfin") {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Toggle("Use the same login for Jellyfin", isOn: $viewModel.useSameLoginForJellyfin)
+                            .font(.title3)
+
+                        if !viewModel.useSameLoginForJellyfin {
+                            VStack(spacing: 16) {
+                                TextField("Jellyfin Username", text: $viewModel.jellyfinUsername)
+                                    .autocorrectionDisabled()
+                                SecureField("Jellyfin Password", text: $viewModel.jellyfinPassword)
+                            }
+                            .font(.title3)
+                        }
+
+                        Text("Most setups use one account for both. Turn this off if your Jellyfin sign-in is different.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            OnboardingTVValidationError(error: viewModel.error)
+
+            OnboardingTVPrimaryButton(isDisabled: !viewModel.canSubmit) {
+                Task { await submit() }
+            } label: {
+                signInLabel
+            }
+        }
+        .padding(.bottom, 120)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         #else
             Form {
                 Section {
@@ -181,19 +237,43 @@ struct InviteRedemptionView: View {
     private var invitedHeader: some View {
         VStack(spacing: 10) {
             Image(systemName: "envelope.open.fill")
-                .font(.system(size: 44))
+                .font(invitedIconFont)
                 .foregroundStyle(.tint)
             Text(invite.displayName ?? "Welcome to Lure")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(invitedTitleFont)
+                .bold()
                 .multilineTextAlignment(.center)
             Text("You've been invited. Sign in with the username and password you were given to finish setup.")
-                .font(.subheadline)
+                .font(invitedSubtitleFont)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
+    }
+
+    private var invitedIconFont: Font {
+        #if os(tvOS)
+        .system(size: 72, weight: .semibold)
+        #else
+        .system(size: 44)
+        #endif
+    }
+
+    private var invitedTitleFont: Font {
+        #if os(tvOS)
+        .system(size: 48, weight: .bold)
+        #else
+        .title2
+        #endif
+    }
+
+    private var invitedSubtitleFont: Font {
+        #if os(tvOS)
+        .title3
+        #else
+        .subheadline
+        #endif
     }
 
     private var signInLabel: some View {
@@ -228,15 +308,16 @@ struct InviteRedemptionView: View {
     private func serverRow(_ identity: LureServiceIdentity, url: String) -> some View {
         HStack(spacing: 14) {
             Image(systemName: identity.systemImage)
-                .font(.title3)
+                .font(serverIconFont)
                 .foregroundStyle(identity.brandColor)
-                .frame(width: 30)
+                .frame(width: serverIconWidth)
             VStack(alignment: .leading, spacing: 2) {
                 Text(identity.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(serverTitleFont)
                 Text(url)
-                    #if os(macOS)
+                    #if os(tvOS)
+                    .font(.body)
+                    #elseif os(macOS)
                     .font(.caption)
                     #else
                     .font(.caption2)
@@ -246,6 +327,30 @@ struct InviteRedemptionView: View {
                     .truncationMode(.middle)
             }
         }
+    }
+
+    private var serverIconFont: Font {
+        #if os(tvOS)
+        .system(size: 38, weight: .semibold)
+        #else
+        .title3
+        #endif
+    }
+
+    private var serverIconWidth: CGFloat {
+        #if os(tvOS)
+        56
+        #else
+        30
+        #endif
+    }
+
+    private var serverTitleFont: Font {
+        #if os(tvOS)
+        .title3.weight(.semibold)
+        #else
+        .subheadline.weight(.semibold)
+        #endif
     }
 
     private func submit() async {

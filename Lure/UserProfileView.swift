@@ -17,7 +17,7 @@ struct UserProfileView: View {
                 ProgressView()
             }
         }
-        .navigationTitle("Profile")
+        .lureNavigationTitle("Profile")
         .task {
             if viewModel == nil {
                 let vm = UserProfileViewModel(apiClient: apiClient)

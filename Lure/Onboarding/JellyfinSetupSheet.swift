@@ -24,6 +24,10 @@ struct JellyfinSetupSheet: View {
                 onComplete: onComplete
             )
         }
+        #elseif os(tvOS)
+        AppSheetShell(title: "Add Jellyfin") {
+            JellyfinConnectionForm(viewModel: viewModel, onComplete: onComplete)
+        }
         #else
         AppSheetShell(
             title: "Add Jellyfin",
@@ -84,6 +88,35 @@ private struct JellyfinConnectionForm: View {
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!viewModel.canConnect)
+                }
+            }
+        }
+        .tint(LureServiceIdentity.jellyfin.brandColor)
+        #elseif os(tvOS)
+        OnboardingTVFormContent {
+            Text("Connect to your Jellyfin server to watch your library directly in Lure. This is optional — you can add it later.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            OnboardingTVFieldGroup("Server") {
+                ServerURLField(
+                    url: $viewModel.hostURL,
+                    title: "Jellyfin URL (e.g. https://watch.example.com)"
+                )
+            }
+
+            OnboardingTVFieldGroup("Credentials") {
+                TextField("Username", text: $viewModel.username)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $viewModel.password)
+            }
+
+            OnboardingTVValidationError(error: viewModel.error)
+
+            if showsSubmitButton {
+                OnboardingTVPrimaryButton(isDisabled: !viewModel.canConnect, action: submit) {
+                    submitLabel
                 }
             }
         }

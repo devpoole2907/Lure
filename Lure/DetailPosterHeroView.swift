@@ -28,6 +28,9 @@ struct DetailPosterHeroView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isOverviewExpanded = false
     @State private var containerWidth: CGFloat = 0
+    #if os(tvOS)
+    @FocusState private var isPrimaryActionFocused: Bool
+    #endif
 
     var body: some View {
         GeometryReader { proxy in
@@ -45,6 +48,12 @@ struct DetailPosterHeroView: View {
         }
         .frame(height: carouselHeight + verticalOffset)
         .offset(y: -verticalOffset)
+        #if os(tvOS)
+        .ignoresSafeArea(edges: .horizontal)
+        .onAppear {
+            isPrimaryActionFocused = true
+        }
+        #endif
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { _, width in
@@ -53,7 +62,7 @@ struct DetailPosterHeroView: View {
     }
 
     private var heroImage: some View {
-        CachedRemoteImage(url: artworkURL, contentMode: .fill) {
+        CachedRemoteImage(url: resolvedArtworkURL, contentMode: .fill) {
             ZStack {
                 Rectangle()
                     .fill(.linearGradient(
@@ -66,6 +75,14 @@ struct DetailPosterHeroView: View {
                     .scaleEffect(1.2)
             }
         }
+    }
+
+    private var resolvedArtworkURL: URL? {
+        #if os(tvOS)
+        ImageURL.originalTMDBImageURL(artworkURL)
+        #else
+        artworkURL
+        #endif
     }
 
     private var heroVisualLayer: some View {
@@ -129,7 +146,32 @@ struct DetailPosterHeroView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: heroActionSpacing) {
+            #if os(tvOS)
+            // tvOS: style the button with a custom focus-scale effect so the
+            // already-drawn white capsule doesn't get wrapped in a second card plate.
+            Button(action: primaryAction.action) {
+                TVHeroCapsuleLabel(title: primaryAction.title, systemImage: primaryAction.systemImage)
+            }
+            .buttonStyle(TVHeroActionButtonStyle())
+            .focused($isPrimaryActionFocused)
+            .disabled(!primaryAction.isEnabled)
+            .opacity(primaryAction.isEnabled ? 1 : 0.55)
+
+            if let secondaryAction {
+                Button(action: secondaryAction.action) {
+                    TVHeroCircleIconLabel(
+                        systemImage: secondaryAction.systemImage,
+                        isHighlighted: secondaryAction.isHighlighted
+                    )
+                }
+                .buttonStyle(TVHeroActionButtonStyle())
+                .disabled(!secondaryAction.isEnabled)
+                .opacity(secondaryAction.isEnabled || secondaryAction.isHighlighted ? 1 : 0.45)
+                .accessibilityLabel(secondaryAction.title)
+                .animation(.spring(response: 0.3, dampingFraction: 0.72), value: secondaryAction.isHighlighted)
+            }
+            #else
             Button(action: primaryAction.action) {
                 Label(primaryAction.title, systemImage: primaryAction.systemImage)
                     .font(.subheadline.weight(.semibold))
@@ -169,20 +211,43 @@ struct DetailPosterHeroView: View {
                 .accessibilityLabel(secondaryAction.title)
                 .animation(.spring(response: 0.3, dampingFraction: 0.72), value: secondaryAction.isHighlighted)
             }
+            #endif
         }
         .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
+    }
+
+    private var heroActionSpacing: CGFloat {
+        #if os(tvOS)
+        16
+        #else
+        14
+        #endif
     }
 
     @ViewBuilder
     private var overviewSection: some View {
         if let overviewText {
             VStack(alignment: .leading, spacing: 5) {
+                #if os(tvOS)
+                Text(overviewText)
+                    .font(overviewFont)
+                    .lineSpacing(2)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(isOverviewExpanded || !shouldShowOverviewToggle ? nil : overviewLineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if shouldShowOverviewToggle {
+                    overviewToggleButton(isOverviewExpanded ? "LESS" : "MORE")
+                        .padding(.top, 4)
+                }
+                #else
                 ZStack(alignment: .bottomTrailing) {
                     Text(overviewText)
-                        .font(.subheadline)
+                        .font(overviewFont)
                         .lineSpacing(2)
                         .foregroundStyle(.white.opacity(0.88))
-                        .lineLimit(isOverviewExpanded || !shouldShowOverviewToggle ? nil : 2)
+                        .lineLimit(isOverviewExpanded || !shouldShowOverviewToggle ? nil : overviewLineLimit)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.trailing, !isOverviewExpanded && shouldShowOverviewToggle ? 78 : 0)
@@ -195,25 +260,34 @@ struct DetailPosterHeroView: View {
                 if isOverviewExpanded && shouldShowOverviewToggle {
                     overviewToggleButton("LESS")
                 }
+                #endif
             }
             .padding(.top, 10)
         }
     }
 
+    private var overviewFont: Font {
+        #if os(tvOS)
+        .body
+        #else
+        .subheadline
+        #endif
+    }
+
+    private var overviewLineLimit: Int {
+        #if os(tvOS)
+        3
+        #else
+        2
+        #endif
+    }
+
     private func overviewToggleButton(_ title: String) -> some View {
-        Button {
+        OverviewToggleButton(title: title) {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isOverviewExpanded.toggle()
             }
-        } label: {
-            Text(title)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(.ultraThinMaterial, in: Capsule())
         }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -255,6 +329,9 @@ struct DetailPosterHeroView: View {
 
     @ViewBuilder
     private func ratingItem(_ item: DetailHeroRatingItem) -> some View {
+        #if os(tvOS)
+        Text(item.text)
+        #else
         if let destination = item.destination {
             Link(destination: destination) {
                 HStack(spacing: 3) {
@@ -267,6 +344,7 @@ struct DetailPosterHeroView: View {
         } else {
             Text(item.text)
         }
+        #endif
     }
 
     @ViewBuilder
@@ -283,8 +361,10 @@ struct DetailPosterHeroView: View {
             }
             if let rating, rating > 0 {
                 Text("·")
-                Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                    .labelStyle(.titleAndIcon)
+                HStack(spacing: 4) {
+                    Image(systemName: "star.fill")
+                    Text(String(format: "%.1f", rating))
+                }
             }
         }
         .font(.callout.weight(.medium))
@@ -325,6 +405,10 @@ struct DetailPosterHeroView: View {
         #if os(macOS)
         guard containerWidth > 0 else { return 560 }
         return min(max(containerWidth * 0.46, 430), 620)
+        #elseif os(tvOS)
+        // tvOS canvas is 1920×1080; hero fills roughly 72% of screen height
+        guard containerWidth > 0 else { return 760 }
+        return min(max(containerWidth * 0.45, 560), 800)
         #else
         horizontalSizeClass == .compact ? 660 : 780
         #endif
@@ -332,6 +416,8 @@ struct DetailPosterHeroView: View {
 
     private var heroContentAlignment: HorizontalAlignment {
         #if os(macOS)
+        .leading
+        #elseif os(tvOS)
         .leading
         #else
         .center
@@ -341,6 +427,8 @@ struct DetailPosterHeroView: View {
     private var heroFrameAlignment: Alignment {
         #if os(macOS)
         .leading
+        #elseif os(tvOS)
+        .leading
         #else
         .center
         #endif
@@ -349,6 +437,9 @@ struct DetailPosterHeroView: View {
     private var heroContentMaxWidth: CGFloat {
         #if os(macOS)
         560
+        #elseif os(tvOS)
+        // Allow wide content to breathe — TV screen is 1920pt wide
+        900
         #else
         540
         #endif
@@ -356,7 +447,9 @@ struct DetailPosterHeroView: View {
 
     private var heroTitleMaxWidth: CGFloat {
         #if os(macOS)
-        480
+        336
+        #elseif os(tvOS)
+        800
         #else
         430
         #endif
@@ -364,7 +457,9 @@ struct DetailPosterHeroView: View {
 
     private var heroLogoMaxHeight: CGFloat {
         #if os(macOS)
-        112
+        78
+        #elseif os(tvOS)
+        180
         #else
         142
         #endif
@@ -373,6 +468,9 @@ struct DetailPosterHeroView: View {
     private var heroHorizontalPadding: CGFloat {
         #if os(macOS)
         56
+        #elseif os(tvOS)
+        // tvOS safe area is ~90pt on each side
+        90
         #else
         28
         #endif
@@ -381,6 +479,8 @@ struct DetailPosterHeroView: View {
     private var heroBottomPadding: CGFloat {
         #if os(macOS)
         60
+        #elseif os(tvOS)
+        80
         #else
         48
         #endif
@@ -388,7 +488,7 @@ struct DetailPosterHeroView: View {
 }
 
 #if DEBUG
-#Preview("Detail Poster Hero") {
+#Preview("Detail Poster Hero — TV Show") {
     DetailPosterHeroView(
         title: SeerrTVDetail.previewShow.displayTitle,
         artworkURL: nil,
@@ -398,16 +498,52 @@ struct DetailPosterHeroView: View {
         runtime: nil,
         rating: SeerrTVDetail.previewShow.voteAverage,
         overview: SeerrTVDetail.previewShow.overview,
-        badges: [],
+        badges: PreviewSupport.sampleBadges,
         genres: SeerrTVDetail.previewShow.genres?.compactMap(\.name) ?? [],
-        ratingItems: [
-            DetailHeroRatingItem(label: "IMDb", value: "8.4"),
-            DetailHeroRatingItem(label: "RT", value: "91%"),
-            DetailHeroRatingItem(label: "Audience", value: "82%")
-        ],
+        ratingItems: PreviewSupport.sampleRatingItems,
         verticalOffset: 0,
-        primaryAction: DetailPosterHeroAction(title: "Play First Episode", systemImage: "play.fill") {},
-        secondaryAction: DetailPosterHeroAction(title: "Add to Favorites", systemImage: "plus") {}
+        primaryAction: PreviewSupport.playAction,
+        secondaryAction: PreviewSupport.addToFavoritesAction
+    )
+    .background(Color.black)
+}
+
+#Preview("Detail Poster Hero — Movie") {
+    DetailPosterHeroView(
+        title: PreviewSupport.previewMovieDetail.displayTitle,
+        artworkURL: nil,
+        logoURL: nil,
+        mediaTypeLabel: "Movie",
+        year: PreviewSupport.previewMovieDetail.year,
+        runtime: PreviewSupport.previewMovieDetail.runtimeText,
+        rating: nil,
+        overview: PreviewSupport.previewMovieDetail.overview,
+        badges: [],
+        genres: PreviewSupport.previewMovieDetail.genres?.compactMap(\.name) ?? [],
+        ratingItems: PreviewSupport.sampleRatingItems,
+        verticalOffset: 0,
+        primaryAction: PreviewSupport.playAction,
+        secondaryAction: nil
+    )
+    .background(Color.black)
+}
+
+#Preview("Detail Poster Hero — Request state") {
+    DetailPosterHeroView(
+        title: "Dune: Part Two",
+        artworkURL: nil,
+        logoURL: nil,
+        mediaTypeLabel: "Movie",
+        year: "2024",
+        runtime: "2h 46m",
+        rating: nil,
+        overview: "Paul Atreides unites with the Fremen people on the desert planet Arrakis to wage war against the family who destroyed his family.",
+        badges: [DetailBadge(icon: "shield", label: "PG-13", color: .yellow)],
+        genres: ["Science Fiction", "Adventure"],
+        ratingItems: [],
+        verticalOffset: 0,
+        primaryAction: PreviewSupport.requestAction,
+        secondaryAction: nil
     )
     .background(Color.black)
 }

@@ -33,11 +33,22 @@ final class TVDetailViewModel {
         self.jellyfinService = jellyfinService
     }
 
+    #if DEBUG
+    /// Preview-only init that pre-populates `show` so the canvas renders
+    /// a populated state without a network call.
+    init(previewShow: SeerrTVDetail, apiClient: SeerrAPIClient, jellyfinService: JellyfinService) {
+        self.tmdbId = previewShow.id
+        self.apiClient = apiClient
+        self.jellyfinService = jellyfinService
+        self.show = previewShow
+        self.isLoading = false
+    }
+    #endif
+
     func load() async {
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = true
             error = nil
-            heroArtwork = nil
         }
 
         do {
@@ -49,6 +60,10 @@ final class TVDetailViewModel {
             }
             await resolvePlaybackAvailability(for: loadedShow)
         } catch {
+            guard !error.isCancellation else {
+                isLoading = false
+                return
+            }
             withAnimation(.smooth(duration: 0.25)) {
                 self.error = error.localizedDescription
             }
@@ -244,5 +259,24 @@ final class TVDetailViewModel {
         withAnimation(.smooth(duration: 0.3)) {
             isFavorite = item?.userData?.isFavorite == true
         }
+    }
+}
+
+private extension Error {
+    var isCancellation: Bool {
+        if self is CancellationError {
+            return true
+        }
+
+        if let urlError = self as? URLError {
+            return urlError.code == .cancelled
+        }
+
+        if let lureError = self as? LureError,
+           case .networkError(let wrappedError) = lureError {
+            return wrappedError.isCancellation
+        }
+
+        return false
     }
 }

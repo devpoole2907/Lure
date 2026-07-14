@@ -10,6 +10,7 @@ private typealias RemotePlatformImage = NSImage
 struct CachedRemoteImage<Placeholder: View>: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    var alignment: Alignment = .center
     var trimsTransparentPadding: Bool = false
     @ViewBuilder var placeholder: Placeholder
 
@@ -19,10 +20,7 @@ struct CachedRemoteImage<Placeholder: View>: View {
     var body: some View {
         Group {
             if let image {
-                Image(remotePlatformImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .transition(.opacity)
+                remoteImage(image)
             } else {
                 placeholder
             }
@@ -63,6 +61,26 @@ struct CachedRemoteImage<Placeholder: View>: View {
             image = nil
         }
     }
+
+    @ViewBuilder
+    private func remoteImage(_ image: RemotePlatformImage) -> some View {
+        switch contentMode {
+        case .fit:
+            GeometryReader { proxy in
+                let fittedSize = image.size.fitted(in: proxy.size)
+                Image(remotePlatformImage: image)
+                    .resizable()
+                    .frame(width: fittedSize.width, height: fittedSize.height)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: alignment)
+            }
+            .transition(.opacity)
+        case .fill:
+            Image(remotePlatformImage: image)
+                .resizable()
+                .aspectRatio(contentMode: contentMode)
+                .transition(.opacity)
+        }
+    }
 }
 
 private struct ImageRequest: Hashable {
@@ -77,6 +95,21 @@ private extension Image {
         #elseif canImport(AppKit)
         self.init(nsImage: remotePlatformImage)
         #endif
+    }
+}
+
+private extension CGSize {
+    func fitted(in containerSize: CGSize) -> CGSize {
+        guard width > 0,
+              height > 0,
+              containerSize.width > 0,
+              containerSize.height > 0
+        else {
+            return containerSize
+        }
+
+        let scale = min(containerSize.width / width, containerSize.height / height)
+        return CGSize(width: width * scale, height: height * scale)
     }
 }
 

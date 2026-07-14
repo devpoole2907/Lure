@@ -58,7 +58,7 @@ struct MediaCategoryView: View {
 #endif
             }
         }
-        .navigationTitle(title)
+        .lureNavigationTitle(title)
 #if os(iOS) || os(visionOS)
         .toolbarTitleDisplayMode(.large)
 #endif

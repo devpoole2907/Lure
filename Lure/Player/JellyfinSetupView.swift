@@ -66,7 +66,7 @@ struct JellyfinSetupView: View {
                 }
             }
         }
-        .navigationTitle("Jellyfin Playback")
+        .lureNavigationTitle("Jellyfin Playback")
 #if os(iOS) || os(visionOS)
         .listStyle(.insetGrouped)
 #endif

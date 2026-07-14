@@ -12,7 +12,7 @@ struct CollectionsView: View {
                 ProgressView()
             }
         }
-        .navigationTitle("Collections")
+        .lureNavigationTitle("Collections")
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -56,12 +56,19 @@ struct CollectionsView: View {
                             NavigationLink(value: vm.collections[index]) {
                                 collectionCard(vm.collections[index], posterWidth: posterWidth)
                             }
+                            #if os(tvOS)
+                            .buttonStyle(TVPosterFocusButtonStyle())
+                            #else
                             .buttonStyle(.plain)
+                            #endif
                         }
                     }
                     .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
                     .padding(.vertical, 12)
                 }
+#if os(macOS)
+                .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
             }
         }
     }

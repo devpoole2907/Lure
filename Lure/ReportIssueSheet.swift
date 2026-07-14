@@ -90,7 +90,7 @@ struct ReportIssueSheet: View {
                     }
                 }
             }
-            .navigationTitle("Report Issue")
+            .lureNavigationTitle("Report Issue")
 #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
 #endif

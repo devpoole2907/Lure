@@ -21,7 +21,7 @@ struct CollectionDetailView: View {
                 contentView
             }
         }
-        .navigationTitle(displayCollection.name ?? "Collection")
+        .lureNavigationTitle(displayCollection.name ?? "Collection")
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif
@@ -102,6 +102,9 @@ struct CollectionDetailView: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
+#if os(macOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
         .environment(\.colorScheme, .dark)
     }
 

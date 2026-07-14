@@ -1,9 +1,18 @@
 import SwiftUI
+#if os(tvOS)
+import UIKit
+#endif
 
 struct TrailerShelfView: View {
     let videos: [SeerrRelatedVideo]
 
+    #if os(tvOS)
+    private let horizontalBleed: CGFloat = 0
+    private let cardSpacing: CGFloat = 32
+    #else
     private let horizontalBleed: CGFloat = 16
+    private let cardSpacing: CGFloat = 14
+    #endif
 
     var body: some View {
         if !videos.isEmpty {
@@ -13,14 +22,21 @@ struct TrailerShelfView: View {
                     .foregroundStyle(.primary)
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 14) {
+                    LazyHStack(alignment: .top, spacing: cardSpacing) {
                         ForEach(Array(videos.enumerated()), id: \.offset) { _, video in
                             TrailerCard(video: video)
                         }
                     }
                     .padding(.horizontal, horizontalBleed)
+                    #if os(tvOS)
+                    .padding(.vertical, 24)
+                    #endif
                 }
+                #if os(tvOS)
+                .scrollClipDisabled()
+                #else
                 .padding(.horizontal, -horizontalBleed)
+                #endif
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -30,22 +46,59 @@ struct TrailerShelfView: View {
 private struct TrailerCard: View {
     let video: SeerrRelatedVideo
 
+    #if os(tvOS)
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    private static let cardWidth: CGFloat = 360
+    private static let cardHeight: CGFloat = 202
+    private static let cornerRadius: CGFloat = 20
+    #else
     private static let cardWidth: CGFloat = 214
     private static let cardHeight: CGFloat = 200
     private static let cornerRadius: CGFloat = 18
+    #endif
 
     var body: some View {
         Button {
-            if let url = video.youtubeURL {
-                openExternalURL(url)
-            }
+            playTrailer()
         } label: {
             cardVisual
         }
+        #if os(tvOS)
+        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.06))
+        #else
         .buttonStyle(.plain)
+        #endif
         .disabled(video.youtubeURL == nil)
         .accessibilityLabel(video.name ?? "Trailer")
+        #if os(tvOS)
+        .accessibilityHint("Plays the trailer in the YouTube app.")
+        #else
         .accessibilityHint("Opens the trailer on YouTube.")
+        #endif
+    }
+
+    private func playTrailer() {
+        #if os(tvOS)
+        // tvOS has no browser (and no WKWebView), so youtube.com links go
+        // nowhere. Deep-link straight into the YouTube app instead.
+        guard let key = video.key?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !key.isEmpty,
+              let appURL = URL(string: "youtube://watch?v=\(key)") else { return }
+        UIApplication.shared.open(appURL, options: [:]) { success in
+            guard !success else { return }
+            Task { @MainActor in
+                notificationCenter.show(LureBannerItem(
+                    title: "YouTube App Needed",
+                    message: "Trailers play in the YouTube app. Install it from the App Store to watch this one.",
+                    style: .info
+                ))
+            }
+        }
+        #else
+        if let url = video.youtubeURL {
+            openExternalURL(url)
+        }
+        #endif
     }
 
     private var cardVisual: some View {

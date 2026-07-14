@@ -36,7 +36,6 @@ final class MovieDetailViewModel {
         withAnimation(.smooth(duration: 0.3)) {
             isLoading = true
             error = nil
-            heroArtwork = nil
         }
 
         do {
@@ -48,6 +47,10 @@ final class MovieDetailViewModel {
             }
             await resolvePlaybackAvailability(for: loadedMovie)
         } catch {
+            guard !error.isCancellation else {
+                isLoading = false
+                return
+            }
             withAnimation(.smooth(duration: 0.25)) {
                 self.error = error.localizedDescription
             }
@@ -186,5 +189,24 @@ final class MovieDetailViewModel {
             resumePositionSeconds = resume
             isFavorite = favorite
         }
+    }
+}
+
+private extension Error {
+    var isCancellation: Bool {
+        if self is CancellationError {
+            return true
+        }
+
+        if let urlError = self as? URLError {
+            return urlError.code == .cancelled
+        }
+
+        if let lureError = self as? LureError,
+           case .networkError(let wrappedError) = lureError {
+            return wrappedError.isCancellation
+        }
+
+        return false
     }
 }

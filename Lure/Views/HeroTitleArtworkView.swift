@@ -3,21 +3,31 @@ import SwiftUI
 struct HeroTitleArtworkView: View {
     let title: String
     let logoURL: URL?
+    #if os(tvOS)
+    var font: Font = .system(size: 64, weight: .bold)
+    #else
     var font: Font = .largeTitle.weight(.black)
+    #endif
     var maxWidth: CGFloat = 430
     var maxLogoHeight: CGFloat = 150
     var horizontalAlignment: HorizontalAlignment = .center
     var reportTitleBottom: Bool = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: frameAlignment) {
             if logoURL != nil {
                 logoReadabilityScrim
             }
 
             titleContent
         }
-        .frame(maxWidth: maxWidth, minHeight: maxLogoHeight, maxHeight: maxLogoHeight, alignment: frameAlignment)
+        .frame(
+            minWidth: isLeading ? maxWidth : nil,
+            maxWidth: maxWidth,
+            minHeight: maxLogoHeight,
+            maxHeight: maxLogoHeight,
+            alignment: frameAlignment
+        )
         .background(titleBottomReporter)
     }
 
@@ -25,15 +35,20 @@ struct HeroTitleArtworkView: View {
     private var titleContent: some View {
         Group {
             if let logoURL {
-                CachedRemoteImage(url: logoURL, contentMode: .fit, trimsTransparentPadding: true) {
+                CachedRemoteImage(url: logoURL, contentMode: .fit, alignment: frameAlignment, trimsTransparentPadding: true) {
                     fallbackTitle
                 }
-                .frame(maxWidth: maxWidth * 0.94, maxHeight: maxLogoHeight * 0.9, alignment: frameAlignment)
+                .frame(
+                    minWidth: titleContentWidth,
+                    maxWidth: titleContentWidth,
+                    maxHeight: maxLogoHeight * 0.9
+                )
+                .frame(maxWidth: .infinity, alignment: frameAlignment)
                 .shadow(color: .black.opacity(0.45), radius: 14, y: 5)
                 .accessibilityLabel(title)
             } else {
                 fallbackTitle
-                    .frame(maxWidth: maxWidth * 0.94, alignment: frameAlignment)
+                    .frame(width: titleContentWidth, alignment: frameAlignment)
             }
         }
     }
@@ -50,6 +65,14 @@ struct HeroTitleArtworkView: View {
 
     private var frameAlignment: Alignment {
         horizontalAlignment == .leading ? .bottomLeading : .bottom
+    }
+
+    private var isLeading: Bool {
+        horizontalAlignment == .leading
+    }
+
+    private var titleContentWidth: CGFloat {
+        isLeading ? maxWidth : maxWidth * 0.94
     }
 
     private var textAlignment: TextAlignment {
@@ -96,3 +119,35 @@ struct HeroTitleArtworkView: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("Hero Title — Text only") {
+    ZStack {
+        Color.black.ignoresSafeArea()
+        HeroTitleArtworkView(
+            title: "The Midnight Signal",
+            logoURL: nil,
+            maxWidth: 430,
+            maxLogoHeight: 142
+        )
+        .foregroundStyle(.white)
+        .padding()
+    }
+}
+
+#Preview("Hero Title — Leading alignment") {
+    ZStack {
+        Color.black.ignoresSafeArea()
+        HeroTitleArtworkView(
+            title: "A Very Long Movie Title That Might Need Two Lines",
+            logoURL: nil,
+            maxWidth: 480,
+            maxLogoHeight: 112,
+            horizontalAlignment: .leading
+        )
+        .foregroundStyle(.white)
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+#endif

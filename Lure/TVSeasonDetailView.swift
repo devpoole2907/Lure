@@ -40,7 +40,7 @@ struct TVSeasonDetailView: View {
         }
         .environment(\.colorScheme, .dark)
         .background { artBackground }
-        .navigationTitle(seasonTitle)
+        .lureNavigationTitle(seasonTitle)
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)

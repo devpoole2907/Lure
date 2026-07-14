@@ -21,7 +21,11 @@ struct RequestListView: View {
     var body: some View {
         NavigationStack {
             content
+                #if os(tvOS)
+                .navigationTitle("")
+                #else
                 .navigationTitle("Requests")
+                #endif
                 #if os(macOS)
                 .navigationSubtitle(subtitleText)
                 #endif

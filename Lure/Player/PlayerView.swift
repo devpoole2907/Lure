@@ -6,10 +6,11 @@ import AetherEngine
 /// On appear: loads the stream from Jellyfin via `PlayerViewModel.load(…)`.
 /// On dismiss: stops the engine and reports playback position to Jellyfin.
 ///
-/// On UIKit platforms playback is hosted in a native `AVPlayerViewController`
-/// (`AVPlayerHostView`) for the native decode path, giving AVKit's own transport,
-/// scrubbing, AirPlay, PiP and Now Playing. The software-decode path (and macOS)
-/// uses the engine's render surface with the custom SwiftUI `TransportOverlay`.
+/// On iOS playback is hosted in a native `AVPlayerViewController` (`AVPlayerHostView`)
+/// and on macOS in AVKit's `AVPlayerView` (`MacPlayerHostView`) for the native decode
+/// path, giving AVKit's own transport, scrubbing, AirPlay, PiP and Now Playing. The
+/// software-decode path (and tvOS) uses the engine's render surface with the custom
+/// SwiftUI `TransportOverlay`.
 struct PlayerView: View {
     @State var vm: PlayerViewModel
     let media: PlayableMedia
@@ -23,6 +24,7 @@ struct PlayerView: View {
     // simply a no-op on that path (v1 scope, see FIX 8's multi-window note).
     @Environment(InAppNotificationCenter.self) private var notificationCenter: InAppNotificationCenter?
     @State private var hasStartedLoad = false
+    @State private var didStop = false
 
     var body: some View {
         playerContent
@@ -50,6 +52,14 @@ struct PlayerView: View {
             .onDisappear {
                 PlayerOrientationController.unlock()
                 watchTogetherCoordinator.detach()
+                // Safety net: any dismissal that bypassed stop() — the cover being
+                // swapped for a newly presented video, AVKit close-delegate edge
+                // cases — must still kill the engine, or its session lives on
+                // headless and resumes audio on the next foreground.
+                if !didStop {
+                    didStop = true
+                    Task { await vm.stop() }
+                }
             }
             .onChange(of: vm.playbackEnded) { _, ended in
                 guard ended else { return }
@@ -95,6 +105,23 @@ struct PlayerView: View {
             } else {
                 nativeAuxOverlay
             }
+            #elseif os(macOS)
+            MacPlayerHostView(vm: vm)
+                .ignoresSafeArea()
+
+            SubtitleOverlay(vm: vm)
+                .ignoresSafeArea()
+
+            // Same split as iOS: AVKit's chrome drives the native backend, and the
+            // full custom transport only appears when there is no AVPlayer for it.
+            if vm.isSoftwareBackend {
+                TransportOverlay(vm: vm) {
+                    Task { await stop() }
+                }
+                .ignoresSafeArea()
+            } else {
+                nativeAuxOverlay
+            }
             #else
             PlayerLayerView(engine: vm.engine)
                 .ignoresSafeArea()
@@ -126,18 +153,16 @@ struct PlayerView: View {
             // so it's covered by this screen while the player is up (iOS) -- render the
             // same `notificationCenter` here too, otherwise a mid-session sessionError
             // banner would be set but never actually seen.
+            #if !os(tvOS)
             if let banner = notificationCenter?.currentBanner {
-                VStack {
-                    LureNotificationBanner(item: banner) {
-                        notificationCenter?.dismiss()
-                    }
-                    .padding(.top, 8)
-                    Spacer()
+                LureNotificationOverlay(item: banner) {
+                    notificationCenter?.dismiss()
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .ignoresSafeArea()
+                .transition(.lureNotificationBanner)
             }
+            #endif
         }
+        .lureBannerAlertHost(notificationCenter)
     }
 
     /// SharePlay entry point. Lives in the outer `ZStack` (like `isBuffering`/`errorView`
@@ -153,9 +178,12 @@ struct PlayerView: View {
                 } label: {
                     overlayIcon("shareplay", tinted: watchTogetherCoordinator.isSessionActive)
                 }
+                // Plain style everywhere: macOS's default bordered style draws an
+                // opaque plate behind the circular glass icon.
+                .buttonStyle(.plain)
                 .accessibilityLabel(watchTogetherCoordinator.isSessionActive ? "Watch Together (active)" : "Watch Together")
-                .padding(.trailing, 20)
-                .padding(.top, 12)
+                .padding(.trailing, watchTogetherPadding.trailing)
+                .padding(.top, watchTogetherPadding.top)
             }
             Spacer()
         }
@@ -163,6 +191,16 @@ struct PlayerView: View {
         .allowsHitTesting(vm.controlsVisible)
         .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
         .ignoresSafeArea()
+    }
+
+    /// macOS's inline AVKit chrome parks its volume slider in the top-right corner,
+    /// so the SharePlay button drops below it there; iOS keeps it tight to the corner.
+    private var watchTogetherPadding: (trailing: CGFloat, top: CGFloat) {
+        #if os(macOS)
+        (24, 72)
+        #else
+        (20, 12)
+        #endif
     }
 
     /// `tinted` marks the Watch Together button's active state (an in-progress
@@ -175,7 +213,19 @@ struct PlayerView: View {
             .glassEffect(tinted ? .regular.tint(.blue).interactive() : .regular.interactive(), in: Circle())
     }
 
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
+    /// Where the custom aux chrome sits relative to AVKit's. iOS centers its
+    /// transport bottom-left with generous safe-area margins; macOS's floating
+    /// chrome hugs the window edges (volume top-right, scrubber flush bottom),
+    /// so the title tucks closer to the corner and clears the scrubber row.
+    private var auxTitlePadding: (horizontal: CGFloat, bottom: CGFloat) {
+        #if os(macOS)
+        (28, 96)
+        #else
+        (88, 88)
+        #endif
+    }
+
     /// Slim custom strip over AVKit's native chrome on the native backend. AVKit
     /// owns close / transport / volume / AirPlay / PiP / Enhance Dialogue and (via
     /// `prepareNativeSubtitles`) the native text-subtitle menu. We only surface what
@@ -216,23 +266,23 @@ struct PlayerView: View {
                                 .padding(.vertical, 12)
                                 .background(.ultraThinMaterial, in: Capsule())
                         }
+                        .buttonStyle(.plain)
                         .padding(.trailing, 24)
                     }
                     .padding(.bottom, 120)
                 }
             }
 
-            if vm.controlsVisible {
-                HStack {
-                    playerTitleBlock
-                    Spacer()
-                }
-                .padding(.horizontal, 88)
-                .padding(.bottom, 88)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-                .allowsHitTesting(false)
-                .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
+            HStack {
+                playerTitleBlock
+                Spacer()
             }
+            .padding(.horizontal, auxTitlePadding.horizontal)
+            .padding(.bottom, auxTitlePadding.bottom)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .allowsHitTesting(false)
+            .opacity(vm.controlsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
         }
         .ignoresSafeArea()
     }
@@ -292,6 +342,12 @@ struct PlayerView: View {
         } label: {
             overlayIcon("captions.bubble")
         }
+        // macOS renders Menu as a bordered pull-down with a disclosure chevron by
+        // default; render just the glass icon like iOS does.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .accessibilityLabel("Audio & subtitles")
     }
 
@@ -322,6 +378,7 @@ struct PlayerView: View {
                     Button("Cancel") {
                         vm.cancelNextEpisodeCountdown()
                     }
+                    .buttonStyle(.plain)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.white.opacity(0.75))
 
@@ -335,6 +392,7 @@ struct PlayerView: View {
                             .padding(.vertical, 10)
                             .background(.white, in: Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(16)
@@ -346,6 +404,7 @@ struct PlayerView: View {
     #endif
 
     private func stop(reportToJellyfin: Bool = true) async {
+        didStop = true
         await vm.stop(reportToJellyfin: reportToJellyfin)
         onStopped?()
         // Rotate back to portrait *before* tearing down the cover, otherwise the

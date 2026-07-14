@@ -1,5 +1,182 @@
 import SwiftUI
 
+// MARK: - Previews
+
+#if DEBUG
+/// A lightweight stand-in for `MovieDetailView` that renders the full scroll layout
+/// without requiring a live VM or network call. It constructs the same hero + cards
+/// structure with a fully canned `SeerrMovieDetail`.
+private struct MovieDetailPreviewSurface: View {
+    let movie: SeerrMovieDetail
+
+    @State private var heroVerticalOffset: CGFloat = 0
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: previewStackAlignment, spacing: 20) {
+                heroSection
+
+                VStack(alignment: previewContentAlignment, spacing: 20) {
+                    statsCard
+                }
+                .padding(.horizontal, previewHorizontalPadding)
+                .padding(.bottom, 44)
+                .frame(maxWidth: previewContentMaxWidth)
+                .frame(maxWidth: .infinity, alignment: previewFrameAlignment)
+            }
+        }
+        #if os(tvOS)
+        .ignoresSafeArea(edges: [.top, .horizontal])
+        #else
+        .ignoresSafeArea(edges: .top)
+        #endif
+        .background { artBackground }
+        .environment(\.colorScheme, .dark)
+        .onScrollGeometryChange(for: CGFloat.self) {
+            $0.contentOffset.y + $0.contentInsets.top
+        } action: { _, newValue in
+            heroVerticalOffset = max(-newValue, 0)
+        }
+    }
+
+    private var previewStackAlignment: HorizontalAlignment {
+        #if os(tvOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var previewContentAlignment: HorizontalAlignment {
+        #if os(tvOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var previewFrameAlignment: Alignment {
+        #if os(tvOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var previewContentMaxWidth: CGFloat {
+        #if os(tvOS)
+        .infinity
+        #else
+        720
+        #endif
+    }
+
+    private var previewHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        90
+        #else
+        16
+        #endif
+    }
+
+    private var heroPrimaryAction: DetailPosterHeroAction {
+        movie.mediaInfo?.isAvailable == true
+            ? PreviewSupport.playAction
+            : PreviewSupport.requestAction
+    }
+
+    private var heroGenres: [String] {
+        movie.genres?.compactMap(\.name) ?? []
+    }
+
+    private var heroSection: some View {
+        DetailPosterHeroView(
+            title: movie.displayTitle,
+            artworkURL: nil,
+            logoURL: nil,
+            mediaTypeLabel: "Movie",
+            year: movie.year,
+            runtime: movie.runtimeText,
+            rating: nil,
+            overview: movie.overview,
+            badges: movieBadges,
+            genres: heroGenres,
+            ratingItems: PreviewSupport.sampleRatingItems,
+            verticalOffset: heroVerticalOffset,
+            primaryAction: heroPrimaryAction,
+            secondaryAction: PreviewSupport.addToFavoritesAction
+        )
+    }
+
+    private var movieBadges: [DetailBadge] {
+        var badges: [DetailBadge] = []
+        if let status = movie.mediaInfo?.mediaStatus, status.isUserVisible {
+            badges.append(DetailBadge(icon: status.systemImage, label: status.displayName, color: status.color))
+        }
+        return badges
+    }
+
+    private var statsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Label("Info", systemImage: "info.circle")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
+
+            if let status = movie.status {
+                HStack(spacing: 10) {
+                    Image(systemName: "circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16)
+                    Text("Status")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(status)
+                        .font(.subheadline)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+            }
+
+            Color.clear.frame(height: 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var artBackground: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [.black, .indigo.opacity(0.45), .black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .ignoresSafeArea()
+    }
+}
+
+#Preview("Movie Detail — Available") {
+    MovieDetailPreviewSurface(movie: PreviewSupport.previewMovieDetail)
+}
+
+#Preview("Movie Detail — Requested") {
+    MovieDetailPreviewSurface(movie: PreviewSupport.previewMovieDetailRequested)
+}
+
+#Preview("Movie Detail — Loading") {
+    ProgressView("Loading…")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
+}
+#endif
+
 struct MovieDetailView: View {
     let tmdbId: Int
     let apiClient: SeerrAPIClient
@@ -54,7 +231,7 @@ struct MovieDetailView: View {
         .animation(.easeInOut(duration: 0.25), value: vm.movie?.id)
         .animation(.easeInOut(duration: 0.25), value: vm.ratings != nil)
         .animation(.easeInOut(duration: 0.25), value: vm.recommendations.count)
-        .navigationTitle(showNavTitle ? (vm.movie?.displayTitle ?? initialTitle ?? "Movie") : "")
+        .lureNavigationTitle(showNavTitle ? (vm.movie?.displayTitle ?? initialTitle ?? "Movie") : "")
         .onPreferenceChange(HeroTitleBottomKey.self) { maxY in
             // Ignore the default sentinel emitted when the hero is recycled off-screen
             // (LazyVStack) so the title stays put once we've scrolled well past it.
@@ -68,6 +245,9 @@ struct MovieDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
 #endif
+        #if !os(tvOS)
+        // tvOS toolbar items can't receive Siri Remote focus; Report an Issue
+        // lives inline at the bottom of the content there instead.
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Menu {
@@ -82,6 +262,7 @@ struct MovieDetailView: View {
                 }
             }
         }
+        #endif
         .sheet(isPresented: $showReportSheet) {
             ReportIssueSheet(
                 mediaId: vm.movie?.mediaInfo?.id,
@@ -101,6 +282,20 @@ struct MovieDetailView: View {
                 apiClient: apiClient
             )
         }
+        #if os(tvOS)
+        // Cast opens via value-based push (NavigationLink in castCard). Using
+        // navigationDestination(item:) here corrupts the stack order when the
+        // pushed person view itself pushes value-based MediaDestinations.
+        .navigationDestination(for: CastPersonRoute.self) { route in
+            CastPersonSheet(
+                personId: route.personId,
+                fallbackName: route.fallbackName,
+                fallbackProfileURL: route.fallbackProfileURL,
+                apiClient: apiClient,
+                presentation: .detail
+            )
+        }
+        #endif
         .alert("Request Movie", isPresented: $showRequestOptions) {
             Button("Request HD") {
                 Task { await vm.requestMovie(is4k: false) }
@@ -196,34 +391,50 @@ struct MovieDetailView: View {
     // MARK: - Scroll Content
 
     private func scrollContent(_ movie: SeerrMovieDetail) -> some View {
-        ScrollView {
-            LazyVStack(alignment: detailStackAlignment, spacing: 20) {
-                heroSection(movie)
+        let stack = LazyVStack(alignment: detailStackAlignment, spacing: 20) {
+            heroSection(movie)
 
-                VStack(alignment: detailContentHorizontalAlignment, spacing: 20) {
-                    cardsSection(movie)
-                }
-                .padding(.horizontal, detailContentHorizontalPadding)
-                .padding(.bottom, 44)
-                .frame(maxWidth: detailContentMaxWidth, alignment: detailFrameAlignment)
-                .frame(maxWidth: .infinity)
+            VStack(alignment: detailContentHorizontalAlignment, spacing: 20) {
+                cardsSection(movie)
             }
+            .padding(.horizontal, detailContentHorizontalPadding)
+            .padding(.bottom, 44)
+            .frame(maxWidth: detailContentMaxWidth, alignment: detailFrameAlignment)
+            .frame(maxWidth: .infinity)
         }
-#if os(iOS)
-        .scrollEdgeEffectStyle(.soft, for: .all)
-#endif
+        return scrollView(for: stack)
+    }
+
+    private func scrollView<Content: View>(for content: Content) -> some View {
+        ScrollView {
+            content
+        }
+        #if os(tvOS)
+        .ignoresSafeArea(edges: [.top, .horizontal])
+        #else
         .ignoresSafeArea(edges: .top)
+        #endif
+        #if os(iOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+        #endif
+        #if os(macOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+        #endif
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
         } action: { _, newValue in
             heroVerticalOffset = max(-newValue, 0)
         }
+        #if !os(tvOS)
         .refreshable { await vm.load() }
+        #endif
         .environment(\.colorScheme, .dark)
     }
 
     private var detailStackAlignment: HorizontalAlignment {
         #if os(macOS)
+        .leading
+        #elseif os(tvOS)
         .leading
         #else
         .center
@@ -233,6 +444,8 @@ struct MovieDetailView: View {
     private var detailContentHorizontalAlignment: HorizontalAlignment {
         #if os(macOS)
         .leading
+        #elseif os(tvOS)
+        .leading
         #else
         .center
         #endif
@@ -241,6 +454,8 @@ struct MovieDetailView: View {
     private var detailFrameAlignment: Alignment {
         #if os(macOS)
         .leading
+        #elseif os(tvOS)
+        .leading
         #else
         .center
         #endif
@@ -248,7 +463,9 @@ struct MovieDetailView: View {
 
     private var detailContentMaxWidth: CGFloat {
         #if os(macOS)
-        1120
+        .infinity
+        #elseif os(tvOS)
+        .infinity
         #else
         720
         #endif
@@ -257,6 +474,8 @@ struct MovieDetailView: View {
     private var detailContentHorizontalPadding: CGFloat {
         #if os(macOS)
         44
+        #elseif os(tvOS)
+        90
         #else
         16
         #endif
@@ -387,7 +606,12 @@ struct MovieDetailView: View {
     @ViewBuilder
     private func cardsSection(_ movie: SeerrMovieDetail) -> some View {
         requestCard(movie)
+        supplementalCards(movie)
+        contentCards(movie)
+    }
 
+    @ViewBuilder
+    private func supplementalCards(_ movie: SeerrMovieDetail) -> some View {
         if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -396,7 +620,10 @@ struct MovieDetailView: View {
         if let cast = movie.credits?.cast, !cast.isEmpty {
             castCard(Array(cast.prefix(20)))
         }
+    }
 
+    @ViewBuilder
+    private func contentCards(_ movie: SeerrMovieDetail) -> some View {
         if !movie.trailerVideos.isEmpty {
             TrailerShelfView(videos: movie.trailerVideos)
         }
@@ -409,7 +636,34 @@ struct MovieDetailView: View {
             MediaSliderView(title: "You Might Also Like", items: vm.recommendations, apiClient: apiClient)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
+
+        #if os(tvOS)
+        reportIssueButton
+        #endif
     }
+
+    #if os(tvOS)
+    /// Inline replacement for the toolbar's Report an Issue menu, which the
+    /// tvOS focus engine can't reach.
+    private var reportIssueButton: some View {
+        HStack {
+            Button {
+                showReportSheet = true
+            } label: {
+                Label("Report an Issue", systemImage: "exclamationmark.triangle")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .frame(height: 52)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+            .buttonStyle(TVHeroActionButtonStyle())
+
+            Spacer()
+        }
+        .padding(.top, 8)
+    }
+    #endif
 
     // MARK: - Request Card
 
@@ -425,43 +679,50 @@ struct MovieDetailView: View {
         } else if let failedRequest = movie.mediaInfo?.mostRecentFailedRequest {
             failedRequestCard(failedRequest, mediaTitle: movie.displayTitle)
         } else if canModerateRequests {
-            let pendingRequest = pendingRequest(for: movie)
-
-            HStack(spacing: 12) {
-                if let pendingRequest {
-                    moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
-                        await moderateRequest(
-                            action: { try await apiClient.approveRequest(id: pendingRequest.id) },
-                            successTitle: "Request Approved",
-                            successMessage: "Approved \(movie.displayTitle)"
-                        )
-                    }
-
-                    moderationButton(title: "Decline", systemImage: "xmark", tint: .orange) {
-                        await moderateRequest(
-                            action: { try await apiClient.declineRequest(id: pendingRequest.id) },
-                            successTitle: "Request Declined",
-                            successMessage: "Declined \(movie.displayTitle)"
-                        )
-                    }
-                }
-
-                Button {
-                    if let url = URL(string: "trawl://seerr-issue") {
-                        openExternalURL(url)
-                    }
-                } label: {
-                    Label("Open in Trawl", systemImage: "arrow.up.forward.app")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.purple)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
-            }
+            moderatorActionsCard(movie)
         }
+    }
+
+    private func moderatorActionsCard(_ movie: SeerrMovieDetail) -> some View {
+        let pendingRequest = pendingRequest(for: movie)
+        return HStack(spacing: 12) {
+            if let pendingRequest {
+                moderationButton(title: "Approve", systemImage: "checkmark", tint: .green) {
+                    await moderateRequest(
+                        action: { try await apiClient.approveRequest(id: pendingRequest.id) },
+                        successTitle: "Request Approved",
+                        successMessage: "Approved \(movie.displayTitle)"
+                    )
+                }
+
+                moderationButton(title: "Decline", systemImage: "xmark", tint: .orange) {
+                    await moderateRequest(
+                        action: { try await apiClient.declineRequest(id: pendingRequest.id) },
+                        successTitle: "Request Declined",
+                        successMessage: "Declined \(movie.displayTitle)"
+                    )
+                }
+            }
+
+            openInTrawlButton
+        }
+    }
+
+    private var openInTrawlButton: some View {
+        Button {
+            if let url = URL(string: "trawl://seerr-issue") {
+                openExternalURL(url)
+            }
+        } label: {
+            Label("Open in Trawl", systemImage: "arrow.up.forward.app")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.purple)
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func availabilityDiagnostic(_ message: String) -> some View {
@@ -659,47 +920,92 @@ struct MovieDetailView: View {
     // MARK: - Cast Card
 
     private func castCard(_ cast: [SeerrCastMember]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        #if os(tvOS)
+        let avatarSize: CGFloat = 150
+        let cellWidth: CGFloat = 180
+        let cellHeight: CGFloat = 280
+        let nameTextHeight: CGFloat = 58
+        let roleTextHeight: CGFloat = 54
+        let castSpacing: CGFloat = 36
+        let nameFont = Font.body.weight(.semibold)
+        let roleFont = Font.callout
+        #else
+        let avatarSize: CGFloat = 56
+        let cellWidth: CGFloat = 70
+        let cellHeight: CGFloat = 132
+        let nameTextHeight: CGFloat = 30
+        let roleTextHeight: CGFloat = 30
+        let castSpacing: CGFloat = 12
+        let nameFont = Font.caption2
+        let roleFont = Font.caption2
+        #endif
+
+        return VStack(alignment: .leading, spacing: 10) {
             sectionLabel("Cast", icon: "person.2")
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(spacing: castSpacing) {
                     ForEach(cast) { member in
-                        Button {
-                            selectedCastMember = member
-                        } label: {
-                            VStack(spacing: 4) {
-                                AsyncImage(url: member.profileURL) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Circle().fill(.quaternary)
-                                        .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
-                                }
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-
-                                Text(member.name ?? "")
-                                    .font(.caption2)
-                                    .lineLimit(1)
-                                    .frame(width: 70)
-                                Text(member.character ?? "")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .frame(width: 70)
+                        let cell = VStack(spacing: 4) {
+                            AsyncImage(url: member.profileURL) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Circle().fill(.quaternary)
+                                    .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
                             }
-                            .contentShape(Rectangle())
+                            .frame(width: avatarSize, height: avatarSize)
+                            .clipShape(Circle())
+
+                            Text(member.name ?? "")
+                                .font(nameFont)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: cellWidth, height: nameTextHeight, alignment: .top)
+                            Text(member.character ?? "")
+                                .font(roleFont)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: cellWidth, height: roleTextHeight, alignment: .top)
+                        }
+                        .frame(width: cellWidth, height: cellHeight, alignment: .top)
+                        .contentShape(Rectangle())
+
+                        #if os(tvOS)
+                        // Value-based push — keeps the navigation stack ordering
+                        // sane when the person view pushes further destinations.
+                        NavigationLink(value: CastPersonRoute(member: member)) {
+                            cell
+                        }
+                        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.08))
+                        #else
+                        Button {
+                            openCastMember(member)
+                        } label: {
+                            cell
                         }
                         .buttonStyle(.plain)
+                        #endif
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
             }
+            #if os(tvOS)
+            .clipShape(Rectangle())
+            #else
             .horizontalSoftEdges()
+            #endif
         }
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        #if os(tvOS)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        #endif
+    }
+
+    private func openCastMember(_ member: SeerrCastMember) {
+        selectedCastMember = member
     }
 
     // MARK: - Info Rows Data
@@ -736,18 +1042,36 @@ struct MovieDetailView: View {
     }
 
     private func rowsCard(header: String, icon: String, rows: [(String, String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        #if os(tvOS)
+        let horizontalPadding: CGFloat = 28
+        let headerTopPadding: CGFloat = 22
+        let headerBottomPadding: CGFloat = 12
+        let rowVerticalPadding: CGFloat = 14
+        let rowSpacing: CGFloat = 14
+        let iconWidth: CGFloat = 24
+        let dividerLeadingPadding: CGFloat = 66
+        #else
+        let horizontalPadding: CGFloat = 16
+        let headerTopPadding: CGFloat = 14
+        let headerBottomPadding: CGFloat = 8
+        let rowVerticalPadding: CGFloat = 11
+        let rowSpacing: CGFloat = 10
+        let iconWidth: CGFloat = 16
+        let dividerLeadingPadding: CGFloat = 42
+        #endif
+
+        return VStack(alignment: .leading, spacing: 0) {
             sectionLabel(header, icon: icon)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, headerTopPadding)
+                .padding(.bottom, headerBottomPadding)
 
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                HStack(spacing: 10) {
+                HStack(spacing: rowSpacing) {
                     Image(systemName: row.0)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, alignment: .center)
+                        .frame(width: iconWidth, alignment: .center)
                     Text(row.1)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -757,11 +1081,11 @@ struct MovieDetailView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, rowVerticalPadding)
 
                 if index < rows.count - 1 {
-                    Divider().padding(.leading, 42)
+                    Divider().padding(.leading, dividerLeadingPadding)
                 }
             }
 

@@ -32,6 +32,10 @@ struct SeerrSetupSheet: View {
                 onComplete: onComplete
             )
         }
+        #elseif os(tvOS)
+        AppSheetShell(title: "Add Seerr") {
+            SeerrConnectionForm(authViewModel: authViewModel, onComplete: onComplete)
+        }
         #else
         AppSheetShell(
             title: "Add Seerr",
@@ -104,6 +108,40 @@ private struct SeerrConnectionForm: View {
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canSubmit)
+                }
+            }
+        }
+        .tint(LureServiceIdentity.seerr.brandColor)
+        #elseif os(tvOS)
+        OnboardingTVFormContent {
+            Text("Connect Lure to your Seerr instance. Sign in with the username and password you were given.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            OnboardingTVFieldGroup("Server") {
+                ServerURLField(
+                    url: $authViewModel.serverURL,
+                    title: "Seerr URL (e.g. https://requests.example.com)"
+                )
+            }
+
+            if let settings = authViewModel.publicSettings {
+                LabeledContent("Connected Server", value: settings.applicationTitle ?? "Seerr")
+                    .font(.title3)
+            }
+
+            OnboardingTVFieldGroup("Credentials") {
+                TextField("Username", text: $authViewModel.username)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $authViewModel.password)
+            }
+
+            OnboardingTVValidationError(error: authViewModel.error)
+
+            if showsSubmitButton {
+                OnboardingTVPrimaryButton(isDisabled: !canSubmit, action: submit) {
+                    submitLabel
                 }
             }
         }

@@ -41,9 +41,15 @@ struct JellyfinCredentials: Codable, Sendable {
         let data = try JSONEncoder().encode(self)
         guard let json = String(data: data, encoding: .utf8) else { return }
         try await LureKeychain.shared.save(key: Self.keychainKey, value: json)
+        // Mirror credentials to the shared App Group store so the Top Shelf
+        // extension (tvOS only, but the write is harmless on all platforms) can
+        // reach the Jellyfin server without access to the main Keychain service.
+        let sharedCreds = TopShelfCredentials(serverURL: serverURL, token: token, userId: userId)
+        TopShelfCredentialStore.save(sharedCreds)
     }
 
     static func delete() async {
         try? await LureKeychain.shared.delete(key: keychainKey)
+        TopShelfCredentialStore.clear()
     }
 }

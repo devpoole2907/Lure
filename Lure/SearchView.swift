@@ -35,6 +35,7 @@ struct SearchView: View {
         #elseif os(tvOS)
         searchLifecycle(
             searchNavigation
+                .safeAreaPadding(.top, 36)
                 .searchable(
                     text: $searchText,
                     prompt: scope == .library ? "Your library" : "Movies, TV shows..."
@@ -79,7 +80,11 @@ struct SearchView: View {
                 }
                 #endif
             }
+            #if os(tvOS)
+            .navigationTitle("")
+            #else
             .navigationTitle("Search")
+            #endif
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isSearchPresented)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: searchText.isEmpty)
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: scope)
@@ -143,52 +148,41 @@ struct SearchView: View {
 
     #if os(macOS)
     private var macSearchHeader: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.body)
+                .foregroundStyle(.secondary)
 
-                TextField("Shows, Movies and More", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.title3.weight(.medium))
-                    .focused($isMacSearchFocused)
-                    .onSubmit {
-                        recordRecent(searchText)
-                    }
-
-                if !searchText.isEmpty {
-                    Button("Clear", systemImage: "xmark.circle.fill") {
-                        searchText = ""
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+            TextField("Shows, Movies and More", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.body.weight(.medium))
+                .focused($isMacSearchFocused)
+                .onSubmit {
+                    recordRecent(searchText)
                 }
-            }
-            .padding(.horizontal, 18)
-            .frame(maxWidth: 430)
-            .frame(height: 44)
-            .background(.regularMaterial, in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(
-                        isMacSearchFocused ? Color.accentColor.opacity(0.65) : Color.secondary.opacity(0.14),
-                        lineWidth: isMacSearchFocused ? 2 : 1
-                    )
-            }
 
             if !searchText.isEmpty {
-                Picker("Scope", selection: $scope) {
-                    Text("Discover").tag(SearchScope.discover)
-                    Text("Library").tag(SearchScope.library)
+                Button("Clear", systemImage: "xmark.circle.fill") {
+                    searchText = ""
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 260)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
         }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: 420)
+        .frame(height: 40)
+        .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(
+                    isMacSearchFocused ? Color.accentColor.opacity(0.55) : Color.secondary.opacity(0.12),
+                    lineWidth: isMacSearchFocused ? 2 : 1
+                )
+        }
         .padding(.top, 12)
-        .padding(.bottom, 20)
+        .padding(.bottom, searchText.isEmpty ? 20 : 22)
         .frame(maxWidth: .infinity)
     }
     #endif
@@ -444,9 +438,15 @@ struct SearchView: View {
                             let destination = SearchGenreDestination(genre: genre)
                             NavigationLink(value: destination) {
                                 SearchGenreTileView(genre: genre)
+                                    #if os(iOS) || os(visionOS)
                                     .matchedTransitionSource(id: destination, in: genreTransitionNamespace)
+                                    #endif
                             }
+                            #if os(tvOS)
+                            .buttonStyle(.card)
+                            #else
                             .buttonStyle(.plain)
+                            #endif
                             .frame(maxWidth: .infinity)
                         }
                     }
@@ -455,12 +455,23 @@ struct SearchView: View {
                     .padding(.bottom, 24)
                 }
             }
+#if os(macOS)
+            .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
         }
     }
 
     private var browseGridColumns: [GridItem] {
         #if os(macOS)
         [GridItem(.adaptive(minimum: 150, maximum: 230), spacing: 22)]
+        #elseif os(tvOS)
+        // tvOS: 4 columns gives each tile ~420pt wide — large and focusable
+        [
+            GridItem(.flexible(), spacing: 36),
+            GridItem(.flexible(), spacing: 36),
+            GridItem(.flexible(), spacing: 36),
+            GridItem(.flexible(), spacing: 36)
+        ]
         #else
         [
             GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14),
@@ -472,6 +483,8 @@ struct SearchView: View {
     private var browseGridSpacing: CGFloat {
         #if os(macOS)
         22
+        #elseif os(tvOS)
+        36
         #else
         14
         #endif
@@ -480,6 +493,8 @@ struct SearchView: View {
     private var browseGridHorizontalPadding: CGFloat {
         #if os(macOS)
         44
+        #elseif os(tvOS)
+        90
         #else
         18
         #endif
@@ -489,6 +504,9 @@ struct SearchView: View {
 
     @ViewBuilder
     private var searchResultsContent: some View {
+        #if os(macOS)
+        macSearchResultsContent
+        #else
         VStack(spacing: 0) {
             filterPills(
                 all: vm.results.count,
@@ -535,7 +553,139 @@ struct SearchView: View {
                 .listStyle(.plain)
             }
         }
+        #endif
     }
+
+    #if os(macOS)
+    @ViewBuilder
+    private var macSearchResultsContent: some View {
+        if vm.isSearching && vm.results.isEmpty {
+            Spacer()
+            ProgressView("Searching...")
+            Spacer()
+        } else if vm.results.isEmpty && vm.hasSearched {
+            ContentUnavailableView.search(text: searchText)
+        } else if macVisibleResults.isEmpty && vm.hasSearched {
+            ContentUnavailableView.search(text: searchText)
+        } else if !macVisibleResults.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 30) {
+                    if !macTopResults.isEmpty {
+                        macSearchTopResultsSection(macTopResults)
+                    }
+
+                    if !macMovieResults.isEmpty {
+                        macSearchPosterSection("Movies", items: macMovieResults)
+                    }
+
+                    if !macTVResults.isEmpty {
+                        macSearchPosterSection("TV Shows", items: macTVResults)
+                    }
+
+                    if vm.currentPage < vm.totalPages {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .task { await vm.loadMore() }
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 54)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .all)
+        }
+    }
+
+    private var macVisibleResults: [SeerrMediaItem] {
+        vm.results.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }
+    }
+
+    private var macTopResults: [SeerrMediaItem] {
+        Array(macVisibleResults.prefix(12))
+    }
+
+    private var macMovieResults: [SeerrMediaItem] {
+        macVisibleResults.filter { $0.mediaType == "movie" }
+    }
+
+    private var macTVResults: [SeerrMediaItem] {
+        macVisibleResults.filter { $0.mediaType == "tv" }
+    }
+
+    private var macSearchHorizontalPadding: CGFloat { 44 }
+
+    private func macSearchTopResultsSection(_ items: [SeerrMediaItem]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Top Results")
+                .font(.title3.bold())
+                .padding(.horizontal, macSearchHorizontalPadding)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 22) {
+                    ForEach(items) { item in
+                        macSearchNavigationLink(for: item) {
+                            MacSearchTopResultCard(item: item)
+                        }
+                    }
+                }
+                .padding(.horizontal, macSearchHorizontalPadding)
+            }
+        }
+    }
+
+    private func macSearchPosterSection(_ title: String, items: [SeerrMediaItem]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.title3.bold())
+                Image(systemName: "chevron.right")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, macSearchHorizontalPadding)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 24) {
+                    ForEach(items) { item in
+                        macSearchNavigationLink(for: item) {
+                            MacSearchPosterResultCard(item: item)
+                        }
+                    }
+                }
+                .padding(.horizontal, macSearchHorizontalPadding)
+            }
+        }
+    }
+
+    private func macSearchNavigationLink<Content: View>(
+        for item: SeerrMediaItem,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        NavigationLink(value: MediaDestination(
+            mediaType: item.mediaType,
+            tmdbId: item.tmdbId,
+            title: item.title,
+            posterURL: item.posterURL
+        )) {
+            label()
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if item.hasRequestContextActions {
+                MediaRequestContextMenu(
+                    mediaType: item.mediaType,
+                    tmdbId: item.tmdbId,
+                    title: item.title,
+                    mediaInfo: item.mediaInfo,
+                    isKnownAvailable: item.mediaInfo?.isAvailable == true,
+                    apiClient: apiClient,
+                    notificationCenter: notificationCenter,
+                    requestsCoordinator: requestsCoordinator
+                )
+            }
+        }
+    }
+    #endif
 
     private var filteredResults: [SeerrMediaItem] {
         switch selectedFilter {
@@ -557,9 +707,9 @@ struct SearchView: View {
             (.people, "People", "person",             people)
         ]
 
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(pills, id: \.0) { kind, title, icon, count in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(pills, id: \.0) { kind, title, icon, count in
                     filterPill(kind: kind, title: title, icon: icon, count: count)
                 }
             }
@@ -653,6 +803,69 @@ private enum SearchMediaFilter: Hashable {
     case all, movies, tv, people
 }
 
+#if os(macOS)
+private struct MacSearchTopResultCard: View {
+    let item: SeerrMediaItem
+
+    var body: some View {
+        HStack(spacing: 14) {
+            PosterImage(url: item.posterURL, width: 54, height: 78, cornerRadius: 8)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(item.macSearchSubtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .frame(width: 380, height: 96)
+        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct MacSearchPosterResultCard: View {
+    let item: SeerrMediaItem
+
+    var body: some View {
+        PosterImage(url: item.posterURL, width: 178, height: 267, cornerRadius: 12)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.primary.opacity(0.08))
+            }
+            .accessibilityLabel(item.title)
+    }
+}
+
+private extension SeerrMediaItem {
+    var macSearchSubtitle: String {
+        [macSearchTypeLabel, year]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    var macSearchTypeLabel: String? {
+        switch mediaType {
+        case "movie":
+            "Movie"
+        case "tv":
+            "TV Show"
+        default:
+            nil
+        }
+    }
+}
+#endif
+
 private struct SearchGenreTileView: View {
     let genre: SearchGenreTile
     private let cornerRadius = LureDesign.CornerRadius.card
@@ -691,6 +904,8 @@ private struct SearchGenreTileView: View {
             .frame(maxWidth: .infinity)
             #if os(macOS)
             .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            #elseif os(tvOS)
+            .frame(height: 180)
             #else
             .frame(height: 112)
             #endif
@@ -702,18 +917,45 @@ private struct SearchGenreTileView: View {
     private var tileLabel: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(genre.name)
-                .font(.subheadline.weight(.semibold))
+                .font(tileTitleFont)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
                 .shadow(color: .black.opacity(0.38), radius: 6, y: 2)
 
-            Label(genre.mediaTypeLabel, systemImage: genre.mediaTypeIcon)
-                .font(.caption2.weight(.semibold))
+            HStack(spacing: 4) {
+                Image(systemName: genre.mediaTypeIcon)
+                Text(genre.mediaTypeLabel)
+            }
+                .font(tileSubtitleFont)
                 .foregroundStyle(.white.opacity(0.9))
                 .shadow(color: .black.opacity(0.32), radius: 5, y: 1)
         }
-        .padding(14)
+        .padding(tilePadding)
+    }
+
+    private var tileTitleFont: Font {
+        #if os(tvOS)
+        .headline.weight(.semibold)
+        #else
+        .subheadline.weight(.semibold)
+        #endif
+    }
+
+    private var tileSubtitleFont: Font {
+        #if os(tvOS)
+        .subheadline.weight(.semibold)
+        #else
+        .caption2.weight(.semibold)
+        #endif
+    }
+
+    private var tilePadding: CGFloat {
+        #if os(tvOS)
+        20
+        #else
+        14
+        #endif
     }
 
     @ViewBuilder
@@ -779,7 +1021,198 @@ private extension SearchGenreTile {
     }
 }
 
+#if DEBUG && os(macOS)
+#Preview("Mac Search Results") {
+    MacSearchResultsPreviewSurface()
+        .frame(width: 1280, height: 760)
+}
+
+private struct MacSearchResultsPreviewSurface: View {
+    private let movies = [
+        Self.movie(11, "Star Wars: A New Hope", "1977", "/6FfCtAuVAW8XJjZ7eWeLibRLWTw.jpg"),
+        Self.movie(1891, "The Empire Strikes Back", "1980", "/nNAeTmF4CtdSgMDplXTDPOpYzsX.jpg"),
+        Self.movie(1892, "Return of the Jedi", "1983", "/jQYlydvHm3kUix1f8prMucrplhm.jpg"),
+        Self.movie(181808, "Star Wars: The Last Jedi", "2017", "/kOVEVeg59E0wsnXmF9nrh6OmWII.jpg"),
+        Self.movie(140607, "Star Wars: The Force Awakens", "2015", "/wqnLdwVXoBjKibFRR5U3y0aDUhs.jpg"),
+        Self.movie(1895, "Revenge of the Sith", "2005", "/xfSAoBEm9MNBjmlNcDYLvLSMlnq.jpg")
+    ]
+
+    private let shows = [
+        Self.tv(202250, "Monarch: Legacy of Monsters", "2023", "/uwrQHMnXD2DA1rvaMZk4pavZ3CY.jpg"),
+        Self.tv(93740, "Foundation", "2021", "/A1fXGFxDifQzj08OlaGTVcnXHyd.jpg"),
+        Self.tv(114479, "WondLa", "2024", "/9x3kByu6fWKka48w9nMJFV1Pqku.jpg")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                previewSearchField
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 30) {
+                        previewTopResults
+                        previewPosterSection("Movies", items: movies)
+                        previewPosterSection("TV Shows", items: shows)
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 54)
+                }
+                .scrollEdgeEffectStyle(.soft, for: .all)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+    }
+
+    private var previewSearchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            Text("star wars")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: 420)
+        .frame(height: 40)
+        .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.secondary.opacity(0.12))
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var previewTopResults: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Top Results")
+                .font(.title3.bold())
+                .padding(.horizontal, 44)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 22) {
+                    ForEach(Array((movies + shows).prefix(6)), id: \.id) { item in
+                        MacSearchTopResultCard(item: item)
+                    }
+                }
+                .padding(.horizontal, 44)
+            }
+        }
+    }
+
+    private func previewPosterSection(_ title: String, items: [SeerrMediaItem]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.title3.bold())
+                Image(systemName: "chevron.right")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 44)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 24) {
+                    ForEach(items) { item in
+                        MacSearchPosterResultCard(item: item)
+                    }
+                }
+                .padding(.horizontal, 44)
+            }
+        }
+    }
+
+    private static func movie(_ id: Int, _ title: String, _ year: String, _ posterPath: String) -> SeerrMediaItem {
+        .movie(SeerrMovieResult(
+            id: id,
+            mediaType: "movie",
+            popularity: nil,
+            posterPath: posterPath,
+            backdropPath: nil,
+            voteCount: nil,
+            voteAverage: nil,
+            genreIds: nil,
+            overview: nil,
+            originalLanguage: nil,
+            title: title,
+            originalTitle: title,
+            releaseDate: "\(year)-01-01",
+            adult: false,
+            mediaInfo: nil
+        ))
+    }
+
+    private static func tv(_ id: Int, _ title: String, _ year: String, _ posterPath: String) -> SeerrMediaItem {
+        .tv(SeerrTvResult(
+            id: id,
+            mediaType: "tv",
+            popularity: nil,
+            posterPath: posterPath,
+            backdropPath: nil,
+            voteCount: nil,
+            voteAverage: nil,
+            genreIds: nil,
+            overview: nil,
+            originalLanguage: nil,
+            name: title,
+            originalName: title,
+            originCountry: nil,
+            firstAirDate: "\(year)-01-01",
+            mediaInfo: nil
+        ))
+    }
+}
+#endif
+
 enum SearchScope: Hashable {
     case discover
     case library
 }
+
+#if DEBUG && !os(macOS)
+// Note: the macOS variant already has its own #Preview above.
+#Preview("Search — Browse Genres (tvOS/iOS)") {
+    let jellyfinService = PreviewSupport.jellyfinService
+    NavigationStack {
+        SearchView(apiClient: PreviewSupport.apiClient)
+    }
+    .environment(jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif
+
+#if DEBUG && os(tvOS)
+/// Standalone tvOS preview that shows the genre grid with sample data
+/// without requiring a network call.
+#Preview("Search — Genre Grid (tvOS, static)") {
+    NavigationStack {
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 36),
+                    GridItem(.flexible(), spacing: 36),
+                    GridItem(.flexible(), spacing: 36),
+                    GridItem(.flexible(), spacing: 36)
+                ],
+                spacing: 36
+            ) {
+                ForEach(PreviewSupport.sampleGenreTiles) { genre in
+                    SearchGenreTileView(genre: genre)
+                        .frame(height: 180)
+                }
+            }
+            .padding(.horizontal, 90)
+            .padding(.top, 60)
+            .padding(.bottom, 60)
+        }
+        .lureNavigationTitle("Browse")
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
+    }
+}
+#endif

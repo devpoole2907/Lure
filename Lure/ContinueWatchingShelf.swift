@@ -17,9 +17,27 @@ struct ContinueWatchingShelf: View {
         }
     }
 
+    #if os(tvOS)
+    private let wrapRepeatCount = 20
+    #endif
+
     var body: some View {
         if !visibleItems.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
+                #if os(tvOS)
+                // tvOS: plain, non-focusable header — a focusable NavigationLink
+                // header renders as a giant full-width white plate when focused.
+                // The parent column already sits at the safe-area edge (~90pt
+                // absolute), matching the hero text column.
+                HStack(spacing: 6) {
+                    Image(systemName: "play.rectangle.on.rectangle")
+                        .foregroundStyle(.secondary)
+                    Text("Continue Watching")
+                        .font(.title3.bold())
+                        .foregroundStyle(.primary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                #else
                 NavigationLink {
                     ContinueWatchingListView(
                         items: visibleItems,
@@ -45,8 +63,35 @@ struct ContinueWatchingShelf: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
+                #endif
 
                 ScrollView(.horizontal, showsIndicators: false) {
+                    #if os(tvOS)
+                    LazyHStack(alignment: .top, spacing: 40) {
+                        let virtualCount = shouldWrapItems ? visibleItems.count * wrapRepeatCount : visibleItems.count
+                        ForEach(0..<virtualCount, id: \.self) { virtualIndex in
+                            let itemIndex = shouldWrapItems ? virtualIndex % visibleItems.count : virtualIndex
+                            let item = visibleItems[itemIndex]
+                            ContinueWatchingCard(
+                                item: item,
+                                jellyfinClient: jellyfinClient,
+                                destination: destination(for: item),
+                                onPlay: onPlay,
+                                onMarkWatched: markWatched
+                            )
+                            .contextMenu {
+                                ContinueWatchingContextMenu(
+                                    item: item,
+                                    destination: destination(for: item),
+                                    onMarkWatched: markWatched
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 90)
+                    // Vertical headroom so the focus scale-up never clips.
+                    .padding(.vertical, 30)
+                    #else
                     LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(visibleItems, id: \.id) { item in
                             ContinueWatchingCard(
@@ -66,7 +111,16 @@ struct ContinueWatchingShelf: View {
                         }
                     }
                     .padding(.horizontal, 16)
+                    #endif
                 }
+                #if os(tvOS)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                // Bleed past the safe area so the 90pt leading margin measures
+                // from the absolute screen edge and trailing content scrolls to
+                // the edge; disable clipping so focus scale isn't cut off.
+                .scrollClipDisabled()
+                .ignoresSafeArea(edges: .horizontal)
+                #endif
             }
             .task(id: visibleItems.compactMap(\.id).joined(separator: "|")) {
                 destinationsByItemID = await ContinueWatchingDestinationResolver.destinations(
@@ -81,6 +135,14 @@ struct ContinueWatchingShelf: View {
     private func destination(for item: JellyfinItem) -> MediaDestination? {
         guard let itemID = item.id else { return nil }
         return destinationsByItemID[itemID]
+    }
+
+    private var shouldWrapItems: Bool {
+        #if os(tvOS)
+        visibleItems.count > 4
+        #else
+        false
+        #endif
     }
 
     @MainActor
@@ -112,8 +174,13 @@ private struct ContinueWatchingCard: View {
     let onPlay: (JellyfinItem) -> Void
     let onMarkWatched: (JellyfinItem) async -> Void
 
+    #if os(tvOS)
+    private static let cardWidth: CGFloat = 360
+    private static let cardHeight: CGFloat = 202 // 16:9
+    #else
     private static let cardWidth: CGFloat = 240
     private static let cardHeight: CGFloat = 135 // 16:9
+    #endif
 
     private var thumbURL: URL? {
         guard let client = jellyfinClient else { return nil }
@@ -136,6 +203,24 @@ private struct ContinueWatchingCard: View {
     }
 
     var body: some View {
+        #if os(tvOS)
+        Button {
+            onPlay(item)
+        } label: {
+            cardContent
+        }
+        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.06))
+        .accessibilityLabel(displayTitle)
+        .accessibilityHint("Starts playback. Long-press for more actions.")
+        #else
+        cardContent
+            .onTapGesture {
+                onPlay(item)
+            }
+        #endif
+    }
+
+    private var cardContent: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottom) {
                 PosterImage(
@@ -156,12 +241,17 @@ private struct ContinueWatchingCard: View {
                                 .scaleEffect(x: 1, y: 0.7)
                         }
                         Spacer(minLength: 0)
+                        #if !os(tvOS)
+                        // On tvOS the '...' Menu button is suppressed — the context
+                        // menu (long-press) surfaces the same actions without adding
+                        // a bordered chrome button on top of the card.
                         ContinueWatchingMenuButton(
                             item: item,
                             destination: destination,
                             onMarkWatched: onMarkWatched
                         )
                         .foregroundStyle(.white)
+                        #endif
                     }
                     .padding(.horizontal, 8)
                     .padding(.bottom, 6)
@@ -190,9 +280,6 @@ private struct ContinueWatchingCard: View {
         }
         .frame(width: Self.cardWidth)
         .contentShape(Rectangle())
-        .onTapGesture {
-            onPlay(item)
-        }
     }
 }
 
@@ -240,7 +327,7 @@ private struct ContinueWatchingListView: View {
             }
         }
         .listStyle(.plain)
-        .navigationTitle("Continue Watching")
+        .lureNavigationTitle("Continue Watching")
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
 #endif

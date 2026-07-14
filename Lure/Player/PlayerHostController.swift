@@ -85,8 +85,14 @@ final class PlayerHostController: AVPlayerViewController, AVPlayerViewController
         vm.engine.$state
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
-                if state == .playing {
-                    self?.hasEverPlayed = true
+                guard let self, state == .playing else { return }
+                self.hasEverPlayed = true
+                // Rearm the auto-hide on every resume: a timer that fired while
+                // paused bails on its `.playing` guard without rescheduling, which
+                // used to strand the custom overlays (tracks menu, SharePlay
+                // button) on screen for the rest of the session.
+                if self.vm.controlsVisible {
+                    self.scheduleControlsAutoHide()
                 }
             }
             .store(in: &subscriptions)

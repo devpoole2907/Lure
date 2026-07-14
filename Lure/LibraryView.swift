@@ -17,7 +17,11 @@ struct LibraryView: View {
                     ProgressView()
                 }
             }
+            #if os(tvOS)
+            .navigationTitle("")
+            #else
             .navigationTitle("Library")
+            #endif
             .navigationDestination(for: MediaDestination.self) { destination in
                 switch destination.mediaType {
                 case "movie":

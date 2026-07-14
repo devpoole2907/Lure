@@ -41,7 +41,7 @@ struct EpisodeDetailView: View {
                     .background { artBackground }
             }
         }
-        .navigationTitle(episode?.name ?? route.episodeTitle)
+        .lureNavigationTitle(episode?.name ?? route.episodeTitle)
 #if os(iOS) || os(visionOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -54,10 +54,10 @@ struct EpisodeDetailView: View {
 
     private var scrollContent: some View {
         ScrollView {
-            LazyVStack(alignment: .center, spacing: 20) {
+            LazyVStack(alignment: detailStackAlignment, spacing: 20) {
                 heroSection
 
-                VStack(alignment: .center, spacing: 20) {
+                VStack(alignment: detailContentAlignment, spacing: 20) {
                     if !episodeCast.isEmpty {
                         castCard(episodeCast)
                     }
@@ -67,16 +67,23 @@ struct EpisodeDetailView: View {
                         rowsCard(header: "Info", icon: "info.circle", rows: rows)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, detailContentHorizontalPadding)
                 .padding(.bottom, 44)
-                .frame(maxWidth: 720)
+                .frame(maxWidth: detailContentMaxWidth, alignment: detailFrameAlignment)
                 .frame(maxWidth: .infinity)
             }
         }
+        #if os(tvOS)
+        .ignoresSafeArea(edges: [.top, .horizontal])
+        #else
+        .ignoresSafeArea(edges: .top)
+        #endif
 #if os(iOS)
         .scrollEdgeEffectStyle(.soft, for: .all)
 #endif
-        .ignoresSafeArea(edges: .top)
+#if os(macOS)
+        .scrollEdgeEffectStyle(.soft, for: .all)
+#endif
         .onScrollGeometryChange(for: CGFloat.self) {
             $0.contentOffset.y + $0.contentInsets.top
         } action: { _, newValue in
@@ -139,7 +146,53 @@ struct EpisodeDetailView: View {
 
     private var episodeArtworkURL: URL? {
         guard let client = jellyfinClient else { return nil }
+        #if os(tvOS)
+        return client.primaryImageURL(itemId: route.itemId, width: 1920)
+        #else
         return client.primaryImageURL(itemId: route.itemId, width: 1000)
+        #endif
+    }
+
+    private var detailStackAlignment: HorizontalAlignment {
+        #if os(tvOS) || os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var detailContentAlignment: HorizontalAlignment {
+        #if os(tvOS) || os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var detailFrameAlignment: Alignment {
+        #if os(tvOS) || os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var detailContentMaxWidth: CGFloat {
+        #if os(tvOS) || os(macOS)
+        .infinity
+        #else
+        720
+        #endif
+    }
+
+    private var detailContentHorizontalPadding: CGFloat {
+        #if os(tvOS)
+        90
+        #elseif os(macOS)
+        44
+        #else
+        16
+        #endif
     }
 
     private var episodeBadges: [DetailBadge] {
@@ -237,20 +290,38 @@ struct EpisodeDetailView: View {
     }
 
     private func rowsCard(header: String, icon: String, rows: [(String, String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        #if os(tvOS)
+        let horizontalPadding: CGFloat = 28
+        let headerTopPadding: CGFloat = 22
+        let headerBottomPadding: CGFloat = 12
+        let rowVerticalPadding: CGFloat = 14
+        let rowSpacing: CGFloat = 14
+        let iconWidth: CGFloat = 24
+        let dividerLeadingPadding: CGFloat = 66
+        #else
+        let horizontalPadding: CGFloat = 16
+        let headerTopPadding: CGFloat = 14
+        let headerBottomPadding: CGFloat = 8
+        let rowVerticalPadding: CGFloat = 11
+        let rowSpacing: CGFloat = 10
+        let iconWidth: CGFloat = 16
+        let dividerLeadingPadding: CGFloat = 42
+        #endif
+
+        return VStack(alignment: .leading, spacing: 0) {
             Label(header, systemImage: icon)
                 .font(.headline)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.top, headerTopPadding)
+                .padding(.bottom, headerBottomPadding)
 
             ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                HStack(spacing: 10) {
+                HStack(spacing: rowSpacing) {
                     Image(systemName: row.0)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .frame(width: 16, alignment: .center)
+                        .frame(width: iconWidth, alignment: .center)
                     Text(row.1)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -260,11 +331,11 @@ struct EpisodeDetailView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, rowVerticalPadding)
 
                 if index < rows.count - 1 {
-                    Divider().padding(.leading, 42)
+                    Divider().padding(.leading, dividerLeadingPadding)
                 }
             }
 
@@ -272,10 +343,33 @@ struct EpisodeDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        #if os(tvOS)
+        .focusable()
+        #endif
     }
 
     private func castCard(_ cast: [JellyfinPerson]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        #if os(tvOS)
+        let avatarSize: CGFloat = 150
+        let cellWidth: CGFloat = 180
+        let cellHeight: CGFloat = 280
+        let nameTextHeight: CGFloat = 58
+        let roleTextHeight: CGFloat = 54
+        let castSpacing: CGFloat = 36
+        let nameFont = Font.body.weight(.semibold)
+        let roleFont = Font.callout
+        #else
+        let avatarSize: CGFloat = 56
+        let cellWidth: CGFloat = 76
+        let cellHeight: CGFloat = 132
+        let nameTextHeight: CGFloat = 30
+        let roleTextHeight: CGFloat = 30
+        let castSpacing: CGFloat = 12
+        let nameFont = Font.caption2
+        let roleFont = Font.caption2
+        #endif
+
+        return VStack(alignment: .leading, spacing: 10) {
             Label("Cast", systemImage: "person.2")
                 .font(.headline)
                 .foregroundStyle(.white)
@@ -283,7 +377,7 @@ struct EpisodeDetailView: View {
                 .padding(.top, 14)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
+                LazyHStack(spacing: castSpacing) {
                     ForEach(cast) { person in
                         VStack(spacing: 4) {
                             AsyncImage(url: personImageURL(for: person)) { image in
@@ -295,29 +389,42 @@ struct EpisodeDetailView: View {
                                     .fill(.quaternary)
                                     .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
                             }
-                            .frame(width: 56, height: 56)
+                            .frame(width: avatarSize, height: avatarSize)
                             .clipShape(Circle())
 
                             Text(person.name ?? "")
-                                .font(.caption2)
-                                .lineLimit(1)
-                                .frame(width: 76)
+                                .font(nameFont)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: cellWidth, height: nameTextHeight, alignment: .top)
 
                             Text(person.role ?? "")
-                                .font(.caption2)
+                                .font(roleFont)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .frame(width: 76)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .frame(width: cellWidth, height: roleTextHeight, alignment: .top)
                         }
+                        .frame(width: cellWidth, height: cellHeight, alignment: .top)
+                        #if os(tvOS)
+                        .focusable()
+                        #endif
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
             }
+            #if os(tvOS)
+            .scrollClipDisabled()
+            #else
             .horizontalSoftEdges()
+            #endif
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        #if os(tvOS)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        #endif
     }
 
     private func personImageURL(for person: JellyfinPerson) -> URL? {

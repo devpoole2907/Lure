@@ -31,6 +31,12 @@ final class JellyfinService {
         hasCredentials = true
         lookupCache.removeAll()
         libraryMediaIDsCache = nil
+        // Installs that signed in before the Top Shelf mirror existed have
+        // credentials only in the keychain; re-mirror on every reload so the
+        // tvOS Top Shelf extension can always read them from the App Group.
+        TopShelfCredentialStore.save(
+            TopShelfCredentials(serverURL: creds.serverURL, token: creds.token, userId: creds.userId)
+        )
     }
 
     /// Wipe credentials from the keychain and forget the client. Call on logout.

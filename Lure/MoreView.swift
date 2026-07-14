@@ -33,7 +33,7 @@ struct MoreView: View {
 #if os(iOS) || os(visionOS)
             .listStyle(.insetGrouped)
 #endif
-            .navigationTitle("More")
+            .lureNavigationTitle("More")
 #if os(iOS) || os(visionOS)
             .toolbarTitleDisplayMode(.large)
 #endif
