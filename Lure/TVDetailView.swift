@@ -263,10 +263,11 @@ struct TVDetailView: View {
             mediaTypeLabel: "TV Show",
             year: show.year,
             runtime: nil,
-            rating: show.voteAverage,
+            rating: nil,
             overview: show.overview,
             badges: showBadges(show),
             genres: show.genres?.compactMap(\.name) ?? [],
+            ratingItems: heroRatingItems(for: show),
             verticalOffset: heroVerticalOffset,
             primaryAction: heroAction(for: show),
             secondaryAction: favoriteAction(for: show)
@@ -345,6 +346,23 @@ struct TVDetailView: View {
         return badges
     }
 
+    private func heroRatingItems(for show: SeerrTVDetail) -> [DetailHeroRatingItem] {
+        [
+            vm.ratings?.imdbRating.map {
+                DetailHeroRatingItem(label: "IMDb", value: String(format: "%.1f", $0))
+            },
+            (vm.ratings?.tmdbRating ?? show.voteAverage).flatMap {
+                $0 > 0 ? DetailHeroRatingItem(label: "TMDb", value: String(format: "%.0f%%", $0 * 10)) : nil
+            },
+            vm.ratings?.criticsScore.map {
+                DetailHeroRatingItem(label: "RT", value: "\($0)%")
+            },
+            vm.ratings?.audienceScore.map {
+                DetailHeroRatingItem(label: "Audience", value: "\($0)%")
+            }
+        ].compactMap { $0 }
+    }
+
     // MARK: - Cards Section
 
     @ViewBuilder
@@ -365,11 +383,6 @@ struct TVDetailView: View {
 
         if let providers = show.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-        }
-
-        if let ratings = vm.ratings, ratings.hasAnyScore {
-            ratingsCard(ratings)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
 
@@ -674,27 +687,6 @@ struct TVDetailView: View {
         default:
             return status
         }
-    }
-
-    // MARK: - Ratings Card
-
-    private func ratingsCard(_ ratings: SeerrRatingsCombined) -> some View {
-        let items: [(String, String)] = [
-            ratings.imdbRating.map { ("IMDb", String(format: "%.1f", $0)) },
-            ratings.tmdbRating.map { ("TMDb", String(format: "%.0f%%", $0 * 10)) },
-            ratings.criticsScore.map { ("RT", "\($0)%") },
-            ratings.audienceScore.map { ("Audience", "\($0)%") }
-        ].compactMap { $0 }
-
-        return HStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                statCell(value: item.1, label: item.0)
-                if index < items.count - 1 { cardDivider }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Cast Card

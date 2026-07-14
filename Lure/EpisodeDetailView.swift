@@ -97,6 +97,7 @@ struct EpisodeDetailView: View {
             overview: episode?.overview,
             badges: episodeBadges,
             genres: [],
+            ratingItems: [],
             verticalOffset: heroVerticalOffset,
             primaryAction: DetailPosterHeroAction(
                 title: "Play Episode",

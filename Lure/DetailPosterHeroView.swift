@@ -20,6 +20,7 @@ struct DetailPosterHeroView: View {
     let overview: String?
     let badges: [DetailBadge]
     let genres: [String]
+    let ratingItems: [DetailHeroRatingItem]
     let verticalOffset: CGFloat
     let primaryAction: DetailPosterHeroAction
     let secondaryAction: DetailPosterHeroAction?
@@ -110,6 +111,8 @@ struct DetailPosterHeroView: View {
             overviewSection
 
             footerMetadata
+
+            ratingsRow
         }
         .foregroundStyle(.white)
         .frame(maxWidth: 540)
@@ -219,6 +222,46 @@ struct DetailPosterHeroView: View {
     }
 
     @ViewBuilder
+    private var ratingsRow: some View {
+        if !ratingItems.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Array(ratingItems.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            Text("·")
+                                .foregroundStyle(.white.opacity(0.36))
+                        }
+
+                        ratingItem(item)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollClipDisabled()
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.72))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private func ratingItem(_ item: DetailHeroRatingItem) -> some View {
+        if let destination = item.destination {
+            Link(destination: destination) {
+                HStack(spacing: 3) {
+                    Text(item.text)
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text(item.text)
+        }
+    }
+
+    @ViewBuilder
     private var metadataRow: some View {
         HStack(spacing: 8) {
             Text(mediaTypeLabel)
@@ -287,6 +330,11 @@ struct DetailPosterHeroView: View {
         overview: SeerrTVDetail.previewShow.overview,
         badges: [],
         genres: SeerrTVDetail.previewShow.genres?.compactMap(\.name) ?? [],
+        ratingItems: [
+            DetailHeroRatingItem(label: "IMDb", value: "8.4"),
+            DetailHeroRatingItem(label: "RT", value: "91%"),
+            DetailHeroRatingItem(label: "Audience", value: "82%")
+        ],
         verticalOffset: 0,
         primaryAction: DetailPosterHeroAction(title: "Play First Episode", systemImage: "play.fill") {},
         secondaryAction: DetailPosterHeroAction(title: "Add to Favorites", systemImage: "plus") {}

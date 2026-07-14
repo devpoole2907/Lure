@@ -232,10 +232,11 @@ struct MovieDetailView: View {
             mediaTypeLabel: "Movie",
             year: movie.year,
             runtime: movie.runtimeText,
-            rating: movie.voteAverage,
+            rating: nil,
             overview: movie.overview,
             badges: movieBadges(movie),
             genres: movie.genres?.compactMap(\.name) ?? [],
+            ratingItems: heroRatingItems(for: movie),
             verticalOffset: heroVerticalOffset,
             primaryAction: heroAction(for: movie),
             secondaryAction: favoriteAction(for: movie)
@@ -321,14 +322,31 @@ struct MovieDetailView: View {
         return badges
     }
 
+    private func heroRatingItems(for movie: SeerrMovieDetail) -> [DetailHeroRatingItem] {
+        let imdbId = movie.imdbId ?? movie.externalIds?.imdbId
+        let imdbURL = imdbId.flatMap { URL(string: "https://www.imdb.com/title/\($0)/") }
+
+        return [
+            vm.ratings?.imdbRating.map {
+                DetailHeroRatingItem(label: "IMDb", value: String(format: "%.1f", $0), destination: imdbURL)
+            },
+            movie.voteAverage.flatMap {
+                $0 > 0 ? DetailHeroRatingItem(label: "TMDb", value: String(format: "%.0f%%", $0 * 10)) : nil
+            },
+            vm.ratings?.criticsScore.map {
+                DetailHeroRatingItem(label: "RT", value: "\($0)%")
+            },
+            vm.ratings?.audienceScore.map {
+                DetailHeroRatingItem(label: "Audience", value: "\($0)%")
+            }
+        ].compactMap { $0 }
+    }
+
     // MARK: - Cards Section
 
     @ViewBuilder
     private func cardsSection(_ movie: SeerrMovieDetail) -> some View {
         requestCard(movie)
-
-        ratingsCard(vm.ratings, movie: movie)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
 
         if let providers = movie.usWatchProviders, let named = namedProviders(providers) {
             watchProvidersCard(providers, named: named)
@@ -598,57 +616,6 @@ struct MovieDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Ratings Card
-
-    @ViewBuilder
-    private func ratingsCard(_ ratings: SeerrRatingsCombined?, movie: SeerrMovieDetail) -> some View {
-        let imdbId = movie.imdbId ?? movie.externalIds?.imdbId
-        let items: [(String, String)] = [
-            ratings?.imdbRating.map { ("IMDb", String(format: "%.1f", $0)) },
-            movie.voteAverage.flatMap { $0 > 0 ? ("TMDb", String(format: "%.0f%%", $0 * 10)) : nil },
-            ratings?.criticsScore.map { ("RT", "\($0)%") },
-            ratings?.audienceScore.map { ("Audience", "\($0)%") }
-        ].compactMap { $0 }
-
-        if !items.isEmpty {
-            HStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                Group {
-                    if item.0 == "IMDb", let imdbId, !imdbId.isEmpty,
-                       let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
-                        Link(destination: url) {
-                            VStack(spacing: 2) {
-                                Text(item.1)
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
-                                HStack(spacing: 3) {
-                                    Text(item.0)
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 8))
-                                }
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        statCell(value: item.1, label: item.0)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-
-                if index < items.count - 1 { cardDivider }
-            }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-        }
-    }
-
     // MARK: - Cast Card
 
     private func castCard(_ cast: [SeerrCastMember]) -> some View {
@@ -726,18 +693,6 @@ struct MovieDetailView: View {
         Label(text, systemImage: icon)
             .font(.headline)
             .foregroundStyle(.white)
-    }
-
-    private var cardDivider: some View {
-        Rectangle().fill(.separator).frame(width: 0.5, height: 26)
-    }
-
-    private func statCell(value: String, label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private func rowsCard(header: String, icon: String, rows: [(String, String, String)]) -> some View {
