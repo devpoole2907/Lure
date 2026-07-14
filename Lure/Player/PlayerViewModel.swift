@@ -17,6 +17,21 @@ private typealias StreamCandidate = (
     mediaSourceId: String
 )
 
+/// Local playback signal fired from the `bindPublishers()` sinks -- i.e. from engine
+/// truth, not from button intents -- so `WatchTogetherCoordinator` can broadcast
+/// SharePlay sync messages regardless of which UI (AVKit's native chrome or the
+/// custom `TransportOverlay`) produced the change.
+enum PlaybackSyncSignal {
+    case play(position: Double)
+    case pause(position: Double)
+    case seek(position: Double)
+    /// Fired from `load()` when the resolved item differs from the VM's previous one
+    /// (ISSUE watch-together #3), so `WatchTogetherCoordinator` can keep the other
+    /// SharePlay participant on the same title instead of just nudging play/pause/seek
+    /// at a player that's on the wrong item.
+    case mediaChanged(itemId: String, title: String, episodeLabel: String?)
+}
+
 @MainActor
 @Observable
 final class PlayerViewModel {
@@ -80,6 +95,13 @@ final class PlayerViewModel {
 
     let engine: AetherEngine
 
+    /// Hook for `WatchTogetherCoordinator` (SharePlay). Fired from the engine state /
+    /// clock sinks in `bindPublishers()`, not from `togglePlayPause()`/`seek(to:)`
+    /// themselves, so it captures changes regardless of which UI produced them (AVKit's
+    /// native chrome bypasses this view model's control methods entirely). No control-flow
+    /// changes to the methods below: this is purely observational.
+    var onLocalPlaybackSignal: ((PlaybackSyncSignal) -> Void)?
+
     // MARK: - Jellyfin session state (private)
     private let jellyfinService: JellyfinService
     private(set) var jellyfinClient: JellyfinAPIClient?
@@ -103,6 +125,10 @@ final class PlayerViewModel {
     private var cancellables: Set<AnyCancellable> = []
     private var progressTask: Task<Void, Never>?
     private var countdownTask: Task<Void, Never>?
+    /// Wall-clock timestamp of the previous `engine.clock.$currentTime` tick, used by
+    /// the SharePlay local-seek detector to scale its expected-delta check by
+    /// `playbackRate` instead of a flat threshold (ISSUE watch-together #3).
+    private var lastSeekCheckWallClock: Date?
     private var nextEpisodeCountdownSuppressed = false
     private var startupDiagnosticsTask: Task<Void, Never>?
     private let lifecycleObserverBag = LifecycleObserverBag()
@@ -154,6 +180,11 @@ final class PlayerViewModel {
         releaseYear: Int? = nil,
         mediaType: String = "movie"
     ) async {
+        // Captured before `self.itemId` is overwritten below, so the SharePlay
+        // `mediaChanged` signal fired after item resolution (ISSUE watch-together #3)
+        // can tell an in-session item switch (e.g. next episode) apart from this VM's
+        // very first load.
+        let previousItemId = self.itemId
         self.title = title
         self.episodeLabel = episodeLabel
         self.itemId = itemId
@@ -188,6 +219,15 @@ final class PlayerViewModel {
                     throw JellyfinError.itemNotFound
                 }
                 self.itemId = found
+            }
+
+            // SharePlay (ISSUE watch-together #3): broadcast a title/episode switch so
+            // the other participant follows along instead of getting nudged by sync
+            // messages for a player that's on the wrong item. Compared against the VM's
+            // item before this call, not the (possibly empty) `itemId` parameter, so a
+            // session's very first load doesn't fire.
+            if !previousItemId.isEmpty, previousItemId != self.itemId {
+                onLocalPlaybackSignal?(.mediaChanged(itemId: self.itemId, title: title, episodeLabel: episodeLabel))
             }
 
             // Read resume position
@@ -717,6 +757,12 @@ final class PlayerViewModel {
         }
     }
 
+    /// Exposed read-only for `WatchTogetherCoordinator`'s `mediaChanged` receive path
+    /// (ISSUE watch-together #3), which needs to know whether an incoming remote item
+    /// switch is actually a change before reloading. `itemId` itself stays private --
+    /// nothing outside this VM should be able to set it.
+    var currentItemId: String { itemId }
+
     var isPlaying: Bool { state == .playing }
     /// Derived from `playbackPhase` (ISSUE-012) instead of just `state`, so mid-playback
     /// rebuffers/stalls/seeks surface the same buffering signal as startup loading does.
@@ -763,8 +809,10 @@ final class PlayerViewModel {
                 // control toggles, which never call togglePlayPause().
                 if previous == .playing, value == .paused {
                     self.reportPauseTransition(isPaused: true, eventName: "Pause")
+                    self.onLocalPlaybackSignal?(.pause(position: self.currentTime))
                 } else if previous == .paused, value == .playing {
                     self.reportPauseTransition(isPaused: false, eventName: "Unpause")
+                    self.onLocalPlaybackSignal?(.play(position: self.currentTime))
                 }
 
                 // ISSUE-006: PlaybackState.ended is terminal like .idle but reached by
@@ -785,12 +833,17 @@ final class PlayerViewModel {
             .store(in: &cancellables)
         engine.clock.$currentTime
             .sink { [weak self] value in
-                self?.currentTime = value
-                self?.checkSegments()
-                self?.checkNearEnd()
+                guard let self else { return }
+                // Capture BEFORE the assignment below overwrites it -- the SharePlay
+                // seek detector needs the pre-tick value to compare against.
+                let previous = self.currentTime
+                self.currentTime = value
+                self.checkSegments()
+                self.checkNearEnd()
+                self.detectLocalSeek(previous: previous, new: value)
                 #if DEBUG
                 let second = Int(value.rounded(.down))
-                if let self, second != self.lastLoggedPlaybackSecond, second >= 0, second <= 12 {
+                if second != self.lastLoggedPlaybackSecond, second >= 0, second <= 12 {
                     self.lastLoggedPlaybackSecond = second
                     print("[PlayerViewModel] time -> \(String(format: "%.3f", value)) layer=\(self.displayLayerStatus())")
                 }
@@ -1034,6 +1087,41 @@ final class PlayerViewModel {
         if currentTime >= threshold {
             showNextEpisodeCountdown = true
             startCountdown()
+        }
+    }
+
+    // MARK: - Private: SharePlay Local Seek Detection
+
+    /// Distinguishes an in-session seek (user drag, skip-intro, remote SharePlay
+    /// command) from ordinary playback ticking forward, so `onLocalPlaybackSignal`
+    /// only fires for the former. A flat `abs(new - previous) > threshold` check
+    /// false-positives during fast playback (2x makes `currentTime` legitimately jump
+    /// ~2s per wall-clock second), so the expected per-tick delta is scaled by
+    /// `playbackRate` instead. Suppressed outside `.playing`/`.paused` so a fresh
+    /// `load()` landing on a resume position, or the startup jump to 0, isn't reported.
+    private func detectLocalSeek(previous: Double, new: Double) {
+        // No SharePlay session attached: skip the Date() work entirely on every tick.
+        // Reset the wall-clock baseline (rather than leaving it stale) so that if a
+        // session attaches later, the first tick after that re-baselines instead of
+        // measuring a multi-minute gap as a seek.
+        guard onLocalPlaybackSignal != nil else {
+            lastSeekCheckWallClock = nil
+            return
+        }
+
+        let now = Date()
+        defer { lastSeekCheckWallClock = now }
+
+        guard state == .playing || state == .paused else { return }
+        guard let lastWallClock = lastSeekCheckWallClock else { return }
+
+        let wallElapsed = now.timeIntervalSince(lastWallClock)
+        guard wallElapsed > 0 else { return }
+
+        let expected = state == .playing ? wallElapsed * Double(playbackRate) : 0
+        let delta = (new - previous) - expected
+        if abs(delta) > 1.5 {
+            onLocalPlaybackSignal?(.seek(position: new))
         }
     }
 

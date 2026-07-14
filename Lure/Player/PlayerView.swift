@@ -16,6 +16,12 @@ struct PlayerView: View {
     var onStopped: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(WatchTogetherCoordinator.self) private var watchTogetherCoordinator
+    // Optional: injected by `PlayerPresentationModifier`'s `fullScreenCover` on iOS, but
+    // `PlayerWindowView` (macOS's separate player window) doesn't have one to pass down --
+    // this stays nil there rather than crashing, and the sessionError banner below is
+    // simply a no-op on that path (v1 scope, see FIX 8's multi-window note).
+    @Environment(InAppNotificationCenter.self) private var notificationCenter: InAppNotificationCenter?
     @State private var hasStartedLoad = false
 
     var body: some View {
@@ -30,6 +36,11 @@ struct PlayerView: View {
                 print("[PlayerView] onAppear hasStartedLoad=\(hasStartedLoad) itemId=\((media.itemId ?? "").isEmpty ? "<empty>" : media.itemId ?? "") title=\(media.title) mediaType=\(media.mediaType)")
                 #endif
                 PlayerOrientationController.lockLandscape()
+                // Joined-in-progress case: a Watch Together session may already be
+                // active (this device just received one via `listenForIncomingSessions()`
+                // moments before this view finished presenting), or `vm` simply needs to
+                // be on record so a session this device itself starts can find it.
+                watchTogetherCoordinator.registerActiveViewModel(vm)
                 guard !hasStartedLoad else { return }
                 hasStartedLoad = true
                 Task {
@@ -38,10 +49,24 @@ struct PlayerView: View {
             }
             .onDisappear {
                 PlayerOrientationController.unlock()
+                watchTogetherCoordinator.detach()
             }
             .onChange(of: vm.playbackEnded) { _, ended in
                 guard ended else { return }
                 Task { await stop(reportToJellyfin: false) }
+            }
+            // Mirrors `PlayerCoordinator.presentationError` (see PlayerCoordinator.swift):
+            // a SharePlay activation failure surfaces here rather than only to the
+            // `#if DEBUG` console log, since the button tap that triggers it happens
+            // while this screen is already on top.
+            .onChange(of: watchTogetherCoordinator.sessionError) { _, message in
+                guard let message else { return }
+                notificationCenter?.show(LureBannerItem(
+                    title: "Watch Together",
+                    message: message,
+                    style: .error
+                ))
+                watchTogetherCoordinator.sessionError = nil
             }
     }
 
@@ -92,18 +117,65 @@ struct PlayerView: View {
             if let error = vm.errorMessage {
                 errorView(error)
             }
+
+            if vm.controlsVisible {
+                watchTogetherButton
+            }
+
+            // `ContentView`'s own banner overlay lives outside this `fullScreenCover`,
+            // so it's covered by this screen while the player is up (iOS) -- render the
+            // same `notificationCenter` here too, otherwise a mid-session sessionError
+            // banner would be set but never actually seen.
+            if let banner = notificationCenter?.currentBanner {
+                VStack {
+                    LureNotificationBanner(item: banner) {
+                        notificationCenter?.dismiss()
+                    }
+                    .padding(.top, 8)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .ignoresSafeArea()
+            }
         }
     }
 
-    #if os(iOS)
-    private func overlayIcon(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.title3.weight(.semibold))
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .glassEffect(.regular.interactive(), in: Circle())
+    /// SharePlay entry point. Lives in the outer `ZStack` (like `isBuffering`/`errorView`
+    /// above) so one call site covers the AVKit-native path, the custom `TransportOverlay`
+    /// path, and macOS. Gated on `vm.controlsVisible`, the same flag `nativeAuxOverlay`
+    /// fades its own chrome on, so it hides/shows together with the rest of the transport.
+    private var watchTogetherButton: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button {
+                    watchTogetherCoordinator.startSession(media: media)
+                } label: {
+                    overlayIcon("shareplay", tinted: watchTogetherCoordinator.isSessionActive)
+                }
+                .accessibilityLabel(watchTogetherCoordinator.isSessionActive ? "Watch Together (active)" : "Watch Together")
+                .padding(.trailing, 20)
+                .padding(.top, 12)
+            }
+            Spacer()
+        }
+        .opacity(vm.controlsVisible ? 1 : 0)
+        .allowsHitTesting(vm.controlsVisible)
+        .animation(.easeInOut(duration: 0.25), value: vm.controlsVisible)
+        .ignoresSafeArea()
     }
 
+    /// `tinted` marks the Watch Together button's active state (an in-progress
+    /// SharePlay session) -- the other `overlayIcon` call sites just leave it `false`.
+    private func overlayIcon(_ systemName: String, tinted: Bool = false) -> some View {
+        Image(systemName: systemName)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(tinted ? .blue : .white)
+            .frame(width: 44, height: 44)
+            .glassEffect(tinted ? .regular.tint(.blue).interactive() : .regular.interactive(), in: Circle())
+    }
+
+    #if os(iOS)
     /// Slim custom strip over AVKit's native chrome on the native backend. AVKit
     /// owns close / transport / volume / AirPlay / PiP / Enhance Dialogue and (via
     /// `prepareNativeSubtitles`) the native text-subtitle menu. We only surface what

@@ -37,11 +37,14 @@ struct LureApp: App {
     let modelContainer: ModelContainer
     @State private var jellyfinService: JellyfinService
     @State private var playerCoordinator: PlayerCoordinator
+    @State private var watchTogetherCoordinator: WatchTogetherCoordinator
 
     init() {
         let jellyfinService = JellyfinService()
         _jellyfinService = State(wrappedValue: jellyfinService)
-        _playerCoordinator = State(wrappedValue: PlayerCoordinator(jellyfinService: jellyfinService))
+        let playerCoordinator = PlayerCoordinator(jellyfinService: jellyfinService)
+        _playerCoordinator = State(wrappedValue: playerCoordinator)
+        _watchTogetherCoordinator = State(wrappedValue: WatchTogetherCoordinator(playerCoordinator: playerCoordinator))
 
         let schema = Schema([
             LureServerProfile.self,
@@ -68,18 +71,21 @@ struct LureApp: App {
             if DebugPlaybackHarnessView.isEnabled {
                 DebugPlaybackHarnessView(
                     jellyfinService: jellyfinService,
-                    playerCoordinator: playerCoordinator
+                    playerCoordinator: playerCoordinator,
+                    watchTogetherCoordinator: watchTogetherCoordinator
                 )
             } else {
                 ContentView(
                     jellyfinService: jellyfinService,
-                    playerCoordinator: playerCoordinator
+                    playerCoordinator: playerCoordinator,
+                    watchTogetherCoordinator: watchTogetherCoordinator
                 )
             }
             #else
             ContentView(
                 jellyfinService: jellyfinService,
-                playerCoordinator: playerCoordinator
+                playerCoordinator: playerCoordinator,
+                watchTogetherCoordinator: watchTogetherCoordinator
             )
             #endif
         }
@@ -90,6 +96,7 @@ struct LureApp: App {
             if let media {
                 PlayerWindowView(media: media)
                     .environment(jellyfinService)
+                    .environment(watchTogetherCoordinator)
                     .frame(minWidth: 960, minHeight: 540)
             } else {
                 Color.black
@@ -110,6 +117,11 @@ private struct DebugPlaybackHarnessView: View {
 
     let jellyfinService: JellyfinService
     let playerCoordinator: PlayerCoordinator
+    // Not wired to a `.task { listenForIncomingSessions() }` in the debug harness
+    // (manual local-item-playback tool, not the real login flow) -- injected only so
+    // `PlayerView`'s non-optional `@Environment(WatchTogetherCoordinator.self)` lookup
+    // doesn't crash when a debug session opens the player.
+    let watchTogetherCoordinator: WatchTogetherCoordinator
 
     @State private var notificationCenter = InAppNotificationCenter()
     @State private var didStart = false
@@ -133,6 +145,7 @@ private struct DebugPlaybackHarnessView: View {
         .environment(notificationCenter)
         .environment(jellyfinService)
         .environment(playerCoordinator)
+        .environment(watchTogetherCoordinator)
         .task { await startIfNeeded() }
     }
 

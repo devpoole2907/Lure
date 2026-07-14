@@ -11,7 +11,6 @@ struct TransportOverlay: View {
     @State private var showAudioPicker = false
     @State private var showSubtitlePicker = false
     @State private var hideTask: Task<Void, Never>? = nil
-    @State private var controlsVisible = true
     #if os(tvOS)
     @FocusState private var focusedControl: TVTransportFocus?
     @State private var tvScrubbing = false
@@ -22,7 +21,7 @@ struct TransportOverlay: View {
 
     var body: some View {
         ZStack {
-            if controlsVisible {
+            if vm.controlsVisible {
                 ZStack {
                     // Two-band gradient: dark at top/bottom, clear in middle (matches system player)
                     VStack(spacing: 0) {
@@ -102,7 +101,7 @@ struct TransportOverlay: View {
             handleTVMoveCommand(direction)
         }
         .onChange(of: focusedControl) { _, _ in
-            guard controlsVisible else { return }
+            guard vm.controlsVisible else { return }
             resetHideTimer()
         }
         .onChange(of: vm.showNextEpisodeCountdown) { _, visible in
@@ -580,9 +579,9 @@ struct TransportOverlay: View {
         }
         #endif
         withAnimation(.easeInOut(duration: 0.2)) {
-            controlsVisible.toggle()
+            vm.controlsVisible.toggle()
         }
-        if controlsVisible {
+        if vm.controlsVisible {
             #if os(tvOS)
             focusedControl = .playPause
             #endif
@@ -604,7 +603,7 @@ struct TransportOverlay: View {
             guard !tvScrubbing, !vm.showNextEpisodeCountdown, vm.activeIntroSegment == nil else { return }
             #endif
             withAnimation(.easeInOut(duration: 0.3)) {
-                controlsVisible = false
+                vm.controlsVisible = false
             }
             #if os(tvOS)
             focusedControl = nil
@@ -629,7 +628,7 @@ struct TransportOverlay: View {
 
     private func showTVControls(focusing focus: TVTransportFocus? = nil) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            controlsVisible = true
+            vm.controlsVisible = true
         }
         focusedControl = focus ?? focusedControl ?? .playPause
         resetHideTimer()
@@ -639,7 +638,7 @@ struct TransportOverlay: View {
         tvScrubbing = false
         hideTask?.cancel()
         withAnimation(.easeInOut(duration: 0.2)) {
-            controlsVisible = false
+            vm.controlsVisible = false
         }
         focusedControl = focus
     }
@@ -660,9 +659,9 @@ struct TransportOverlay: View {
             return
         }
 
-        if controlsVisible {
+        if vm.controlsVisible {
             withAnimation(.easeInOut(duration: 0.2)) {
-                controlsVisible = false
+                vm.controlsVisible = false
             }
             hideTask?.cancel()
             focusedControl = nil
@@ -685,7 +684,7 @@ struct TransportOverlay: View {
             return
         }
 
-        if !controlsVisible {
+        if !vm.controlsVisible {
             showTVControls()
         } else {
             resetHideTimer()

@@ -16,6 +16,7 @@ struct ContentView: View {
 
     let jellyfinService: JellyfinService
     let playerCoordinator: PlayerCoordinator
+    let watchTogetherCoordinator: WatchTogetherCoordinator
 
     var body: some View {
         ZStack {
@@ -54,9 +55,13 @@ struct ContentView: View {
                     .environment(notificationCenter)
                     .environment(jellyfinService)
                     .environment(playerCoordinator)
+                    .environment(watchTogetherCoordinator)
                     .environment(requestsCoordinator)
                     .environment(router)
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .task {
+                        await watchTogetherCoordinator.listenForIncomingSessions()
+                    }
                 } else {
                     signInPrompt
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
