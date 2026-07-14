@@ -62,14 +62,31 @@ struct SetupWizardView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
         }
-        .padding(32)
-        .frame(maxWidth: 440)
+        .padding(onboardingContentPadding)
+        .frame(maxWidth: onboardingContentMaxWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .prominentBottomButton("Get Started") {
             welcomePath.append(.services)
         }
     }
 
+    private var onboardingContentPadding: CGFloat {
+        #if os(macOS)
+        40
+        #else
+        32
+        #endif
+    }
+
+    private var onboardingContentMaxWidth: CGFloat {
+        #if os(macOS)
+        480
+        #else
+        440
+        #endif
+    }
+
+    @ViewBuilder
     private func featureRow(_ service: LureServiceIdentity) -> some View {
         HStack(spacing: 14) {
             Image(systemName: service.systemImage)
@@ -86,6 +103,9 @@ struct SetupWizardView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        #if os(macOS)
+        .padding(.vertical, 2)
+        #endif
     }
 }
 
@@ -132,8 +152,8 @@ private struct ServiceSelectionScreen: View {
                     ) { showJellyfinSetup = true }
                 }
             }
-            .padding(32)
-            .frame(maxWidth: 440)
+            .padding(onboardingContentPadding)
+            .frame(maxWidth: onboardingContentMaxWidth)
             .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -153,6 +173,23 @@ private struct ServiceSelectionScreen: View {
         }
     }
 
+    private var onboardingContentPadding: CGFloat {
+        #if os(macOS)
+        40
+        #else
+        32
+        #endif
+    }
+
+    private var onboardingContentMaxWidth: CGFloat {
+        #if os(macOS)
+        500
+        #else
+        440
+        #endif
+    }
+
+    @ViewBuilder
     private func setupRow(
         _ service: LureServiceIdentity,
         description: String,
@@ -185,7 +222,12 @@ private struct ServiceSelectionScreen: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .contentShape(Rectangle())
+            #if os(macOS)
+            .frame(minHeight: 64)
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 12))
+            #else
             .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16))
+            #endif
         }
         .buttonStyle(.plain)
     }
@@ -201,6 +243,29 @@ private struct InvitePasteSheet: View {
     @State private var error: String?
 
     var body: some View {
+        #if os(macOS)
+        AppSheetShell(
+            title: "Enter Invite",
+            confirmTitle: "Continue",
+            isConfirmDisabled: isSubmitDisabled,
+            onConfirm: submit
+        ) {
+            OnboardingMacSheetContent {
+                Text("Paste the invite link you were sent. It sets up your servers automatically.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                OnboardingMacFieldGroup("Invite Link") {
+                    TextField("lure://invite?...", text: $text, axis: .vertical)
+                        .autocorrectionDisabled()
+                        .lineLimit(1...4)
+                }
+
+                OnboardingMacValidationError(error: error)
+            }
+        }
+        #else
         AppSheetShell(
             title: "Enter Invite",
             detents: [.medium, .large],
@@ -232,23 +297,44 @@ private struct InvitePasteSheet: View {
                 }
 
                 Section {
-                    Button {
-                        if let invite = LureInvite.parse(pasted: text) {
-                            dismiss()
-                            onInvite(invite)
-                        } else {
-                            error = "That doesn't look like a valid invite link."
-                        }
-                    } label: {
+                    Button(action: submit) {
                         Text("Continue")
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSubmitDisabled)
                 }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
             #endif
         }
+        #endif
     }
+
+    private var isSubmitDisabled: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit() {
+        if let invite = LureInvite.parse(pasted: text) {
+            dismiss()
+            onInvite(invite)
+        } else {
+            error = "That doesn't look like a valid invite link."
+        }
+    }
+}
+
+#Preview("Welcome") {
+    SetupWizardView(authViewModel: OnboardingPreviewSupport.authViewModel()) { _ in }
+        .environment(JellyfinService())
+}
+
+#Preview("Choose Services") {
+    ServiceSelectionScreen(authViewModel: OnboardingPreviewSupport.authViewModel())
+        .environment(JellyfinService())
+}
+
+#Preview("Invite Link Sheet") {
+    InvitePasteSheet { _ in }
 }

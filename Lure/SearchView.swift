@@ -20,6 +20,7 @@ struct SearchView: View {
     @State private var jellyfinResults: [JellyfinItem] = []
     @State private var jellyfinSearchTask: Task<Void, Never>?
     @State private var isJellyfinSearching = false
+    @FocusState private var isMacSearchFocused: Bool
 
     @AppStorage("lure.search.recents") private var recentsStorage: String = "[]"
 
@@ -29,21 +30,54 @@ struct SearchView: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        searchLifecycle(searchNavigation)
+        #elseif os(tvOS)
+        searchLifecycle(
+            searchNavigation
+                .searchable(
+                    text: $searchText,
+                    prompt: scope == .library ? "Your library" : "Movies, TV shows..."
+                )
+        )
+        #else
+        searchLifecycle(
+            searchNavigation
+                .searchable(
+                    text: $searchText,
+                    isPresented: $isSearchPresented,
+                    placement: .automatic,
+                    prompt: scope == .library ? "Your library" : "Movies, TV shows..."
+                )
+        )
+        #endif
+    }
+
+    private var searchNavigation: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if isSearchPresented && searchText.isEmpty {
-                    Picker("Scope", selection: $scope) {
-                        Text("Discover").tag(SearchScope.discover)
-                        Text("Library").tag(SearchScope.library)
-                    }
-                    .pickerStyle(.segmented)
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                    .padding(.horizontal, 48)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+            Group {
+                #if os(macOS)
+                VStack(spacing: 0) {
+                    macSearchHeader
+                    content
                 }
-                content
+                #else
+                VStack(spacing: 0) {
+                    if isSearchPresented && searchText.isEmpty {
+                        Picker("Scope", selection: $scope) {
+                            Text("Discover").tag(SearchScope.discover)
+                            Text("Library").tag(SearchScope.library)
+                        }
+                        .pickerStyle(.segmented)
+                        .glassEffect(.regular.interactive(), in: Capsule())
+                        .padding(.horizontal, 48)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                    content
+                }
+                #endif
             }
             .navigationTitle("Search")
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isSearchPresented)
@@ -69,19 +103,10 @@ struct SearchView: View {
                     .id(destination)
             }
         }
-        #if os(tvOS)
-        .searchable(
-            text: $searchText,
-            prompt: scope == .library ? "Your library" : "Movies, TV shows..."
-        )
-        #else
-        .searchable(
-            text: $searchText,
-            isPresented: $isSearchPresented,
-            placement: .automatic,
-            prompt: scope == .library ? "Your library" : "Movies, TV shows..."
-        )
-        #endif
+    }
+
+    private func searchLifecycle<Content: View>(_ view: Content) -> some View {
+        view
         .onSubmit(of: .search) {
             recordRecent(searchText)
         }
@@ -115,6 +140,58 @@ struct SearchView: View {
             await vm.loadBrowseGenresIfNeeded()
         }
     }
+
+    #if os(macOS)
+    private var macSearchHeader: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+
+                TextField("Shows, Movies and More", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.title3.weight(.medium))
+                    .focused($isMacSearchFocused)
+                    .onSubmit {
+                        recordRecent(searchText)
+                    }
+
+                if !searchText.isEmpty {
+                    Button("Clear", systemImage: "xmark.circle.fill") {
+                        searchText = ""
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 18)
+            .frame(maxWidth: 430)
+            .frame(height: 44)
+            .background(.regularMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        isMacSearchFocused ? Color.accentColor.opacity(0.65) : Color.secondary.opacity(0.14),
+                        lineWidth: isMacSearchFocused ? 2 : 1
+                    )
+            }
+
+            if !searchText.isEmpty {
+                Picker("Scope", selection: $scope) {
+                    Text("Discover").tag(SearchScope.discover)
+                    Text("Library").tag(SearchScope.library)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+            }
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity)
+    }
+    #endif
 
     // MARK: - Content routing
 
@@ -360,11 +437,8 @@ struct SearchView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14),
-                            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14)
-                        ],
-                        spacing: 14
+                        columns: browseGridColumns,
+                        spacing: browseGridSpacing
                     ) {
                         ForEach(vm.browseGenres) { genre in
                             let destination = SearchGenreDestination(genre: genre)
@@ -376,12 +450,39 @@ struct SearchView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, browseGridHorizontalPadding)
                     .padding(.top, 8)
                     .padding(.bottom, 24)
                 }
             }
         }
+    }
+
+    private var browseGridColumns: [GridItem] {
+        #if os(macOS)
+        [GridItem(.adaptive(minimum: 150, maximum: 230), spacing: 22)]
+        #else
+        [
+            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14),
+            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14)
+        ]
+        #endif
+    }
+
+    private var browseGridSpacing: CGFloat {
+        #if os(macOS)
+        22
+        #else
+        14
+        #endif
+    }
+
+    private var browseGridHorizontalPadding: CGFloat {
+        #if os(macOS)
+        44
+        #else
+        18
+        #endif
     }
 
     // MARK: - Search Results
@@ -588,7 +689,11 @@ private struct SearchGenreTileView: View {
                     .strokeBorder(Color.white.opacity(0.08))
             }
             .frame(maxWidth: .infinity)
+            #if os(macOS)
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            #else
             .frame(height: 112)
+            #endif
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
             .compositingGroup()

@@ -27,6 +27,7 @@ struct DetailPosterHeroView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isOverviewExpanded = false
+    @State private var containerWidth: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -44,6 +45,11 @@ struct DetailPosterHeroView: View {
         }
         .frame(height: carouselHeight + verticalOffset)
         .offset(y: -verticalOffset)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { _, width in
+            containerWidth = width
+        }
     }
 
     private var heroImage: some View {
@@ -94,12 +100,13 @@ struct DetailPosterHeroView: View {
     }
 
     private var bottomContent: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: heroContentAlignment, spacing: 10) {
             HeroTitleArtworkView(
                 title: title,
                 logoURL: logoURL,
-                maxWidth: 430,
-                maxLogoHeight: 142,
+                maxWidth: heroTitleMaxWidth,
+                maxLogoHeight: heroLogoMaxHeight,
+                horizontalAlignment: heroContentAlignment,
                 reportTitleBottom: true
             )
 
@@ -115,9 +122,10 @@ struct DetailPosterHeroView: View {
             ratingsRow
         }
         .foregroundStyle(.white)
-        .frame(maxWidth: 540)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 48)
+        .frame(maxWidth: heroContentMaxWidth, alignment: heroFrameAlignment)
+        .padding(.horizontal, heroHorizontalPadding)
+        .padding(.bottom, heroBottomPadding)
+        .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
     }
 
     private var actionRow: some View {
@@ -162,7 +170,7 @@ struct DetailPosterHeroView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.72), value: secondaryAction.isHighlighted)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
     }
 
     @ViewBuilder
@@ -283,6 +291,7 @@ struct DetailPosterHeroView: View {
         .foregroundStyle(.white.opacity(0.82))
         .lineLimit(1)
         .minimumScaleFactor(0.75)
+        .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
         .accessibilityElement(children: .combine)
     }
 
@@ -313,7 +322,68 @@ struct DetailPosterHeroView: View {
     }
 
     private var carouselHeight: CGFloat {
+        #if os(macOS)
+        guard containerWidth > 0 else { return 560 }
+        return min(max(containerWidth * 0.46, 430), 620)
+        #else
         horizontalSizeClass == .compact ? 660 : 780
+        #endif
+    }
+
+    private var heroContentAlignment: HorizontalAlignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var heroFrameAlignment: Alignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var heroContentMaxWidth: CGFloat {
+        #if os(macOS)
+        560
+        #else
+        540
+        #endif
+    }
+
+    private var heroTitleMaxWidth: CGFloat {
+        #if os(macOS)
+        480
+        #else
+        430
+        #endif
+    }
+
+    private var heroLogoMaxHeight: CGFloat {
+        #if os(macOS)
+        112
+        #else
+        142
+        #endif
+    }
+
+    private var heroHorizontalPadding: CGFloat {
+        #if os(macOS)
+        56
+        #else
+        28
+        #endif
+    }
+
+    private var heroBottomPadding: CGFloat {
+        #if os(macOS)
+        60
+        #else
+        48
+        #endif
     }
 }
 

@@ -6,6 +6,7 @@ struct HeroTitleArtworkView: View {
     var font: Font = .largeTitle.weight(.black)
     var maxWidth: CGFloat = 430
     var maxLogoHeight: CGFloat = 150
+    var horizontalAlignment: HorizontalAlignment = .center
     var reportTitleBottom: Bool = false
 
     var body: some View {
@@ -16,7 +17,7 @@ struct HeroTitleArtworkView: View {
 
             titleContent
         }
-        .frame(maxWidth: maxWidth, minHeight: maxLogoHeight, maxHeight: maxLogoHeight, alignment: .bottom)
+        .frame(maxWidth: maxWidth, minHeight: maxLogoHeight, maxHeight: maxLogoHeight, alignment: frameAlignment)
         .background(titleBottomReporter)
     }
 
@@ -27,12 +28,12 @@ struct HeroTitleArtworkView: View {
                 CachedRemoteImage(url: logoURL, contentMode: .fit, trimsTransparentPadding: true) {
                     fallbackTitle
                 }
-                .frame(maxWidth: maxWidth * 0.94, maxHeight: maxLogoHeight * 0.9, alignment: .bottom)
+                .frame(maxWidth: maxWidth * 0.94, maxHeight: maxLogoHeight * 0.9, alignment: frameAlignment)
                 .shadow(color: .black.opacity(0.45), radius: 14, y: 5)
                 .accessibilityLabel(title)
             } else {
                 fallbackTitle
-                    .frame(maxWidth: maxWidth * 0.94)
+                    .frame(maxWidth: maxWidth * 0.94, alignment: frameAlignment)
             }
         }
     }
@@ -41,10 +42,18 @@ struct HeroTitleArtworkView: View {
         Text(title)
             .font(font)
             .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
+            .multilineTextAlignment(textAlignment)
             .lineLimit(2)
             .minimumScaleFactor(0.7)
             .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+    }
+
+    private var frameAlignment: Alignment {
+        horizontalAlignment == .leading ? .bottomLeading : .bottom
+    }
+
+    private var textAlignment: TextAlignment {
+        horizontalAlignment == .leading ? .leading : .center
     }
 
     private var logoReadabilityScrim: some View {

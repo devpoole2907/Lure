@@ -228,15 +228,15 @@ struct TVDetailView: View {
 
     private func scrollContent(_ show: SeerrTVDetail) -> some View {
         ScrollView {
-            LazyVStack(alignment: .center, spacing: 20) {
+            LazyVStack(alignment: detailStackAlignment, spacing: 20) {
                 heroSection(show)
 
-                VStack(alignment: .center, spacing: 20) {
+                VStack(alignment: detailContentHorizontalAlignment, spacing: 20) {
                     cardsSection(show)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, detailContentHorizontalPadding)
                 .padding(.bottom, 44)
-                .frame(maxWidth: 720)
+                .frame(maxWidth: detailContentMaxWidth, alignment: detailFrameAlignment)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -251,6 +251,46 @@ struct TVDetailView: View {
         }
         .refreshable { await vm.load() }
         .environment(\.colorScheme, .dark)
+    }
+
+    private var detailStackAlignment: HorizontalAlignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var detailContentHorizontalAlignment: HorizontalAlignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var detailFrameAlignment: Alignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var detailContentMaxWidth: CGFloat {
+        #if os(macOS)
+        1120
+        #else
+        720
+        #endif
+    }
+
+    private var detailContentHorizontalPadding: CGFloat {
+        #if os(macOS)
+        44
+        #else
+        16
+        #endif
     }
 
     // MARK: - Hero

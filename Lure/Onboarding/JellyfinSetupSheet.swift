@@ -4,15 +4,44 @@ import SwiftUI
 /// onboarding. Authenticates with `JellyfinAPIClient.authenticate` and stores
 /// credentials via `JellyfinService`. Mirrors Trawl's `JellyfinConnectionFormView`.
 struct JellyfinSetupSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(JellyfinService.self) private var jellyfinService
+    @State private var viewModel = JellyfinSetupFormViewModel()
     var onComplete: (() -> Void)? = nil
 
     var body: some View {
+        #if os(macOS)
+        AppSheetShell(
+            title: "Add Jellyfin",
+            confirmTitle: "Sign In",
+            isConfirmDisabled: !viewModel.canConnect,
+            isConfirmLoading: viewModel.isAuthenticating,
+            onConfirm: submit
+        ) {
+            JellyfinConnectionForm(
+                viewModel: viewModel,
+                showsSubmitButton: false,
+                onComplete: onComplete
+            )
+        }
+        #else
         AppSheetShell(
             title: "Add Jellyfin",
             detents: [.large],
             dragIndicator: .visible
         ) {
-            JellyfinConnectionForm(onComplete: onComplete)
+            JellyfinConnectionForm(viewModel: viewModel, onComplete: onComplete)
+        }
+        #endif
+    }
+
+    private func submit() {
+        Task {
+            let success = await viewModel.connect(jellyfinService: jellyfinService)
+            if success {
+                onComplete?()
+                dismiss()
+            }
         }
     }
 }
@@ -20,10 +49,46 @@ struct JellyfinSetupSheet: View {
 private struct JellyfinConnectionForm: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(JellyfinService.self) private var jellyfinService
-    @State private var viewModel = JellyfinSetupFormViewModel()
+    @Bindable var viewModel: JellyfinSetupFormViewModel
+    var showsSubmitButton = true
     var onComplete: (() -> Void)?
 
     var body: some View {
+        #if os(macOS)
+        OnboardingMacSheetContent {
+            Text("Connect to your Jellyfin server to watch your library directly in Lure. This is optional — you can add it later.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            OnboardingMacFieldGroup("Server") {
+                ServerURLField(
+                    url: $viewModel.hostURL,
+                    title: "Jellyfin URL (e.g. https://watch.example.com)"
+                )
+            }
+
+            OnboardingMacFieldGroup("Credentials") {
+                TextField("Username", text: $viewModel.username)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $viewModel.password)
+            }
+
+            OnboardingMacValidationError(error: viewModel.error)
+
+            if showsSubmitButton {
+                HStack {
+                    Spacer()
+                    Button(action: submit) {
+                        submitLabel
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!viewModel.canConnect)
+                }
+            }
+        }
+        .tint(LureServiceIdentity.jellyfin.brandColor)
+        #else
         Form {
             Section {
                 Text("Connect to your Jellyfin server to watch your library directly in Lure. This is optional — you can add it later.")
@@ -54,25 +119,9 @@ private struct JellyfinConnectionForm: View {
             ValidationErrorSection(error: viewModel.error)
 
             Section {
-                Button {
-                    Task {
-                        let success = await viewModel.connect(jellyfinService: jellyfinService)
-                        if success {
-                            onComplete?()
-                            dismiss()
-                        }
-                    }
-                } label: {
-                    HStack {
-                        if viewModel.isAuthenticating {
-                            ProgressView()
-                                .padding(.trailing, 4)
-                            Text("Connecting…")
-                        } else {
-                            Text("Sign In")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
+                Button(action: submit) {
+                    submitLabel
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .disabled(!viewModel.canConnect)
             }
@@ -81,6 +130,29 @@ private struct JellyfinConnectionForm: View {
         #if os(iOS)
         .listStyle(.insetGrouped)
         #endif
+        #endif
+    }
+
+    private var submitLabel: some View {
+        HStack {
+            if viewModel.isAuthenticating {
+                ProgressView()
+                    .padding(.trailing, 4)
+                Text("Connecting…")
+            } else {
+                Text("Sign In")
+            }
+        }
+    }
+
+    private func submit() {
+        Task {
+            let success = await viewModel.connect(jellyfinService: jellyfinService)
+            if success {
+                onComplete?()
+                dismiss()
+            }
+        }
     }
 }
 
@@ -142,4 +214,9 @@ final class JellyfinSetupFormViewModel {
             password: password
         )
     }
+}
+
+#Preview("Add Jellyfin") {
+    JellyfinSetupSheet()
+        .environment(JellyfinService())
 }

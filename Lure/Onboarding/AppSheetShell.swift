@@ -72,6 +72,9 @@ struct AppSheetShell<Content: View>: View {
         }
         .presentationDetents(detents)
         .presentationDragIndicator(dragIndicator)
+        #if os(macOS)
+        .frame(minWidth: 420, idealWidth: 460, maxWidth: 540)
+        #endif
     }
 }
 

@@ -11,22 +11,38 @@ struct ProminentBottomButton: View {
 
     var body: some View {
         Button(action: action) {
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-            } else if let systemImage {
-                Label(title, systemImage: systemImage)
-            } else {
-                Text(title)
-            }
+            label
+                #if os(macOS)
+                .frame(maxWidth: .infinity)
+                #endif
         }
         .controlSize(.large)
         .fontWeight(.medium)
         .buttonStyle(.glassProminent)
         .buttonBorderShape(.capsule)
+        #if os(macOS)
+        .frame(width: 300)
+        .padding(.horizontal, 24)
+        .frame(height: 44)
+        .padding(.top, 8)
+        .padding(.bottom, 34)
+        #else
         .buttonSizing(.flexible)
-        .disabled(isDisabled || isLoading)
         .scenePadding(.horizontal)
+        #endif
+        .disabled(isDisabled || isLoading)
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if isLoading {
+            ProgressView()
+                .controlSize(.small)
+        } else if let systemImage {
+            Label(title, systemImage: systemImage)
+        } else {
+            Text(title)
+        }
     }
 }
 
@@ -48,4 +64,11 @@ extension View {
             )
         }
     }
+}
+
+#Preview("Prominent Button") {
+    VStack {
+        Spacer()
+    }
+    .prominentBottomButton("Get Started") {}
 }

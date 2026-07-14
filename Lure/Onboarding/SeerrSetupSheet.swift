@@ -5,16 +5,51 @@ import SwiftData
 /// Drives the shared `AuthViewModel` (Seerr login uses Jellyfin credentials via
 /// `loginJellyfin`). Mirrors Trawl's `SeerrConnectionFormView` paradigm.
 struct SeerrSetupSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Bindable var authViewModel: AuthViewModel
     var onComplete: (() -> Void)? = nil
 
+    private var canSubmit: Bool {
+        !authViewModel.serverURL.isEmpty
+            && !authViewModel.username.isEmpty
+            && !authViewModel.password.isEmpty
+            && !authViewModel.isAuthenticating
+    }
+
     var body: some View {
+        #if os(macOS)
+        AppSheetShell(
+            title: "Add Seerr",
+            confirmTitle: "Sign In",
+            isConfirmDisabled: !canSubmit,
+            isConfirmLoading: authViewModel.isAuthenticating,
+            onConfirm: submit
+        ) {
+            SeerrConnectionForm(
+                authViewModel: authViewModel,
+                showsSubmitButton: false,
+                onComplete: onComplete
+            )
+        }
+        #else
         AppSheetShell(
             title: "Add Seerr",
             detents: [.large],
             dragIndicator: .visible
         ) {
             SeerrConnectionForm(authViewModel: authViewModel, onComplete: onComplete)
+        }
+        #endif
+    }
+
+    private func submit() {
+        Task {
+            let success = await authViewModel.connectAndLogin(modelContext: modelContext)
+            if success {
+                onComplete?()
+                dismiss()
+            }
         }
     }
 }
@@ -23,6 +58,7 @@ private struct SeerrConnectionForm: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Bindable var authViewModel: AuthViewModel
+    var showsSubmitButton = true
     var onComplete: (() -> Void)?
 
     private var canSubmit: Bool {
@@ -33,6 +69,46 @@ private struct SeerrConnectionForm: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        OnboardingMacSheetContent {
+            Text("Connect Lure to your Seerr instance. Sign in with the username and password you were given.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            OnboardingMacFieldGroup("Server") {
+                ServerURLField(
+                    url: $authViewModel.serverURL,
+                    title: "Seerr URL (e.g. https://requests.example.com)"
+                )
+            }
+
+            if let settings = authViewModel.publicSettings {
+                LabeledContent("Connected Server", value: settings.applicationTitle ?? "Seerr")
+                    .font(.callout)
+            }
+
+            OnboardingMacFieldGroup("Credentials") {
+                TextField("Username", text: $authViewModel.username)
+                    .autocorrectionDisabled()
+                SecureField("Password", text: $authViewModel.password)
+            }
+
+            OnboardingMacValidationError(error: authViewModel.error)
+
+            if showsSubmitButton {
+                HStack {
+                    Spacer()
+                    Button(action: submit) {
+                        submitLabel
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canSubmit)
+                }
+            }
+        }
+        .tint(LureServiceIdentity.seerr.brandColor)
+        #else
         Form {
             Section {
                 Text("Connect Lure to your Seerr instance. Sign in with the username and password you were given.")
@@ -75,25 +151,9 @@ private struct SeerrConnectionForm: View {
             }
 
             Section {
-                Button {
-                    Task {
-                        let success = await authViewModel.connectAndLogin(modelContext: modelContext)
-                        if success {
-                            onComplete?()
-                            dismiss()
-                        }
-                    }
-                } label: {
-                    HStack {
-                        if authViewModel.isAuthenticating {
-                            ProgressView()
-                                .padding(.trailing, 4)
-                            Text("Connecting…")
-                        } else {
-                            Text("Sign In")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
+                Button(action: submit) {
+                    submitLabel
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .disabled(!canSubmit)
             }
@@ -102,5 +162,33 @@ private struct SeerrConnectionForm: View {
         #if os(iOS)
         .listStyle(.insetGrouped)
         #endif
+        #endif
     }
+
+    private var submitLabel: some View {
+        HStack {
+            if authViewModel.isAuthenticating {
+                ProgressView()
+                    .padding(.trailing, 4)
+                Text("Connecting…")
+            } else {
+                Text("Sign In")
+            }
+        }
+    }
+
+    private func submit() {
+        Task {
+            let success = await authViewModel.connectAndLogin(modelContext: modelContext)
+            if success {
+                onComplete?()
+                dismiss()
+            }
+        }
+    }
+}
+
+#Preview("Add Seerr") {
+    SeerrSetupSheet(authViewModel: OnboardingPreviewSupport.authViewModel())
+        .modelContainer(OnboardingPreviewSupport.modelContainer)
 }

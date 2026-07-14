@@ -10,6 +10,35 @@ struct LureTabView: View {
     var body: some View {
         @Bindable var router = router
         TabView(selection: $router.selectedTab) {
+            #if os(macOS)
+            Tab("Search", systemImage: "magnifyingglass", value: LureTab.search) {
+                SearchView(apiClient: apiClient)
+            }
+
+            Tab("Discover", systemImage: "house", value: LureTab.discover) {
+                DiscoverView(apiClient: apiClient)
+            }
+
+            Tab("Library", systemImage: "checkmark.circle", value: LureTab.library) {
+                LibraryView(apiClient: apiClient)
+            }
+
+            Tab("Requests", systemImage: "arrow.down.circle", value: LureTab.requests) {
+                RequestListView(apiClient: apiClient, currentUser: currentUser)
+            }
+
+            Tab("Profile", systemImage: "person.crop.circle", value: LureTab.profile) {
+                NavigationStack {
+                    UserProfileView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
+                }
+            }
+
+            Tab("Settings", systemImage: "gearshape", value: LureTab.settings) {
+                NavigationStack {
+                    SettingsView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
+                }
+            }
+            #else
             Tab("Discover", systemImage: "film", value: LureTab.discover) {
                 activeOnly(.discover, selection: router.selectedTab) {
                     DiscoverView(apiClient: apiClient)
@@ -39,6 +68,7 @@ struct LureTabView: View {
                     MoreView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
                 }
             }
+            #endif
         }
         .tabViewStyle(.sidebarAdaptable)
         .task {

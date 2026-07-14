@@ -30,6 +30,93 @@ struct InviteRedemptionView: View {
 
     var body: some View {
         NavigationStack {
+            content
+                .navigationTitle("You're Invited")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                .prominentBottomButton(
+                    "Sign In",
+                    isLoading: viewModel.isWorking,
+                    isDisabled: !viewModel.canSubmit
+                ) {
+                    Task { await submit() }
+                }
+                #endif
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if os(macOS)
+        ScrollView {
+            VStack(spacing: 24) {
+                invitedHeader
+
+                VStack(spacing: 18) {
+                    macSection("This invite will set up") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            serverRow(.seerr, url: invite.seerrURL)
+                            if let jellyfinURL = invite.jellyfinURL, invite.hasJellyfin {
+                                Divider()
+                                serverRow(.jellyfin, url: jellyfinURL)
+                            }
+                        }
+                    }
+
+                    macSection("Sign In") {
+                        VStack(spacing: 10) {
+                            TextField("Username", text: $viewModel.username)
+                                .autocorrectionDisabled()
+                            SecureField("Password", text: $viewModel.password)
+                        }
+                        .textFieldStyle(.roundedBorder)
+                    }
+
+                    if invite.hasJellyfin {
+                        macSection("Jellyfin") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Toggle("Use the same login for Jellyfin", isOn: $viewModel.useSameLoginForJellyfin)
+
+                                if !viewModel.useSameLoginForJellyfin {
+                                    VStack(spacing: 10) {
+                                        TextField("Jellyfin Username", text: $viewModel.jellyfinUsername)
+                                            .autocorrectionDisabled()
+                                        SecureField("Jellyfin Password", text: $viewModel.jellyfinPassword)
+                                    }
+                                    .textFieldStyle(.roundedBorder)
+                                }
+
+                                Text("Most setups use one account for both. Turn this off if your Jellyfin sign-in is different.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    OnboardingMacValidationError(error: viewModel.error)
+
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        signInLabel
+                            .frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
+                    .buttonStyle(.glassProminent)
+                    .buttonBorderShape(.capsule)
+                    .frame(width: 300)
+                    .frame(maxWidth: .infinity)
+                    .disabled(!viewModel.canSubmit)
+                }
+            }
+            .padding(40)
+            .padding(.bottom, 40)
+            .frame(maxWidth: 540)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
             Form {
                 Section {
                     invitedHeader
@@ -88,18 +175,7 @@ struct InviteRedemptionView: View {
                     }
                 }
             }
-            .navigationTitle("You're Invited")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .prominentBottomButton(
-                "Sign In",
-                isLoading: viewModel.isWorking,
-                isDisabled: !viewModel.canSubmit
-            ) {
-                Task { await submit() }
-            }
-        }
+        #endif
     }
 
     private var invitedHeader: some View {
@@ -120,6 +196,35 @@ struct InviteRedemptionView: View {
         .padding(.vertical, 8)
     }
 
+    private var signInLabel: some View {
+        HStack {
+            if viewModel.isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.trailing, 4)
+            }
+            Text("Sign In")
+        }
+    }
+
+    #if os(macOS)
+    private func macSection<Content: View>(
+        _ title: LocalizedStringKey,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+
+            content()
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    #endif
+
     private func serverRow(_ identity: LureServiceIdentity, url: String) -> some View {
         HStack(spacing: 14) {
             Image(systemName: identity.systemImage)
@@ -131,7 +236,11 @@ struct InviteRedemptionView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Text(url)
+                    #if os(macOS)
+                    .font(.caption)
+                    #else
                     .font(.caption2)
+                    #endif
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -153,6 +262,15 @@ struct InviteRedemptionView: View {
             onFinished(jellyfinWarning)
         }
     }
+}
+
+#Preview("Redeem Invite") {
+    InviteRedemptionView(
+        invite: OnboardingPreviewSupport.invite,
+        authViewModel: OnboardingPreviewSupport.authViewModel()
+    ) { _ in }
+    .environment(JellyfinService())
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
 }
 
 @MainActor

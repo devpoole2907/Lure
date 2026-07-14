@@ -12,6 +12,7 @@ struct DiscoverHeroCarouselView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scrollPhase: ScrollPhase = .idle
     @State private var artworkByItemID: [String: MediaArtwork] = [:]
+    @State private var containerWidth: CGFloat = 0
 
     private var heroItems: [SeerrMediaItem] {
         Array(items.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }.prefix(8))
@@ -50,6 +51,11 @@ struct DiscoverHeroCarouselView: View {
             }
             .frame(height: carouselHeight + verticalOffset)
             .offset(y: -verticalOffset)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { _, width in
+                containerWidth = width
+            }
             .onAppear { restoreScrollPosition() }
             .onChange(of: isActive) { _, nowActive in
                 if nowActive { restoreScrollPosition() }
@@ -126,12 +132,13 @@ struct DiscoverHeroCarouselView: View {
     private func bottomContent(for item: SeerrMediaItem) -> some View {
         let isActive = heroItems[safe: activeIndex]?.id == item.id
 
-        return VStack(spacing: 10) {
+        return VStack(alignment: heroContentAlignment, spacing: 10) {
             HeroTitleArtworkView(
                 title: item.title,
                 logoURL: artworkByItemID[item.id]?.logoURL,
-                maxWidth: 430,
-                maxLogoHeight: 132
+                maxWidth: heroTitleMaxWidth,
+                maxLogoHeight: heroLogoMaxHeight,
+                horizontalAlignment: heroContentAlignment
             )
 
             HStack(spacing: 8) {
@@ -148,6 +155,7 @@ struct DiscoverHeroCarouselView: View {
             }
             .font(.callout.weight(.medium))
             .foregroundStyle(.white.opacity(0.82))
+            .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
 
             Label("Details", systemImage: "info.circle.fill")
                 .font(.subheadline.weight(.semibold))
@@ -158,9 +166,10 @@ struct DiscoverHeroCarouselView: View {
                 .padding(.top, 4)
         }
         .foregroundStyle(.white)
-        .frame(maxWidth: 520)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 58)
+        .frame(maxWidth: heroContentMaxWidth, alignment: heroFrameAlignment)
+        .padding(.horizontal, heroHorizontalPadding)
+        .padding(.bottom, heroBottomPadding)
+        .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
         .compositingGroup()
         .opacity(isActive ? 1 : 0)
         .animation(isActive ? .linear(duration: 0.18) : .none) { content in
@@ -299,7 +308,68 @@ struct DiscoverHeroCarouselView: View {
     }
 
     private var carouselHeight: CGFloat {
+        #if os(macOS)
+        guard containerWidth > 0 else { return 540 }
+        return min(max(containerWidth * 0.48, 420), 640)
+        #else
         horizontalSizeClass == .compact ? 610 : 740
+        #endif
+    }
+
+    private var heroContentAlignment: HorizontalAlignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var heroFrameAlignment: Alignment {
+        #if os(macOS)
+        .leading
+        #else
+        .center
+        #endif
+    }
+
+    private var heroContentMaxWidth: CGFloat {
+        #if os(macOS)
+        500
+        #else
+        520
+        #endif
+    }
+
+    private var heroTitleMaxWidth: CGFloat {
+        #if os(macOS)
+        430
+        #else
+        430
+        #endif
+    }
+
+    private var heroLogoMaxHeight: CGFloat {
+        #if os(macOS)
+        104
+        #else
+        132
+        #endif
+    }
+
+    private var heroHorizontalPadding: CGFloat {
+        #if os(macOS)
+        56
+        #else
+        28
+        #endif
+    }
+
+    private var heroBottomPadding: CGFloat {
+        #if os(macOS)
+        76
+        #else
+        58
+        #endif
     }
 }
 

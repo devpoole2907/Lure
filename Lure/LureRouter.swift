@@ -6,6 +6,8 @@ enum LureTab: Hashable, Codable, Sendable {
     case search
     case library
     case requests
+    case profile
+    case settings
     case more
 }
 
@@ -50,17 +52,33 @@ final class LureRouter {
             selectedTab = .more
             morePath = []
         case "settings":
+            #if os(macOS)
+            selectedTab = .settings
+            #else
             selectedTab = .more
             morePath = [.settings]
+            #endif
         case "more/settings":
+            #if os(macOS)
+            selectedTab = .settings
+            #else
             selectedTab = .more
             morePath = [.settings]
+            #endif
         case "profile":
+            #if os(macOS)
+            selectedTab = .profile
+            #else
             selectedTab = .more
             morePath = [.profile]
+            #endif
         case "more/profile":
+            #if os(macOS)
+            selectedTab = .profile
+            #else
             selectedTab = .more
             morePath = [.profile]
+            #endif
         default:
             return false
         }
