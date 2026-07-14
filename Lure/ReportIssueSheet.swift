@@ -35,60 +35,32 @@ struct ReportIssueSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                if let mediaTitle = mediaTitle {
-                    Section {
-                        LabeledContent("Title", value: mediaTitle)
-                            .foregroundStyle(.secondary)
-                    } header: {
-                        Text("Reporting issue for")
-                    }
-                }
-
-                Section("Issue Type") {
-                    Picker("Issue Type", selection: $issueType) {
-                        ForEach(IssueType.allCases) { type in
-                            Label(type.label, systemImage: type.icon).tag(type)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                }
-
-                Section("Description") {
-                    #if os(tvOS)
-                    TextField("Describe the problem...", text: $message, axis: .vertical)
-                        .lineLimit(4...)
-                    #else
-                    TextEditor(text: $message)
-                        .frame(minHeight: 80)
-                        .overlay(alignment: .topLeading) {
-                            if message.isEmpty {
-                                Text("Describe the problem...")
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 4)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    #endif
-                }
-
-                if let error = submitError {
-                    Section {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .font(.caption)
-                    }
-                }
-
-                if mediaId == nil {
-                    Section {
-                        Label("This title must be available or requested before an issue can be reported.", systemImage: "info.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Group {
+            #if os(macOS)
+            ReportIssueMacForm(
+                mediaTitle: mediaTitle,
+                canSubmitForMedia: mediaId != nil,
+                issueType: $issueType,
+                message: $message,
+                submitError: submitError
+            )
+            #elseif os(tvOS)
+            ReportIssueTVForm(
+                mediaTitle: mediaTitle,
+                canSubmitForMedia: mediaId != nil,
+                issueType: $issueType,
+                message: $message,
+                submitError: submitError
+            )
+            #else
+            ReportIssueMobileForm(
+                mediaTitle: mediaTitle,
+                canSubmitForMedia: mediaId != nil,
+                issueType: $issueType,
+                message: $message,
+                submitError: submitError
+            )
+            #endif
             }
             .lureNavigationTitle("Report Issue")
 #if os(iOS) || os(visionOS)
@@ -96,14 +68,14 @@ struct ReportIssueSheet: View {
 #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", action: dismiss.callAsFunction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSubmitting {
                         ProgressView()
                     } else {
-                        Button("Submit") { submit() }
-                            .disabled(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || mediaId == nil || isSubmitting)
+                        Button("Submit", action: submit)
+                            .disabled(isSubmitDisabled)
                     }
                 }
             }
@@ -116,7 +88,19 @@ struct ReportIssueSheet: View {
 #if os(iOS) || os(visionOS)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+#elseif os(macOS)
+        .frame(width: 620, height: 590)
+        .background(.regularMaterial)
+#elseif os(tvOS)
+        .frame(width: 1100, height: 720)
+        .background(Color.black.opacity(0.94))
 #endif
+    }
+
+    private var isSubmitDisabled: Bool {
+        message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || mediaId == nil
+            || isSubmitting
     }
 
     private func submit() {
@@ -148,5 +132,26 @@ struct ReportIssueSheet: View {
         mediaTitle: PreviewSupport.previewMovieDetail.displayTitle,
         apiClient: PreviewSupport.apiClient
     )
+}
+#endif
+
+#if DEBUG && os(macOS)
+#Preview("Report Issue — macOS") {
+    ReportIssueSheet(
+        mediaId: PreviewSupport.previewMovieDetail.mediaInfo?.id,
+        mediaTitle: PreviewSupport.previewMovieDetail.displayTitle,
+        apiClient: PreviewSupport.apiClient
+    )
+}
+#endif
+
+#if DEBUG && os(tvOS)
+#Preview("Report Issue — tvOS") {
+    ReportIssueSheet(
+        mediaId: PreviewSupport.previewMovieDetail.mediaInfo?.id,
+        mediaTitle: PreviewSupport.previewMovieDetail.displayTitle,
+        apiClient: PreviewSupport.apiClient
+    )
+    .environment(\.colorScheme, .dark)
 }
 #endif

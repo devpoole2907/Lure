@@ -7,9 +7,11 @@ struct LibraryView: View {
     @State private var viewModel: LibraryViewModel?
     @Environment(\.modelContext) private var modelContext
     @Environment(JellyfinService.self) private var jellyfinService
+    @Environment(LureRouter.self) private var router
 
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        NavigationStack(path: $router.libraryPath) {
             Group {
                 if let viewModel {
                     LibraryContentView(viewModel: viewModel, apiClient: apiClient)

@@ -11,6 +11,7 @@ struct RequestListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(JellyfinService.self) private var jellyfinService
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
+    @Environment(LureRouter.self) private var router
 
     init(apiClient: SeerrAPIClient, currentUser: SeerrUser?) {
         self.apiClient = apiClient
@@ -19,7 +20,8 @@ struct RequestListView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        @Bindable var router = router
+        NavigationStack(path: $router.requestsPath) {
             content
                 #if os(tvOS)
                 .navigationTitle("")

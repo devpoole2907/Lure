@@ -88,7 +88,7 @@ struct EpisodeDetailView: View {
 
                 VStack(alignment: detailContentAlignment, spacing: 20) {
                     if !episodeCast.isEmpty {
-                        castCard(episodeCast)
+                        CastShelfView(items: episodeCastItems)
                     }
 
                     let rows = infoRows
@@ -277,6 +277,12 @@ struct EpisodeDetailView: View {
         return Array(cast.prefix(24))
     }
 
+    private var episodeCastItems: [CastShelfItem] {
+        episodeCast.map { person in
+            CastShelfItem(person: person, profileURL: personImageURL(for: person))
+        }
+    }
+
     private var fileSizeText: String? {
         guard let size = mediaSource?.size, size > 0 else { return nil }
         return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
@@ -374,99 +380,6 @@ struct EpisodeDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         #if os(tvOS)
         .focusable()
-        #endif
-    }
-
-    private func castCard(_ cast: [JellyfinPerson]) -> some View {
-        #if os(tvOS)
-        let avatarSize: CGFloat = 150
-        let cellWidth: CGFloat = 180
-        let cellHeight: CGFloat = 280
-        let nameTextHeight: CGFloat = 58
-        let roleTextHeight: CGFloat = 54
-        let castSpacing: CGFloat = 36
-        let nameFont = Font.body.weight(.semibold)
-        let roleFont = Font.callout
-        #else
-        let avatarSize: CGFloat = 56
-        let cellWidth: CGFloat = 76
-        let cellHeight: CGFloat = 132
-        let nameTextHeight: CGFloat = 30
-        let roleTextHeight: CGFloat = 30
-        let castSpacing: CGFloat = 12
-        let nameFont = Font.caption2
-        let roleFont = Font.caption2
-        #endif
-
-        return VStack(alignment: .leading, spacing: 10) {
-            Label("Cast", systemImage: "person.2")
-                .font(.headline)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: castSpacing) {
-                    ForEach(cast) { person in
-                        let cell = VStack(spacing: 4) {
-                            AsyncImage(url: personImageURL(for: person)) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Circle()
-                                    .fill(.quaternary)
-                                    .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
-                            }
-                            .frame(width: avatarSize, height: avatarSize)
-                            .clipShape(Circle())
-
-                            Text(person.name ?? "")
-                                .font(nameFont)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(width: cellWidth, height: nameTextHeight, alignment: .top)
-
-                            Text(person.role ?? "")
-                                .font(roleFont)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(width: cellWidth, height: roleTextHeight, alignment: .top)
-                        }
-                        .frame(width: cellWidth, height: cellHeight, alignment: .top)
-
-                        #if os(tvOS)
-                        // Jellyfin people carry no TMDB id — push a name-only
-                        // route; CastPersonSheet resolves the person via Seerr
-                        // search. Handled by TVDetailView's CastPersonRoute
-                        // destination in the same stack.
-                        NavigationLink(value: CastPersonRoute(
-                            personId: nil,
-                            fallbackName: person.name,
-                            fallbackProfileURL: personImageURL(for: person)
-                        )) {
-                            cell
-                        }
-                        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.08))
-                        #else
-                        cell
-                        #endif
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 18)
-            }
-            #if os(tvOS)
-            .scrollClipDisabled()
-            #else
-            .horizontalSoftEdges()
-            #endif
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-        #if os(tvOS)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
         #endif
     }
 

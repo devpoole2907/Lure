@@ -194,13 +194,15 @@ struct MovieDetailView: View {
     @State private var vm: MovieDetailViewModel
     @State private var showRequestOptions = false
     @State private var showReportSheet = false
-    @State private var selectedCastMember: SeerrCastMember?
+    @State private var selectedCastMember: CastPersonRoute?
+    @State private var pendingCastCreditDestination: MediaDestination?
     @State private var isModeratingRequest = false
     @State private var heroVerticalOffset: CGFloat = 0
     @State private var showNavTitle = false
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(PlayerCoordinator.self) private var playerCoordinator
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
+    @Environment(LureRouter.self) private var router
 
     init(
         tmdbId: Int,
@@ -280,16 +282,17 @@ struct MovieDetailView: View {
             get: { vm.error.map { ErrorAlertItem(title: "Error", message: $0) } },
             set: { _ in vm.error = nil }
         ))
-        .sheet(item: $selectedCastMember) { member in
+        .sheet(item: $selectedCastMember, onDismiss: completeCastCreditNavigation) { route in
             CastPersonSheet(
-                personId: member.id,
-                fallbackName: member.name,
-                fallbackProfileURL: member.profileURL,
-                apiClient: apiClient
+                personId: route.personId,
+                fallbackName: route.fallbackName,
+                fallbackProfileURL: route.fallbackProfileURL,
+                apiClient: apiClient,
+                onSelectMedia: queueCastCreditNavigation
             )
         }
         #if os(tvOS)
-        // Cast opens via value-based push (NavigationLink in castCard). Using
+        // Cast opens via the shared shelf's value-based NavigationLink. Using
         // navigationDestination(item:) here corrupts the stack order when the
         // pushed person view itself pushes value-based MediaDestinations.
         .navigationDestination(for: CastPersonRoute.self) { route in
@@ -624,7 +627,10 @@ struct MovieDetailView: View {
         }
 
         if let cast = movie.credits?.cast, !cast.isEmpty {
-            castCard(Array(cast.prefix(20)))
+            CastShelfView(
+                items: cast.prefix(20).map(CastShelfItem.init),
+                onSelect: openCastMember
+            )
         }
     }
 
@@ -928,95 +934,18 @@ struct MovieDetailView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Cast Card
-
-    private func castCard(_ cast: [SeerrCastMember]) -> some View {
-        #if os(tvOS)
-        let avatarSize: CGFloat = 150
-        let cellWidth: CGFloat = 180
-        let cellHeight: CGFloat = 280
-        let nameTextHeight: CGFloat = 58
-        let roleTextHeight: CGFloat = 54
-        let castSpacing: CGFloat = 36
-        let nameFont = Font.body.weight(.semibold)
-        let roleFont = Font.callout
-        #else
-        let avatarSize: CGFloat = 56
-        let cellWidth: CGFloat = 70
-        let cellHeight: CGFloat = 132
-        let nameTextHeight: CGFloat = 30
-        let roleTextHeight: CGFloat = 30
-        let castSpacing: CGFloat = 12
-        let nameFont = Font.caption2
-        let roleFont = Font.caption2
-        #endif
-
-        return VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Cast", icon: "person.2")
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: castSpacing) {
-                    ForEach(cast) { member in
-                        let cell = VStack(spacing: 4) {
-                            AsyncImage(url: member.profileURL) { image in
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Circle().fill(.quaternary)
-                                    .overlay(Image(systemName: "person.fill").foregroundStyle(.secondary))
-                            }
-                            .frame(width: avatarSize, height: avatarSize)
-                            .clipShape(Circle())
-
-                            Text(member.name ?? "")
-                                .font(nameFont)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(width: cellWidth, height: nameTextHeight, alignment: .top)
-                            Text(member.character ?? "")
-                                .font(roleFont)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(width: cellWidth, height: roleTextHeight, alignment: .top)
-                        }
-                        .frame(width: cellWidth, height: cellHeight, alignment: .top)
-                        .contentShape(Rectangle())
-
-                        #if os(tvOS)
-                        // Value-based push — keeps the navigation stack ordering
-                        // sane when the person view pushes further destinations.
-                        NavigationLink(value: CastPersonRoute(member: member)) {
-                            cell
-                        }
-                        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.08))
-                        #else
-                        Button {
-                            openCastMember(member)
-                        } label: {
-                            cell
-                        }
-                        .buttonStyle(.plain)
-                        #endif
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 18)
-            }
-            #if os(tvOS)
-            .clipShape(Rectangle())
-            #else
-            .horizontalSoftEdges()
-            #endif
-        }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
-        #if os(tvOS)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        #endif
+    private func openCastMember(_ item: CastShelfItem) {
+        selectedCastMember = item.destination
     }
 
-    private func openCastMember(_ member: SeerrCastMember) {
-        selectedCastMember = member
+    private func queueCastCreditNavigation(_ destination: MediaDestination) {
+        pendingCastCreditDestination = destination
+    }
+
+    private func completeCastCreditNavigation() {
+        guard let destination = pendingCastCreditDestination else { return }
+        pendingCastCreditDestination = nil
+        router.openMedia(destination)
     }
 
     // MARK: - Info Rows Data

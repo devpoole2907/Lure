@@ -8,9 +8,8 @@ struct MediaSliderView: View {
     var transitionNamespace: Namespace.ID? = nil
     var headerValue: DiscoverSectionDestination? = nil
     var extendsBeyondParentPadding = true
+    var onSelect: ((MediaDestination) -> Void)? = nil
 
-    @Environment(InAppNotificationCenter.self) private var notificationCenter
-    @Environment(RequestsCoordinator.self) private var requestsCoordinator
     #if os(tvOS)
     private let horizontalBleed: CGFloat = 90
     private let cardSpacing: CGFloat = 40
@@ -94,31 +93,13 @@ struct MediaSliderView: View {
             sourceID: navigationSourceID(for: item, index: index)
         )
 
-        let link = NavigationLink(value: destination) {
-            titleCard(for: item, destination: destination)
-        }
-        #if os(tvOS)
-        .buttonStyle(TVPosterFocusButtonStyle())
-        #else
-        .buttonStyle(.plain)
-        #endif
-
-        if item.hasRequestContextActions {
-            link.contextMenu {
-                MediaRequestContextMenu(
-                    mediaType: item.mediaType,
-                    tmdbId: item.tmdbId,
-                    title: item.title,
-                    mediaInfo: item.mediaInfo,
-                    isKnownAvailable: item.mediaInfo?.isAvailable == true,
-                    apiClient: apiClient,
-                    notificationCenter: notificationCenter,
-                    requestsCoordinator: requestsCoordinator
-                )
-            }
-        } else {
-            link
-        }
+        MediaSliderCellControl(
+            item: item,
+            destination: destination,
+            apiClient: apiClient,
+            transitionNamespace: transitionNamespace,
+            onSelect: onSelect
+        )
     }
 
     @ViewBuilder
@@ -151,16 +132,6 @@ struct MediaSliderView: View {
         #endif
         .contentShape(Rectangle())
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func titleCard(for item: SeerrMediaItem, destination: MediaDestination) -> some View {
-        if let transitionNamespace {
-            TitleCardView(item: item)
-                .matchedTransitionSource(id: destination, in: transitionNamespace)
-        } else {
-            TitleCardView(item: item)
-        }
     }
 
     private func navigationSourceID(for item: SeerrMediaItem, index: Int) -> String {

@@ -21,6 +21,9 @@ enum LureTab: Hashable, Codable, Sendable {
 final class LureRouter {
     var selectedTab: LureTab = .discover
     var discoverPath = NavigationPath()
+    var searchPath = NavigationPath()
+    var libraryPath = NavigationPath()
+    var requestsPath = NavigationPath()
     var morePath: [MoreDestination] = []
     var isProfilePresented = false
 
@@ -37,10 +40,29 @@ final class LureRouter {
     func reset() {
         selectedTab = .discover
         discoverPath = NavigationPath()
+        searchPath = NavigationPath()
+        libraryPath = NavigationPath()
+        requestsPath = NavigationPath()
         morePath = []
         isProfilePresented = false
         pendingJellyfinItemId = nil
         pendingJellyfinItemAutoPlay = false
+    }
+
+    func openMedia(_ destination: MediaDestination) {
+        switch selectedTab {
+        case .discover:
+            discoverPath.append(destination)
+        case .search:
+            searchPath.append(destination)
+        case .library:
+            libraryPath.append(destination)
+        case .requests:
+            requestsPath.append(destination)
+        case .profile, .settings, .more:
+            selectedTab = .discover
+            discoverPath.append(destination)
+        }
     }
 
     @discardableResult
@@ -69,10 +91,13 @@ final class LureRouter {
             discoverPath = NavigationPath()
         case "search":
             selectedTab = .search
+            searchPath = NavigationPath()
         case "library":
             selectedTab = .library
+            libraryPath = NavigationPath()
         case "requests":
             selectedTab = .requests
+            requestsPath = NavigationPath()
         case "more":
             selectedTab = .more
             morePath = []

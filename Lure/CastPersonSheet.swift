@@ -118,6 +118,7 @@ struct CastPersonSheet: View {
     @Environment(JellyfinService.self) private var jellyfinService
     let apiClient: SeerrAPIClient
     let presentation: CastPersonPresentation
+    let onSelectMedia: ((MediaDestination) -> Void)?
 
     @State private var vm: CastPersonSheetViewModel
     @State private var libraryIDs: Set<String> = []
@@ -137,10 +138,12 @@ struct CastPersonSheet: View {
         fallbackName: String?,
         fallbackProfileURL: URL?,
         apiClient: SeerrAPIClient,
-        presentation: CastPersonPresentation = .sheet
+        presentation: CastPersonPresentation = .sheet,
+        onSelectMedia: ((MediaDestination) -> Void)? = nil
     ) {
         self.apiClient = apiClient
         self.presentation = presentation
+        self.onSelectMedia = onSelectMedia
         self._vm = State(initialValue: CastPersonSheetViewModel(
             personId: personId,
             fallbackName: fallbackName,
@@ -158,6 +161,7 @@ struct CastPersonSheet: View {
     ) {
         self.apiClient = apiClient
         self.presentation = presentation
+        self.onSelectMedia = nil
         self._vm = State(initialValue: CastPersonSheetViewModel(
             previewPerson: previewPerson,
             credits: credits,
@@ -171,9 +175,6 @@ struct CastPersonSheet: View {
             if presentation == .sheet {
                 NavigationStack {
                     content
-                }
-                .navigationDestination(for: MediaDestination.self) { destination in
-                    mediaDestinationView(destination)
                 }
             } else {
                 content
@@ -207,7 +208,8 @@ struct CastPersonSheet: View {
                         title: "In Your Library",
                         items: inLibrary,
                         apiClient: apiClient,
-                        extendsBeyondParentPadding: false
+                        extendsBeyondParentPadding: false,
+                        onSelect: openMediaDestination
                     )
                 }
                 if !other.isEmpty {
@@ -215,7 +217,8 @@ struct CastPersonSheet: View {
                         title: inLibrary.isEmpty ? nil : "More",
                         items: other,
                         apiClient: apiClient,
-                        extendsBeyondParentPadding: false
+                        extendsBeyondParentPadding: false,
+                        onSelect: openMediaDestination
                     )
                 }
             }
@@ -237,25 +240,10 @@ struct CastPersonSheet: View {
         }
     }
 
-    @ViewBuilder
-    private func mediaDestinationView(_ destination: MediaDestination) -> some View {
-        if destination.mediaType == "movie" {
-            MovieDetailView(
-                tmdbId: destination.tmdbId,
-                apiClient: apiClient,
-                jellyfinService: jellyfinService,
-                initialTitle: destination.title,
-                initialPosterURL: destination.posterURL
-            )
-        } else {
-            TVDetailView(
-                tmdbId: destination.tmdbId,
-                apiClient: apiClient,
-                jellyfinService: jellyfinService,
-                initialTitle: destination.title,
-                initialPosterURL: destination.posterURL
-            )
-        }
+    private func openMediaDestination(_ destination: MediaDestination) {
+        guard let onSelectMedia else { return }
+        onSelectMedia(destination)
+        dismiss()
     }
 
     private var inLibraryCredits: [SeerrMediaItem] {

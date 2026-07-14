@@ -21,10 +21,6 @@ struct DiscoverHeroCarouselView: View {
     @State private var autoAdvanceResetToken = 0
     #if os(tvOS)
     @FocusState private var heroFocus: HeroFocusTarget?
-    /// Keeps the intended focus destination alive for long programmatic
-    /// scrolls, especially the last-to-first wrap where intermediate panels
-    /// can temporarily invalidate the focused control.
-    @State private var pendingHeroFocusItemID: String?
     #endif
     private var heroItems: [SeerrMediaItem] {
         Array(items.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }.prefix(8))
@@ -77,25 +73,19 @@ struct DiscoverHeroCarouselView: View {
                     }
                 } scrollProgress: { progress in
                     let newIndex = min(max(Int(progress.rounded()), 0), heroItems.count - 1)
-                    #if os(tvOS)
-                    updateActiveIndexForScroll(newIndex)
-                    #else
+                    // Do not programmatically transfer `heroFocus` as the page
+                    // changes. Forcing the incoming Details button here fought
+                    // tvOS's scroll/focus resolution badly enough to break hero
+                    // scrolling. The occasional fallback to the shelf below is
+                    // preferable until this can be revisited without mutating
+                    // focus during an active scroll transition.
                     activeIndex = newIndex
-                    #endif
                 }
                 .onScrollPhaseChange { _, newPhase in
                     scrollPhase = newPhase
                     if newPhase == .interacting {
-                        #if os(tvOS)
-                        pendingHeroFocusItemID = nil
-                        #endif
                         resetAutoAdvanceTimer()
                     }
-                    #if os(tvOS)
-                    if newPhase == .idle {
-                        completePendingHeroFocusHandoff()
-                    }
-                    #endif
                 }
 
                 PageControlView(numberOfPages: heroItems.count, currentPage: activeIndex)
@@ -491,58 +481,9 @@ struct DiscoverHeroCarouselView: View {
         } else {
             moveCarousel(by: -1, wraps: false, resetsTimer: true)
         }
-
-        // Return focus to a real control on the outgoing panel while it scrolls.
-        // `updateActiveIndexForScroll` carries that Details role to the incoming
-        // panel exactly when its controls become active.
-        heroFocus = .details(newValue.itemID)
-    }
-
-    /// Move focus to the incoming panel's Details button as the carousel crosses
-    /// between items. Updating the active page and focus in the same turn prevents
-    /// tvOS from falling back to the nearest shelf below the hero.
-    private func updateActiveIndexForScroll(_ newIndex: Int) {
-        guard heroItems.indices.contains(newIndex), newIndex != activeIndex else { return }
-
-        let oldItemID = heroItems[safe: activeIndex]?.id
-        let newItemID = heroItems[newIndex].id
-        let shouldCompletePendingHandoff = pendingHeroFocusItemID == newItemID
-        let transferredFocus = heroFocus.flatMap { focus -> HeroFocusTarget? in
-            guard !focus.isEdgeCatcher, focus.itemID == oldItemID else { return nil }
-            return .details(newItemID)
-        } ?? (shouldCompletePendingHandoff ? .details(newItemID) : nil)
-
-        activeIndex = newIndex
-        if let transferredFocus {
-            heroFocus = transferredFocus
-
-            // Reassert after SwiftUI has enabled the incoming panel's controls.
-            // This is a focus handoff only; it does not delay or pause scrolling.
-            Task { @MainActor in
-                await Task.yield()
-                guard heroItems[safe: activeIndex]?.id == newItemID else { return }
-                heroFocus = transferredFocus
-            }
-        }
-    }
-
-    /// Reassert once scrolling is fully idle, when the destination panel is
-    /// guaranteed to participate in focus resolution. This is the critical
-    /// last-to-first wrap safeguard: the focus binding may have been cleared
-    /// while the animation crossed the intervening panels.
-    @MainActor
-    private func completePendingHeroFocusHandoff() {
-        guard let itemID = pendingHeroFocusItemID,
-              heroItems[safe: activeIndex]?.id == itemID else { return }
-
-        heroFocus = .details(itemID)
-        Task { @MainActor in
-            await Task.yield()
-            guard pendingHeroFocusItemID == itemID,
-                  heroItems[safe: activeIndex]?.id == itemID else { return }
-            heroFocus = .details(itemID)
-            pendingHeroFocusItemID = nil
-        }
+        // Intentionally leave focus resolution to tvOS after paging. Explicitly
+        // assigning the incoming panel's Details target here made the carousel's
+        // scrolling unstable. Revisit only with a scroll-aware focus strategy.
     }
     #endif
 
@@ -774,16 +715,6 @@ struct DiscoverHeroCarouselView: View {
         guard heroItems.indices.contains(targetIndex) else { return }
         let resolvedCurrentIndex = currentIndex ?? activeIndex
         guard targetIndex != resolvedCurrentIndex || scrollTargetID != heroItems[targetIndex].id else { return }
-        #if os(tvOS)
-        if let heroFocus,
-           !heroFocus.isEdgeCatcher,
-           heroFocus.itemID == heroItems[safe: resolvedCurrentIndex]?.id {
-            // The scroll geometry can report every intervening item while a
-            // last-to-first wrap animates. Retain the actual destination so a
-            // transient nil focus cannot strand focus on the shelf below.
-            pendingHeroFocusItemID = heroItems[targetIndex].id
-        }
-        #endif
         withAnimation(.smooth(duration: 0.45)) {
             #if !os(tvOS)
             activeIndex = targetIndex

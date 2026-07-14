@@ -16,6 +16,7 @@ struct SearchView: View {
     @Environment(JellyfinService.self) private var jellyfinService
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
+    @Environment(LureRouter.self) private var router
 
     @State private var jellyfinResults: [JellyfinItem] = []
     @State private var jellyfinSearchTask: Task<Void, Never>?
@@ -55,7 +56,8 @@ struct SearchView: View {
     }
 
     private var searchNavigation: some View {
-        NavigationStack {
+        @Bindable var router = router
+        return NavigationStack(path: $router.searchPath) {
             Group {
                 #if os(macOS)
                 VStack(spacing: 0) {
