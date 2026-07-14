@@ -18,6 +18,8 @@ final class MovieDetailViewModel {
     private(set) var resumePositionSeconds: Double = 0
     private(set) var heroArtwork: MediaArtwork?
     private(set) var isFavorite = false
+    private(set) var localTrailers: [JellyfinLocalTrailer] = []
+    private(set) var hasResolvedLocalTrailers = false
 
     /// True when Jellyfin has a saved playback position partway through the film,
     /// so the Watch button should offer to continue instead of restart.
@@ -151,11 +153,14 @@ final class MovieDetailViewModel {
     }
 
     private func resolvePlaybackAvailability(for movie: SeerrMovieDetail) async {
+        localTrailers = []
+        hasResolvedLocalTrailers = false
         guard movie.mediaInfo?.isAvailable == true else {
             playbackAvailability = .unknown
             mediaQuality = nil
             resumePositionSeconds = 0
             isFavorite = false
+            hasResolvedLocalTrailers = true
             return
         }
         playbackAvailability = .checking
@@ -171,15 +176,22 @@ final class MovieDetailViewModel {
         )
         if let itemId = playbackAvailability.playableItemId {
             await loadPlayableDetails(itemId: itemId)
+        } else {
+            hasResolvedLocalTrailers = true
         }
     }
 
     private func loadPlayableDetails(itemId: String) async {
-        guard let client = jellyfinService.client else { return }
+        guard let client = jellyfinService.client else {
+            hasResolvedLocalTrailers = true
+            return
+        }
         async let infoTask = client.getPlaybackInfo(itemId: itemId)
         async let itemTask = client.getItem(itemId: itemId)
+        async let trailersTask = client.getLocalTrailers(itemId: itemId)
         let info = try? await infoTask
         let item = try? await itemTask
+        let trailers = (try? await trailersTask) ?? []
 
         let quality = MediaQualityInfo(mediaSources: info?.mediaSources)
         let resume = item?.resumePositionSeconds ?? 0
@@ -188,6 +200,8 @@ final class MovieDetailViewModel {
             mediaQuality = quality
             resumePositionSeconds = resume
             isFavorite = favorite
+            localTrailers = trailers
+            hasResolvedLocalTrailers = true
         }
     }
 }

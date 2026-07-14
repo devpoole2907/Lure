@@ -177,6 +177,12 @@ private struct MovieDetailPreviewSurface: View {
 }
 #endif
 
+#if DEBUG && os(iOS)
+#Preview("Movie Detail — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    MovieDetailPreviewSurface(movie: PreviewSupport.previewMovieDetail)
+}
+#endif
+
 struct MovieDetailView: View {
     let tmdbId: Int
     let apiClient: SeerrAPIClient
@@ -624,8 +630,13 @@ struct MovieDetailView: View {
 
     @ViewBuilder
     private func contentCards(_ movie: SeerrMovieDetail) -> some View {
-        if !movie.trailerVideos.isEmpty {
-            TrailerShelfView(videos: movie.trailerVideos)
+        if vm.hasResolvedLocalTrailers,
+           !vm.localTrailers.isEmpty || !movie.trailerVideos.isEmpty {
+            TrailerShelfView(
+                localTrailers: vm.localTrailers,
+                youtubeVideos: movie.trailerVideos,
+                fallbackArtworkURL: movie.heroBackdropURL ?? movie.heroPosterURL
+            )
         }
 
         let infoRows = movieInfoRows(movie)

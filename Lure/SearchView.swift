@@ -1216,3 +1216,12 @@ enum SearchScope: Hashable {
     }
 }
 #endif
+
+#if DEBUG && os(iOS)
+#Preview("Search — Browse Genres (iPad)", traits: .fixedLayout(width: 1024, height: 1366)) {
+    SearchView(apiClient: PreviewSupport.apiClient)
+        .environment(PreviewSupport.jellyfinService)
+        .environment(PreviewSupport.notificationCenter)
+        .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

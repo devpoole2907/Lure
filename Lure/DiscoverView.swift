@@ -109,6 +109,19 @@ struct DiscoverView: View {
                     await vm.loadInitialData()
                 }
             }
+            #if os(macOS) && DEBUG
+            // Temporary nav probe (LURE_NAV_PROBE=1): tab-switch then push.
+            .task {
+                guard ProcessInfo.processInfo.environment["LURE_NAV_PROBE"] == "1" else { return }
+                try? await Task.sleep(for: .seconds(5))
+                router.selectedTab = .search
+                try? await Task.sleep(for: .seconds(2))
+                router.selectedTab = .discover
+                try? await Task.sleep(for: .seconds(2))
+                router.discoverPath.append(DiscoverSectionDestination.trending)
+                print("LURE_NAV_PROBE: appended .trending, path count=\(router.discoverPath.count)")
+            }
+            #endif
             .onChange(of: router.pendingJellyfinItemId) { _, jellyfinId in
                 guard let jellyfinId, !jellyfinId.isEmpty else { return }
                 router.pendingJellyfinItemId = nil
@@ -394,3 +407,14 @@ struct DiscoverView: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Discover — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    DiscoverView(apiClient: PreviewSupport.apiClient)
+        .environment(PreviewSupport.router(tab: .discover))
+        .environment(PreviewSupport.jellyfinService)
+        .environment(PreviewSupport.notificationCenter)
+        .environment(PreviewSupport.playerCoordinator)
+        .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

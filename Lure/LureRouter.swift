@@ -22,6 +22,7 @@ final class LureRouter {
     var selectedTab: LureTab = .discover
     var discoverPath = NavigationPath()
     var morePath: [MoreDestination] = []
+    var isProfilePresented = false
 
     /// Set when a `lure://item/<jellyfinId>` or `lure://play/<jellyfinId>` deep
     /// link arrives (e.g. from the tvOS Top Shelf). Consumers such as
@@ -37,6 +38,7 @@ final class LureRouter {
         selectedTab = .discover
         discoverPath = NavigationPath()
         morePath = []
+        isProfilePresented = false
         pendingJellyfinItemId = nil
         pendingJellyfinItemAutoPlay = false
     }
@@ -90,14 +92,14 @@ final class LureRouter {
             #endif
         case "profile":
             #if os(macOS)
-            selectedTab = .profile
+            isProfilePresented = true
             #else
             selectedTab = .more
             morePath = [.profile]
             #endif
         case "more/profile":
             #if os(macOS)
-            selectedTab = .profile
+            isProfilePresented = true
             #else
             selectedTab = .more
             morePath = [.profile]

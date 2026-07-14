@@ -213,3 +213,20 @@ struct MediaDestination: Hashable {
         self.sourceID = sourceID ?? "\(mediaType)-\(tmdbId)"
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Media Slider — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        MediaSliderView(
+            title: "Popular Movies",
+            icon: "popcorn.fill",
+            items: PreviewSupport.sampleItems,
+            apiClient: PreviewSupport.apiClient,
+            extendsBeyondParentPadding: false
+        )
+        .padding(.vertical)
+    }
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

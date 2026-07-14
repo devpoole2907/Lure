@@ -628,3 +628,22 @@ private struct InvitePasteSheet: View {
 #Preview("Invite Link Sheet") {
     InvitePasteSheet { _ in }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Welcome — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    SetupWizardView(authViewModel: OnboardingPreviewSupport.authViewModel()) { _ in }
+        .environment(PreviewSupport.jellyfinService)
+}
+
+#Preview("Choose Services — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        ServiceSelectionScreen(authViewModel: OnboardingPreviewSupport.authViewModel())
+    }
+    .environment(PreviewSupport.jellyfinService)
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+
+#Preview("Invite Link Sheet — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    InvitePasteSheet { _ in }
+}
+#endif

@@ -7,6 +7,7 @@ struct LibraryContentView: View {
     @Environment(PlayerCoordinator.self) private var playerCoordinator
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(RequestsCoordinator.self) private var requestsCoordinator
+    @State private var recentGridWidth: CGFloat = 0
 
     var body: some View {
         if viewModel.isLoading && viewModel.items.isEmpty && viewModel.continueWatching.isEmpty {
@@ -132,7 +133,7 @@ struct LibraryContentView: View {
 
             let recentItems = Array(viewModel.recentlyAdded.prefix(12))
             LazyVGrid(
-                columns: ThreeColumnMediaGrid.columns,
+                columns: ThreeColumnMediaGrid.columns(for: recentGridWidth),
                 spacing: ThreeColumnMediaGrid.rowSpacing
             ) {
                 ForEach(recentItems) { item in
@@ -160,6 +161,11 @@ struct LibraryContentView: View {
                 }
             }
             .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { _, width in
+                recentGridWidth = width
+            }
         }
     }
 }
@@ -193,3 +199,24 @@ struct LibraryPosterCell: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Library Content — Empty (iPad)", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let jellyfinService = PreviewSupport.jellyfinService
+    let viewModel = LibraryViewModel(
+        apiClient: PreviewSupport.apiClient,
+        jellyfinService: jellyfinService
+    )
+
+    NavigationStack {
+        LibraryContentView(
+            viewModel: viewModel,
+            apiClient: PreviewSupport.apiClient
+        )
+        .navigationTitle("Library")
+    }
+    .environment(PreviewSupport.playerCoordinator)
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

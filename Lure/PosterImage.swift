@@ -85,3 +85,13 @@ private extension Image {
         #endif
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Poster Image — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    HStack(spacing: 24) {
+        PosterImage(url: nil)
+        PosterImage(url: nil, width: 180, height: 270, cornerRadius: 16)
+    }
+    .padding()
+}
+#endif

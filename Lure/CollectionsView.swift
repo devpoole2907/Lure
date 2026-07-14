@@ -51,7 +51,7 @@ struct CollectionsView: View {
                 let posterWidth = ThreeColumnMediaGrid.posterWidth(for: proxy.size.width)
 
                 ScrollView {
-                    LazyVGrid(columns: ThreeColumnMediaGrid.columns, spacing: ThreeColumnMediaGrid.rowSpacing) {
+                    LazyVGrid(columns: ThreeColumnMediaGrid.columns(for: proxy.size.width), spacing: ThreeColumnMediaGrid.rowSpacing) {
                         ForEach(vm.collections.indices, id: \.self) { index in
                             NavigationLink(value: vm.collections[index]) {
                                 collectionCard(vm.collections[index], posterWidth: posterWidth)
@@ -97,3 +97,11 @@ struct CollectionsView: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Collections — Loading (iPad)", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        CollectionsView(apiClient: PreviewSupport.apiClient)
+    }
+}
+#endif

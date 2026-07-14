@@ -228,3 +228,17 @@ struct TVSeasonDetailView: View {
 extension SeerrTVSeason {
     var posterURL: URL? { ImageURL.poster(posterPath) }
 }
+
+#if DEBUG && os(iOS)
+#Preview("TV Season Detail — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let show = SeerrTVDetail.previewShow
+    let season = show.requestableSeasons[1]
+    let status = show.mediaInfo?.seasons?.first {
+        $0.seasonNumber == season.seasonNumber
+    }
+
+    NavigationStack {
+        TVSeasonDetailView(show: show, season: season, statusSeason: status)
+    }
+}
+#endif

@@ -11,7 +11,7 @@ final class CastPersonSheetViewModel {
     let fallbackName: String?
     let fallbackProfileURL: URL?
 
-    private let personId: Int?
+    private var personId: Int?
     private let apiClient: SeerrAPIClient
 
     init(personId: Int?, fallbackName: String?, fallbackProfileURL: URL?, apiClient: SeerrAPIClient) {
@@ -21,7 +21,23 @@ final class CastPersonSheetViewModel {
         self.apiClient = apiClient
     }
 
+    #if DEBUG
+    init(previewPerson: SeerrPersonDetail, credits: [SeerrMediaItem], apiClient: SeerrAPIClient) {
+        self.person = previewPerson
+        self.credits = credits
+        self.personId = previewPerson.id
+        self.fallbackName = previewPerson.name
+        self.fallbackProfileURL = previewPerson.profileURL
+        self.apiClient = apiClient
+    }
+    #endif
+
     func load() async {
+        // Jellyfin-sourced people (episode cast) have no TMDB id — resolve one
+        // by name through Seerr search so the full bio and credits still load.
+        if personId == nil {
+            await resolvePersonIdByName()
+        }
         guard let personId else { return }
         isLoading = true
         defer { isLoading = false }
@@ -45,6 +61,23 @@ final class CastPersonSheetViewModel {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    private func resolvePersonIdByName() async {
+        guard let name = fallbackName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        guard let response = try? await apiClient.search(query: name, page: 1) else { return }
+        let people = response.results.compactMap { result -> SeerrPersonResult? in
+            if case .person(let person) = result.toMediaItem() { return person }
+            return nil
+        }
+        // Prefer an exact (case-insensitive) name match; fall back to the top
+        // person hit so common transliterations still resolve.
+        let match = people.first { $0.name?.caseInsensitiveCompare(name) == .orderedSame } ?? people.first
+        personId = match?.id
     }
 }
 
@@ -90,6 +123,13 @@ struct CastPersonSheet: View {
     @State private var libraryIDs: Set<String> = []
     #if os(tvOS)
     @State private var isBiographyExpanded = false
+    @FocusState private var focusedContent: CastPersonFocusTarget?
+
+    private enum CastPersonFocusTarget: Hashable {
+        case identity
+        case biography
+        case biographyToggle
+    }
     #endif
 
     init(
@@ -108,6 +148,23 @@ struct CastPersonSheet: View {
             apiClient: apiClient
         ))
     }
+
+    #if DEBUG
+    init(
+        previewPerson: SeerrPersonDetail,
+        credits: [SeerrMediaItem],
+        apiClient: SeerrAPIClient,
+        presentation: CastPersonPresentation
+    ) {
+        self.apiClient = apiClient
+        self.presentation = presentation
+        self._vm = State(initialValue: CastPersonSheetViewModel(
+            previewPerson: previewPerson,
+            credits: credits,
+            apiClient: apiClient
+        ))
+    }
+    #endif
 
     var body: some View {
         Group {
@@ -148,7 +205,6 @@ struct CastPersonSheet: View {
                 if !inLibrary.isEmpty {
                     MediaSliderView(
                         title: "In Your Library",
-                        icon: "checkmark.circle",
                         items: inLibrary,
                         apiClient: apiClient,
                         extendsBeyondParentPadding: false
@@ -242,23 +298,43 @@ struct CastPersonSheet: View {
                 cornerRadius: profileCornerRadius
             )
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(vm.person?.name ?? vm.fallbackName ?? "Unknown")
-                    .font(headerTitleFont)
-
-                if let department = vm.person?.knownForDepartment, !department.isEmpty {
-                    Label(department, systemImage: "sparkles")
-                        .font(headerMetaFont)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let birthplace = vm.person?.placeOfBirth, !birthplace.isEmpty {
-                    Label(birthplace, systemImage: "mappin.and.ellipse")
-                        .font(headerMetaFont)
-                        .foregroundStyle(.secondary)
-                }
+            #if os(tvOS)
+            Button(action: {}) {
+                personIdentity
+                    .padding(12)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focused($focusedContent, equals: .identity)
+            .background {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(focusedContent == .identity ? .white.opacity(0.12) : .clear)
+            }
+            .scaleEffect(focusedContent == .identity ? 1.03 : 1, anchor: .leading)
+            .animation(.easeOut(duration: 0.16), value: focusedContent == .identity)
+            #else
+            personIdentity
+            #endif
             Spacer()
+        }
+    }
+
+    private var personIdentity: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(vm.person?.name ?? vm.fallbackName ?? "Unknown")
+                .font(headerTitleFont)
+
+            if let department = vm.person?.knownForDepartment, !department.isEmpty {
+                Label(department, systemImage: "sparkles")
+                    .font(headerMetaFont)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let birthplace = vm.person?.placeOfBirth, !birthplace.isEmpty {
+                Label(birthplace, systemImage: "mappin.and.ellipse")
+                    .font(headerMetaFont)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -268,15 +344,23 @@ struct CastPersonSheet: View {
             #if os(tvOS)
             let showsToggle = shouldShowBiographyToggle(for: biography)
             VStack(alignment: .leading, spacing: 12) {
-                Text("Biography")
-                    .font(.title3.bold())
+                Button(action: {}) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Biography")
+                            .font(.title3.bold())
 
-                Text(biography)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(isBiographyExpanded || !showsToggle ? nil : 6)
-                    .fixedSize(horizontal: false, vertical: true)
+                        Text(biography)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(isBiographyExpanded || !showsToggle ? nil : 6)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focused($focusedContent, equals: .biography)
 
                 if showsToggle {
                     OverviewToggleButton(title: isBiographyExpanded ? "LESS" : "MORE") {
@@ -284,20 +368,20 @@ struct CastPersonSheet: View {
                             isBiographyExpanded.toggle()
                         }
                     }
+                    .focused($focusedContent, equals: .biographyToggle)
                     .padding(.top, 4)
                 }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22))
-            // The card must contain something focusable so the Siri Remote can
-            // scroll the page back up to the biography/header. Long bios get the
-            // MORE/LESS pill; short ones make the card itself focusable.
-            .focusable(!showsToggle)
-            // Focus section: swiping up from anywhere in the credit shelves
-            // funnels focus to the pill. Without it the upward focus search
-            // from a horizontally distant shelf card misses the small pill
-            // entirely and focus gets stuck in the shelves.
+            .overlay {
+                RoundedRectangle(cornerRadius: 22)
+                    .stroke(
+                        focusedContent == .biography ? .white.opacity(0.7) : .clear,
+                        lineWidth: 2
+                    )
+            }
             .focusSection()
             #else
             if shouldShowFullBiographyLink(for: biography) {
@@ -429,3 +513,24 @@ private struct BiographyDetailView: View {
 #endif
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Cast Person — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    CastPersonSheet(
+        previewPerson: SeerrPersonDetail(
+            id: 287,
+            name: "Brad Pitt",
+            biography: "An acclaimed actor and producer known for performances spanning character-driven dramas, thrillers, and large-scale studio films. His work has earned recognition both in front of and behind the camera.",
+            birthday: "1963-12-18",
+            deathday: nil,
+            placeOfBirth: "Shawnee, Oklahoma, USA",
+            knownForDepartment: "Acting",
+            profilePath: nil
+        ),
+        credits: PreviewSupport.sampleItems,
+        apiClient: PreviewSupport.apiClient,
+        presentation: .sheet
+    )
+    .environment(PreviewSupport.jellyfinService)
+}
+#endif

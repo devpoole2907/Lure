@@ -21,6 +21,28 @@ struct TransportOverlay: View {
 
     var body: some View {
         ZStack {
+            #if os(tvOS)
+            // Invisible full-screen catcher that holds Siri Remote focus while
+            // the chrome is hidden. Without a focused descendant the overlay's
+            // onPlayPauseCommand/onMoveCommand never fire, leaving the remote
+            // dead once the controls fade out. Select re-opens the controls.
+            if !vm.controlsVisible {
+                Button {
+                    showTVControls(focusing: .playPause)
+                } label: {
+                    Color.clear
+                }
+                // Not `.plain`: tvOS's built-in styles draw the system focus
+                // treatment (a lifted white platter) over the focused label,
+                // which for this screen-sized clear label washes the whole
+                // video out white once the chrome fades.
+                .buttonStyle(TVUnstyledButtonStyle())
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .focused($focusedControl, equals: .hiddenCatcher)
+                .accessibilityLabel("Show playback controls")
+            }
+            #endif
+
             if vm.controlsVisible {
                 ZStack {
                     // Two-band gradient: dark at top/bottom, clear in middle (matches system player)
@@ -86,6 +108,16 @@ struct TransportOverlay: View {
             focusedControl = .playPause
             #endif
         }
+        #if os(tvOS)
+        // The onAppear assignment can be dropped if the cover hasn't finished
+        // attaching; without a focused descendant every remote command is dead.
+        .task {
+            try? await Task.sleep(for: .milliseconds(500))
+            if focusedControl == nil {
+                focusedControl = vm.controlsVisible ? .playPause : .hiddenCatcher
+            }
+        }
+        #endif
         .onDisappear {
             hideTask?.cancel()
         }
@@ -119,15 +151,26 @@ struct TransportOverlay: View {
 
     private var topBar: some View {
         HStack(alignment: .center, spacing: 12) {
-            Button("Done") { onDismiss() }
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(height: 44)
-                .contentShape(Rectangle())
-                .accessibilityLabel("Close player")
-                #if os(tvOS)
-                .focused($focusedControl, equals: .done)
-                #endif
+            Button {
+                onDismiss()
+            } label: {
+                Text("Done")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    #if os(tvOS)
+                    .padding(.horizontal, 24)
+                    .frame(height: 52)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    #else
+                    .frame(height: 44)
+                    #endif
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Close player")
+            #if os(tvOS)
+            .buttonStyle(TVHeroActionButtonStyle())
+            .focused($focusedControl, equals: .done)
+            #endif
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(vm.title)
@@ -195,15 +238,29 @@ struct TransportOverlay: View {
                     ProgressView().tint(.white)
                 } else {
                     Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                        #if os(tvOS)
+                        .font(.system(size: 32, weight: .semibold))
+                        #else
                         .font(.system(size: 44))
+                        #endif
                         .foregroundStyle(.white)
                 }
             }
+            #if os(tvOS)
+            .frame(width: 76, height: 76)
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay {
+                Circle()
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+            }
+            #else
             .frame(width: 60, height: 60)
+            #endif
             .contentShape(Circle())
         }
         .accessibilityLabel(vm.isPlaying ? "Pause" : "Play")
         #if os(tvOS)
+        .buttonStyle(TVHeroActionButtonStyle())
         .focused($focusedControl, equals: .playPause)
         #endif
     }
@@ -216,9 +273,21 @@ struct TransportOverlay: View {
             Image(systemName: systemImage)
                 .font(.title2)
                 .foregroundStyle(.white)
+                #if os(tvOS)
+                .frame(width: 64, height: 64)
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay {
+                    Circle()
+                        .strokeBorder(.white.opacity(0.18), lineWidth: 0.8)
+                }
+                #else
                 .frame(width: 44, height: 44)
+                #endif
                 .contentShape(Rectangle())
         }
+        #if os(tvOS)
+        .buttonStyle(TVHeroActionButtonStyle())
+        #endif
         .accessibilityLabel(label)
     }
 
@@ -333,7 +402,7 @@ struct TransportOverlay: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVUnstyledButtonStyle())
         .focused($focusedControl, equals: .scrubber)
         .disabled(vm.duration <= 0)
         .accessibilityLabel(tvScrubbing ? "Commit seek" : "Seek position")
@@ -356,6 +425,7 @@ struct TransportOverlay: View {
                     .background(.white.opacity(0.15), in: Capsule())
             }
             #if os(tvOS)
+            .buttonStyle(TVHeroActionButtonStyle())
             .focused($focusedControl, equals: .subtitles)
             #endif
 
@@ -373,6 +443,7 @@ struct TransportOverlay: View {
             }
             .disabled(vm.audioTracks.isEmpty)
             #if os(tvOS)
+            .buttonStyle(TVHeroActionButtonStyle())
             .focused($focusedControl, equals: .audio)
             #endif
 
@@ -402,6 +473,8 @@ struct TransportOverlay: View {
             }
             .accessibilityLabel("Playback speed: \(rateLabel(vm.playbackRate))")
             #if os(tvOS)
+            .menuStyle(.button)
+            .buttonStyle(TVHeroActionButtonStyle())
             .focused($focusedControl, equals: .rate)
             #endif
 
@@ -418,6 +491,7 @@ struct TransportOverlay: View {
             }
             .accessibilityLabel(vm.videoGravity == .resizeAspect ? "Fill screen" : "Fit to screen")
             #if os(tvOS)
+            .buttonStyle(TVHeroActionButtonStyle())
             .focused($focusedControl, equals: .aspect)
             #endif
         }
@@ -448,6 +522,7 @@ struct TransportOverlay: View {
                         )
                 }
                 #if os(tvOS)
+                .buttonStyle(TVHeroActionButtonStyle())
                 .focused($focusedControl, equals: .skipIntro)
                 #endif
                 .padding(.trailing, 24)
@@ -482,6 +557,7 @@ struct TransportOverlay: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.white.opacity(0.7))
                         #if os(tvOS)
+                        .buttonStyle(TVHeroActionButtonStyle())
                         .focused($focusedControl, equals: .nextCancel)
                         #endif
 
@@ -494,6 +570,7 @@ struct TransportOverlay: View {
                         .padding(.vertical, 10)
                         .background(.white.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
                         #if os(tvOS)
+                        .buttonStyle(TVHeroActionButtonStyle())
                         .focused($focusedControl, equals: .nextPlay)
                         #endif
                     }
@@ -589,7 +666,7 @@ struct TransportOverlay: View {
         } else {
             hideTask?.cancel()
             #if os(tvOS)
-            focusedControl = nil
+            focusedControl = .hiddenCatcher
             #endif
         }
     }
@@ -606,7 +683,7 @@ struct TransportOverlay: View {
                 vm.controlsVisible = false
             }
             #if os(tvOS)
-            focusedControl = nil
+            focusedControl = .hiddenCatcher
             #endif
         }
     }
@@ -664,7 +741,7 @@ struct TransportOverlay: View {
                 vm.controlsVisible = false
             }
             hideTask?.cancel()
-            focusedControl = nil
+            focusedControl = .hiddenCatcher
             return
         }
 
@@ -742,7 +819,19 @@ struct TransportOverlay: View {
 }
 
 #if os(tvOS)
+/// Renders the label with no focus visuals at all. A custom style opts the
+/// button out of the system focus appearance entirely — the built-in styles
+/// (`.plain` included) wrap the focused label in a lifted white platter.
+/// Used by the hidden-chrome catcher, which must hold focus invisibly, and
+/// the scrubber, which draws its own focus feedback (thicker bar + thumb).
+private struct TVUnstyledButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
 private enum TVTransportFocus: Hashable {
+    case hiddenCatcher
     case done
     case rewind
     case playPause

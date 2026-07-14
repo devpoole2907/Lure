@@ -36,3 +36,17 @@ struct ValidationErrorSection: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Onboarding Form Components — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    @Previewable @State var serverURL = "https://requests.example.com"
+
+    Form {
+        Section("Server") {
+            ServerURLField(url: $serverURL)
+        }
+
+        ValidationErrorSection(error: "Lure couldn't reach this server.")
+    }
+}
+#endif

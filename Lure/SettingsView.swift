@@ -57,6 +57,20 @@ struct SettingsView: View {
     }
 }
 
+#if DEBUG && os(iOS)
+#Preview("Settings — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        SettingsView(
+            apiClient: PreviewSupport.apiClient,
+            currentUser: PreviewSupport.regularUser,
+            onLogout: {}
+        )
+    }
+    .environment(PreviewSupport.jellyfinService)
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif
+
 #if os(macOS)
 @MainActor
 @Observable

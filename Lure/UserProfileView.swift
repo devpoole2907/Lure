@@ -172,3 +172,15 @@ struct UserProfileView: View {
         await MainActor.run { cacheSize = formatted }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("User Profile — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        UserProfileView(
+            apiClient: PreviewSupport.apiClient,
+            currentUser: PreviewSupport.regularUser,
+            onLogout: {}
+        )
+    }
+}
+#endif

@@ -43,3 +43,11 @@ struct LicensesView: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Open Source Licenses — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        LicensesView()
+    }
+}
+#endif

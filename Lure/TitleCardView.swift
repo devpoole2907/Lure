@@ -69,3 +69,16 @@ struct TitleCardView: View {
         .padding(.horizontal, 2)
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Title Card — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    TitleCardView(
+        item: PreviewSupport.movieItem(
+            title: "Fight Club",
+            mediaInfo: PreviewSupport.previewMovieDetail.mediaInfo
+        ),
+        certification: "R"
+    )
+    .padding()
+}
+#endif

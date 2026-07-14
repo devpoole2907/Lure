@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import SwiftData
+#endif
 
 enum MoreDestination: Hashable {
     case profile
@@ -84,3 +87,16 @@ private extension View {
 #endif
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("More — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    MoreView(
+        apiClient: PreviewSupport.apiClient,
+        currentUser: PreviewSupport.regularUser,
+        onLogout: {}
+    )
+    .environment(PreviewSupport.router(tab: .more))
+    .environment(PreviewSupport.jellyfinService)
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif

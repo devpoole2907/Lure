@@ -87,3 +87,16 @@ struct MediaListRow: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Media List Row — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    List {
+        MediaListRow(
+            item: PreviewSupport.movieItem(
+                mediaInfo: PreviewSupport.previewMovieDetail.mediaInfo
+            )
+        )
+        MediaListRow(item: PreviewSupport.tvItem())
+    }
+}
+#endif

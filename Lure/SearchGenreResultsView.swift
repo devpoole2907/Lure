@@ -42,3 +42,18 @@ private extension SearchGenreDestination {
         mediaType == "movie" ? "Movies" : "TV shows"
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Genre Results — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        SearchGenreResultsView(
+            destination: SearchGenreDestination(
+                genre: PreviewSupport.sampleGenreTiles[7]
+            ),
+            apiClient: PreviewSupport.apiClient
+        )
+    }
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

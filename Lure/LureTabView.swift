@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG && os(iOS)
+import SwiftData
+#endif
 
 struct LureTabView: View {
     let apiClient: SeerrAPIClient
@@ -25,12 +28,6 @@ struct LureTabView: View {
 
             Tab("Requests", systemImage: "arrow.down.circle", value: LureTab.requests) {
                 RequestListView(apiClient: apiClient, currentUser: currentUser)
-            }
-
-            Tab("Profile", systemImage: "person.crop.circle", value: LureTab.profile) {
-                NavigationStack {
-                    UserProfileView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
-                }
             }
             #else
             Tab("Discover", systemImage: "film", value: LureTab.discover) {
@@ -65,6 +62,20 @@ struct LureTabView: View {
             #endif
         }
         .tabViewStyle(.sidebarAdaptable)
+        #if os(macOS)
+        .tabViewSidebarBottomBar {
+            MacSidebarProfileButton(currentUser: currentUser) {
+                router.isProfilePresented = true
+            }
+        }
+        .sheet(isPresented: $router.isProfilePresented) {
+            MacUserProfileSheet(
+                apiClient: apiClient,
+                currentUser: currentUser,
+                onLogout: onLogout
+            )
+        }
+        #endif
         .task {
             await SearchViewModel.preloadBrowseGenres(using: apiClient)
         }
@@ -117,5 +128,24 @@ struct LureTabView: View {
     .environment(PreviewSupport.notificationCenter)
     .environment(PreviewSupport.playerCoordinator)
     .environment(PreviewSupport.requestsCoordinator)
+}
+#endif
+
+#if DEBUG && os(iOS)
+#Preview("Tab View — Discover (iPad)", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let router = PreviewSupport.router(tab: .discover)
+    let jellyfinService = PreviewSupport.jellyfinService
+
+    LureTabView(
+        apiClient: PreviewSupport.apiClient,
+        currentUser: PreviewSupport.regularUser,
+        onLogout: {}
+    )
+    .environment(router)
+    .environment(jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.playerCoordinator)
+    .environment(PreviewSupport.requestsCoordinator)
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
 }
 #endif

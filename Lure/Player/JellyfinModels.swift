@@ -57,6 +57,7 @@ struct JellyfinItem: Decodable, Sendable {
     let communityRating: Double?
     let overview: String?
     let people: [JellyfinPerson]?
+    let imageTags: [String: String]?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -75,6 +76,7 @@ struct JellyfinItem: Decodable, Sendable {
         case communityRating = "CommunityRating"
         case overview = "Overview"
         case people = "People"
+        case imageTags = "ImageTags"
     }
 
     var resumePositionSeconds: Double {

@@ -17,6 +17,18 @@ import SwiftUI
 }
 #endif
 
+#if DEBUG && os(iOS)
+#Preview("Episode Picker — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    EpisodePickerView(
+        tmdbId: 1399,
+        seriesTitle: "Game of Thrones",
+        serviceUrl: nil,
+        jellyfinSeriesId: nil
+    ) { _, _, _ in }
+    .environment(PreviewSupport.jellyfinService)
+}
+#endif
+
 struct EpisodePickerView: View {
     let tmdbId: Int
     let seriesTitle: String

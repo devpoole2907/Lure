@@ -8,9 +8,14 @@ struct PlayableMedia: Identifiable, Hashable, Codable, Sendable {
     enum Kind: String, Hashable, Codable, Sendable {
         case movie
         case tv
+        case trailer
 
         init(mediaType: String) {
-            self = mediaType.lowercased() == "tv" ? .tv : .movie
+            switch mediaType.lowercased() {
+            case "tv": self = .tv
+            case "trailer": self = .trailer
+            default: self = .movie
+            }
         }
     }
 

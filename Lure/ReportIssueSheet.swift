@@ -140,3 +140,13 @@ struct ReportIssueSheet: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Report Issue — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    ReportIssueSheet(
+        mediaId: PreviewSupport.previewMovieDetail.mediaInfo?.id,
+        mediaTitle: PreviewSupport.previewMovieDetail.displayTitle,
+        apiClient: PreviewSupport.apiClient
+    )
+}
+#endif

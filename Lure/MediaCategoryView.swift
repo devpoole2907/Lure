@@ -135,3 +135,30 @@ private struct SectionIndexLabel: ViewModifier {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Media Category — Movies (iPad)", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let items = PreviewSupport.sampleItems.enumerated().map { index, item in
+        LibraryItem(
+            mediaType: item.mediaType,
+            tmdbId: item.tmdbId,
+            title: item.title,
+            year: item.year,
+            voteAverage: item.voteAverage,
+            posterURL: item.posterURL,
+            isAvailable: true,
+            addedAt: Calendar.current.date(byAdding: .day, value: -index, to: .now)
+        )
+    }
+
+    NavigationStack {
+        MediaCategoryView(
+            title: "Movies",
+            items: items,
+            apiClient: PreviewSupport.apiClient
+        )
+    }
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

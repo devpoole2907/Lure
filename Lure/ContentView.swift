@@ -20,6 +20,21 @@ struct ContentView: View {
     let jellyfinService: JellyfinService
     let playerCoordinator: PlayerCoordinator
     let watchTogetherCoordinator: WatchTogetherCoordinator
+#if DEBUG
+    private let restoresSessionOnAppear: Bool
+
+    init(
+        jellyfinService: JellyfinService,
+        playerCoordinator: PlayerCoordinator,
+        watchTogetherCoordinator: WatchTogetherCoordinator,
+        restoresSessionOnAppear: Bool = true
+    ) {
+        self.jellyfinService = jellyfinService
+        self.playerCoordinator = playerCoordinator
+        self.watchTogetherCoordinator = watchTogetherCoordinator
+        self.restoresSessionOnAppear = restoresSessionOnAppear
+    }
+#endif
 
     var body: some View {
 #if os(macOS)
@@ -71,7 +86,15 @@ struct ContentView: View {
             .animation(isRestoringSession ? nil : .smooth, value: hasFinishedOnboarding)
             .animation(isRestoringSession ? nil : .smooth, value: authViewModel.isLoggedIn)
             .task {
+                #if DEBUG
+                if restoresSessionOnAppear {
+                    await restoreSession()
+                } else {
+                    isRestoringSession = false
+                }
+                #else
                 await restoreSession()
+                #endif
             }
             .onOpenURL { url in
                 handleDeepLink(url)
@@ -225,3 +248,19 @@ struct ContentView: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("App Root — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let jellyfinService = PreviewSupport.jellyfinService
+    let playerCoordinator = PlayerCoordinator(jellyfinService: jellyfinService)
+    let watchTogetherCoordinator = WatchTogetherCoordinator(playerCoordinator: playerCoordinator)
+
+    ContentView(
+        jellyfinService: jellyfinService,
+        playerCoordinator: playerCoordinator,
+        watchTogetherCoordinator: watchTogetherCoordinator,
+        restoresSessionOnAppear: false
+    )
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif

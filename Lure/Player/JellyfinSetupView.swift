@@ -9,6 +9,13 @@ struct JellyfinSetupView: View {
     @State private var errorMessage: String?
     @State private var credentials: JellyfinCredentials?
     @State private var showDisconnectConfirm = false
+#if DEBUG
+    private let loadsSavedCredentials: Bool
+
+    init(loadsSavedCredentials: Bool = true) {
+        self.loadsSavedCredentials = loadsSavedCredentials
+    }
+#endif
 
     var body: some View {
         List {
@@ -71,7 +78,13 @@ struct JellyfinSetupView: View {
         .listStyle(.insetGrouped)
 #endif
         .task {
+            #if DEBUG
+            if loadsSavedCredentials {
+                credentials = await JellyfinCredentials.load()
+            }
+            #else
             credentials = await JellyfinCredentials.load()
+            #endif
         }
         .confirmationDialog(
             "Remove Jellyfin Account",
@@ -115,3 +128,12 @@ struct JellyfinSetupView: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Jellyfin Playback Setup — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        JellyfinSetupView(loadsSavedCredentials: false)
+    }
+    .environment(PreviewSupport.jellyfinService)
+}
+#endif

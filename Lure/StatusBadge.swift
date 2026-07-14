@@ -42,3 +42,19 @@ struct StatusOverlay: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Status Badges — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    VStack(spacing: 24) {
+        StatusBadge(mediaInfo: PreviewSupport.previewMovieDetail.mediaInfo)
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.quaternary)
+                .frame(width: 180, height: 270)
+            StatusOverlay(mediaInfo: PreviewSupport.previewMovieDetail.mediaInfo)
+        }
+    }
+    .padding()
+}
+#endif

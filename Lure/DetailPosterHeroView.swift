@@ -548,3 +548,25 @@ struct DetailPosterHeroView: View {
     .background(Color.black)
 }
 #endif
+
+#if DEBUG && os(iOS)
+#Preview("Detail Poster Hero — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    DetailPosterHeroView(
+        title: PreviewSupport.previewMovieDetail.displayTitle,
+        artworkURL: nil,
+        logoURL: nil,
+        mediaTypeLabel: "Movie",
+        year: PreviewSupport.previewMovieDetail.year,
+        runtime: PreviewSupport.previewMovieDetail.runtimeText,
+        rating: PreviewSupport.previewMovieDetail.voteAverage,
+        overview: PreviewSupport.previewMovieDetail.overview,
+        badges: PreviewSupport.sampleBadges,
+        genres: PreviewSupport.previewMovieDetail.genres?.compactMap(\.name) ?? [],
+        ratingItems: PreviewSupport.sampleRatingItems,
+        verticalOffset: 0,
+        primaryAction: PreviewSupport.playAction,
+        secondaryAction: PreviewSupport.addToFavoritesAction
+    )
+    .background(Color.black)
+}
+#endif

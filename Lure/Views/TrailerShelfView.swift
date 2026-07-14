@@ -4,7 +4,17 @@ import UIKit
 #endif
 
 struct TrailerShelfView: View {
-    let videos: [SeerrRelatedVideo]
+    let localTrailers: [JellyfinLocalTrailer]
+    let youtubeVideos: [SeerrRelatedVideo]
+    let fallbackArtworkURL: URL?
+
+    private var items: [TrailerShelfItem] {
+        TrailerShelfItem.preferred(
+            localTrailers: localTrailers,
+            youtubeVideos: youtubeVideos,
+            fallbackArtworkURL: fallbackArtworkURL
+        )
+    }
 
     #if os(tvOS)
     private let horizontalBleed: CGFloat = 0
@@ -15,7 +25,7 @@ struct TrailerShelfView: View {
     #endif
 
     var body: some View {
-        if !videos.isEmpty {
+        if !items.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Trailers")
                     .font(.title3.weight(.bold))
@@ -23,8 +33,8 @@ struct TrailerShelfView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: cardSpacing) {
-                        ForEach(Array(videos.enumerated()), id: \.offset) { _, video in
-                            TrailerCard(video: video)
+                        ForEach(items) { item in
+                            TrailerCard(item: item)
                         }
                     }
                     .padding(.horizontal, horizontalBleed)
@@ -44,7 +54,9 @@ struct TrailerShelfView: View {
 }
 
 private struct TrailerCard: View {
-    let video: SeerrRelatedVideo
+    let item: TrailerShelfItem
+
+    @Environment(PlayerCoordinator.self) private var playerCoordinator
 
     #if os(tvOS)
     @Environment(InAppNotificationCenter.self) private var notificationCenter
@@ -68,22 +80,28 @@ private struct TrailerCard: View {
         #else
         .buttonStyle(.plain)
         #endif
-        .disabled(video.youtubeURL == nil)
-        .accessibilityLabel(video.name ?? "Trailer")
+        .accessibilityLabel(item.title)
         #if os(tvOS)
-        .accessibilityHint("Plays the trailer in the YouTube app.")
+        .accessibilityHint(accessibilityHint)
         #else
-        .accessibilityHint("Opens the trailer on YouTube.")
+        .accessibilityHint(accessibilityHint)
         #endif
     }
 
     private func playTrailer() {
+        switch item.destination {
+        case .jellyfin(let itemId):
+            playerCoordinator.present(
+                itemId: itemId,
+                title: item.title,
+                mediaType: "trailer"
+            )
+
+        case .youtube(let videoId):
         #if os(tvOS)
         // tvOS has no browser (and no WKWebView), so youtube.com links go
         // nowhere. Deep-link straight into the YouTube app instead.
-        guard let key = video.key?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !key.isEmpty,
-              let appURL = URL(string: "youtube://watch?v=\(key)") else { return }
+        guard let appURL = URL(string: "youtube://watch?v=\(videoId)") else { return }
         UIApplication.shared.open(appURL, options: [:]) { success in
             guard !success else { return }
             Task { @MainActor in
@@ -95,15 +113,16 @@ private struct TrailerCard: View {
             }
         }
         #else
-        if let url = video.youtubeURL {
+        if let url = URL(string: "https://www.youtube.com/watch?v=\(videoId)") {
             openExternalURL(url)
         }
         #endif
+        }
     }
 
     private var cardVisual: some View {
         ZStack(alignment: .bottomLeading) {
-            CachedRemoteImage(url: video.youtubeThumbnailURL, contentMode: .fill) {
+            CachedRemoteImage(url: item.thumbnailURL, contentMode: .fill) {
                 trailerPlaceholder
             }
             .frame(width: Self.cardWidth, height: Self.cardHeight)
@@ -135,7 +154,7 @@ private struct TrailerCard: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
 
-                Label("YouTube", systemImage: "play.rectangle.fill")
+                Label(item.sourceLabel, systemImage: item.sourceIcon)
                     .labelStyle(.titleAndIcon)
                     .font(.subheadline.bold())
                     .foregroundStyle(.white.opacity(0.84))
@@ -167,8 +186,38 @@ private struct TrailerCard: View {
     }
 
     private var trailerTitle: String {
-        let title = video.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let title, !title.isEmpty else { return "Trailer" }
-        return title
+        item.title
+    }
+
+    private var accessibilityHint: String {
+        switch item.destination {
+        case .jellyfin:
+            "Plays the trailer in Lure."
+        case .youtube:
+            #if os(tvOS)
+            "Plays the trailer in the YouTube app."
+            #else
+            "Opens the trailer on YouTube."
+            #endif
+        }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Trailer Shelf — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    TrailerShelfView(
+        localTrailers: [
+            JellyfinLocalTrailer(
+                id: "preview-trailer",
+                title: "Official Trailer",
+                thumbnailURL: nil
+            )
+        ],
+        youtubeVideos: [],
+        fallbackArtworkURL: nil
+    )
+    .padding()
+    .environment(PreviewSupport.playerCoordinator)
+    .environment(PreviewSupport.notificationCenter)
+}
+#endif

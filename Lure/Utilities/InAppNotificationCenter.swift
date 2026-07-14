@@ -209,3 +209,24 @@ extension View {
     .frame(width: 1280, height: 720)
 }
 #endif
+
+#if DEBUG && os(iOS)
+#Preview("Notification Overlay — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    ZStack {
+        LinearGradient(
+            colors: [.indigo.opacity(0.35), .black.opacity(0.75)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+
+        LureNotificationOverlay(
+            item: LureBannerItem(
+                title: "Added to your requests",
+                message: "The server accepted your movie request.",
+                style: .success
+            )
+        ) {}
+    }
+}
+#endif

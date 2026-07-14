@@ -146,6 +146,12 @@ private struct TVDetailPreviewSurface: View {
 }
 #endif
 
+#if DEBUG && os(iOS)
+#Preview("TV Detail — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    TVDetailPreviewSurface(show: .previewShow)
+}
+#endif
+
 struct TVDetailView: View {
     let tmdbId: Int
     let apiClient: SeerrAPIClient
@@ -309,6 +315,19 @@ struct TVDetailView: View {
                 }
             }
         }
+        #if os(tvOS)
+        // Value-based (episode cards are NavigationLinks on tvOS) — the episode
+        // page pushes value-based CastPersonRoutes, and mixing item-based pushes
+        // with value pushes corrupts the stack order.
+        .navigationDestination(for: EpisodeDetailRoute.self) { route in
+            EpisodeDetailView(
+                route: route,
+                jellyfinClient: vm.jellyfinClient
+            ) { episode in
+                playerCoordinator.presentResume(episode)
+            }
+        }
+        #else
         .navigationDestination(item: $selectedEpisodeDetail) { route in
             EpisodeDetailView(
                 route: route,
@@ -317,6 +336,7 @@ struct TVDetailView: View {
                 playerCoordinator.presentResume(episode)
             }
         }
+        #endif
     }
 
     // MARK: - Watch
@@ -618,8 +638,13 @@ struct TVDetailView: View {
             castCard(Array(cast.prefix(20)))
         }
 
-        if !show.trailerVideos.isEmpty {
-            TrailerShelfView(videos: show.trailerVideos)
+        if vm.hasResolvedLocalTrailers,
+           !vm.localTrailers.isEmpty || !show.trailerVideos.isEmpty {
+            TrailerShelfView(
+                localTrailers: vm.localTrailers,
+                youtubeVideos: show.trailerVideos,
+                fallbackArtworkURL: show.heroBackdropURL ?? show.heroPosterURL
+            )
         }
 
         let infoRows = showInfoRows(show)

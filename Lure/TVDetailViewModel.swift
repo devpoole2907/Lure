@@ -16,6 +16,8 @@ final class TVDetailViewModel {
     private(set) var playbackAvailability: PlaybackAvailability = .unknown
     private(set) var heroArtwork: MediaArtwork?
     private(set) var isFavorite = false
+    private(set) var localTrailers: [JellyfinLocalTrailer] = []
+    private(set) var hasResolvedLocalTrailers = false
 
     // Season selection for requests
     var selectedSeasons: Set<Int> = []
@@ -234,9 +236,12 @@ final class TVDetailViewModel {
     }
 
     private func resolvePlaybackAvailability(for show: SeerrTVDetail) async {
+        localTrailers = []
+        hasResolvedLocalTrailers = false
         guard show.hasPlayableContent else {
             playbackAvailability = .unknown
             isFavorite = false
+            hasResolvedLocalTrailers = true
             return
         }
         playbackAvailability = .checking
@@ -249,15 +254,25 @@ final class TVDetailViewModel {
             serviceUrl: show.mediaInfo?.serviceUrl
         )
         if let itemId = playbackAvailability.playableItemId {
-            await loadFavoriteState(itemId: itemId)
+            await loadPlayableDetails(itemId: itemId)
+        } else {
+            hasResolvedLocalTrailers = true
         }
     }
 
-    private func loadFavoriteState(itemId: String) async {
-        guard let client = jellyfinService.client else { return }
-        let item = try? await client.getItem(itemId: itemId)
+    private func loadPlayableDetails(itemId: String) async {
+        guard let client = jellyfinService.client else {
+            hasResolvedLocalTrailers = true
+            return
+        }
+        async let itemTask = client.getItem(itemId: itemId)
+        async let trailersTask = client.getLocalTrailers(itemId: itemId)
+        let item = try? await itemTask
+        let trailers = (try? await trailersTask) ?? []
         withAnimation(.smooth(duration: 0.3)) {
             isFavorite = item?.userData?.isFavorite == true
+            localTrailers = trailers
+            hasResolvedLocalTrailers = true
         }
     }
 }

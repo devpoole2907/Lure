@@ -46,7 +46,7 @@ struct SeerrMovieDetail: Codable, Identifiable, Sendable {
     }
 
     var trailerVideos: [SeerrRelatedVideo] {
-        (relatedVideos ?? []).filter(\.isYouTubeTrailer)
+        SeerrRelatedVideo.uniqueYouTubeTrailers(in: relatedVideos)
     }
 
     var trailerURL: URL? {
@@ -200,7 +200,7 @@ struct SeerrTVDetail: Codable, Identifiable, Sendable {
     }
 
     var trailerVideos: [SeerrRelatedVideo] {
-        (relatedVideos ?? []).filter(\.isYouTubeTrailer)
+        SeerrRelatedVideo.uniqueYouTubeTrailers(in: relatedVideos)
     }
 
     var trailerURL: URL? {
@@ -250,22 +250,36 @@ struct SeerrRelatedVideo: Codable, Sendable {
     let type: String?              // "Trailer", "Teaser", "Clip", etc.
     let site: String?              // "YouTube"
 
+    var youtubeVideoId: String? {
+        guard let key else { return nil }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     var isYouTubeTrailer: Bool {
         type?.caseInsensitiveCompare("Trailer") == .orderedSame &&
         site?.caseInsensitiveCompare("YouTube") == .orderedSame &&
-        key?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        youtubeVideoId != nil
     }
 
     var youtubeURL: URL? {
-        let trimmedKey = key?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmedKey, !trimmedKey.isEmpty else { return nil }
-        return URL(string: "https://www.youtube.com/watch?v=\(trimmedKey)")
+        guard let youtubeVideoId else { return nil }
+        return URL(string: "https://www.youtube.com/watch?v=\(youtubeVideoId)")
     }
 
     var youtubeThumbnailURL: URL? {
-        let trimmedKey = key?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let trimmedKey, !trimmedKey.isEmpty else { return nil }
-        return URL(string: "https://img.youtube.com/vi/\(trimmedKey)/hqdefault.jpg")
+        guard let youtubeVideoId else { return nil }
+        return URL(string: "https://img.youtube.com/vi/\(youtubeVideoId)/hqdefault.jpg")
+    }
+
+    static func uniqueYouTubeTrailers(in videos: [Self]?) -> [Self] {
+        var seen = Set<String>()
+        return (videos ?? []).filter { video in
+            guard video.isYouTubeTrailer,
+                  let videoId = video.youtubeVideoId
+            else { return false }
+            return seen.insert(videoId).inserted
+        }
     }
 }
 

@@ -41,3 +41,12 @@ struct PageControlView: View {
     }
 }
 #endif
+
+#if DEBUG && os(iOS)
+#Preview("Page Control — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    ZStack {
+        Color.black.ignoresSafeArea()
+        PageControlView(numberOfPages: 6, currentPage: 2)
+    }
+}
+#endif

@@ -199,3 +199,17 @@ private func transparentContentRect(in image: CGImage, alphaThreshold: UInt8) ->
     guard maxX >= minX, maxY >= minY else { return nil }
     return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
 }
+
+#if DEBUG && os(iOS)
+#Preview("Cached Remote Image — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    CachedRemoteImage(url: nil, contentMode: .fit) {
+        ContentUnavailableView(
+            "Artwork unavailable",
+            systemImage: "photo",
+            description: Text("The placeholder remains visible until artwork loads.")
+        )
+    }
+    .frame(width: 420, height: 280)
+    .padding()
+}
+#endif

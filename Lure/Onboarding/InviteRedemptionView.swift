@@ -378,6 +378,17 @@ struct InviteRedemptionView: View {
     .modelContainer(OnboardingPreviewSupport.modelContainer)
 }
 
+#if DEBUG && os(iOS)
+#Preview("Redeem Invite — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    InviteRedemptionView(
+        invite: OnboardingPreviewSupport.invite,
+        authViewModel: OnboardingPreviewSupport.authViewModel()
+    ) { _ in }
+    .environment(PreviewSupport.jellyfinService)
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif
+
 @MainActor
 @Observable
 final class InviteRedemptionViewModel {

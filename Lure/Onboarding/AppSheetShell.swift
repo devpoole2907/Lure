@@ -121,3 +121,20 @@ private extension View {
         #endif
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("App Sheet Shell — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    AppSheetShell(
+        title: "Add Server",
+        subtitle: "Connect Lure to your media services.",
+        confirmTitle: "Save",
+        onConfirm: {}
+    ) {
+        Form {
+            Section("Server") {
+                TextField("Server address", text: .constant("https://media.example.com"))
+            }
+        }
+    }
+}
+#endif

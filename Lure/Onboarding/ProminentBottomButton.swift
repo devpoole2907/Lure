@@ -118,3 +118,18 @@ extension View {
     }
     .prominentBottomButton("Get Started") {}
 }
+
+#if DEBUG && os(iOS)
+#Preview("Prominent Button — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    VStack {
+        Image(systemName: "film.stack")
+            .font(.system(size: 56))
+            .foregroundStyle(.tint)
+        Text("Welcome to Lure")
+            .font(.largeTitle.bold())
+        Spacer()
+    }
+    .padding(.top, 80)
+    .prominentBottomButton("Get Started", systemImage: "arrow.right") {}
+}
+#endif

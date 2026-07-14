@@ -13,6 +13,7 @@ struct EpisodeDetailView: View {
     let route: EpisodeDetailRoute
     let jellyfinClient: JellyfinAPIClient?
     let onPlay: (JellyfinItem) -> Void
+    private let shouldLoadEpisode: Bool
 
     @State private var episode: JellyfinItem?
     @State private var mediaQuality: MediaQualityInfo?
@@ -20,6 +21,33 @@ struct EpisodeDetailView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var heroVerticalOffset: CGFloat = 0
+
+    init(
+        route: EpisodeDetailRoute,
+        jellyfinClient: JellyfinAPIClient?,
+        onPlay: @escaping (JellyfinItem) -> Void
+    ) {
+        self.route = route
+        self.jellyfinClient = jellyfinClient
+        self.onPlay = onPlay
+        self.shouldLoadEpisode = true
+    }
+
+    #if DEBUG
+    init(previewEpisode: JellyfinItem, seriesTitle: String) {
+        self.route = EpisodeDetailRoute(
+            itemId: previewEpisode.id ?? "preview-episode",
+            seriesTitle: seriesTitle,
+            episodeTitle: previewEpisode.name ?? "Episode",
+            episodeLabel: previewEpisode.episodeLabel
+        )
+        self.jellyfinClient = nil
+        self.onPlay = { _ in }
+        self.shouldLoadEpisode = false
+        self._episode = State(initialValue: previewEpisode)
+        self._isLoading = State(initialValue: false)
+    }
+    #endif
 
     var body: some View {
         Group {
@@ -48,6 +76,7 @@ struct EpisodeDetailView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
 #endif
         .task(id: route.itemId) {
+            guard shouldLoadEpisode else { return }
             await loadEpisode()
         }
     }
@@ -379,7 +408,7 @@ struct EpisodeDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: castSpacing) {
                     ForEach(cast) { person in
-                        VStack(spacing: 4) {
+                        let cell = VStack(spacing: 4) {
                             AsyncImage(url: personImageURL(for: person)) { image in
                                 image
                                     .resizable()
@@ -406,8 +435,22 @@ struct EpisodeDetailView: View {
                                 .frame(width: cellWidth, height: roleTextHeight, alignment: .top)
                         }
                         .frame(width: cellWidth, height: cellHeight, alignment: .top)
+
                         #if os(tvOS)
-                        .focusable()
+                        // Jellyfin people carry no TMDB id — push a name-only
+                        // route; CastPersonSheet resolves the person via Seerr
+                        // search. Handled by TVDetailView's CastPersonRoute
+                        // destination in the same stack.
+                        NavigationLink(value: CastPersonRoute(
+                            personId: nil,
+                            fallbackName: person.name,
+                            fallbackProfileURL: personImageURL(for: person)
+                        )) {
+                            cell
+                        }
+                        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.08))
+                        #else
+                        cell
                         #endif
                     }
                 }
@@ -436,3 +479,32 @@ struct EpisodeDetailView: View {
         return client.primaryImageURL(itemId: id, width: 160)
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Episode Detail — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        EpisodeDetailView(
+            previewEpisode: JellyfinItem(
+                id: "preview-episode-3",
+                name: "Voices After Midnight",
+                type: "Episode",
+                productionYear: 2025,
+                providerIds: nil,
+                seriesId: "preview-series",
+                seriesName: "The Midnight Signal",
+                seasonId: "preview-season-1",
+                indexNumber: 3,
+                parentIndexNumber: 1,
+                userData: nil,
+                runTimeTicks: 31_200_000_000,
+                dateCreated: nil,
+                communityRating: 8.6,
+                overview: "Mara traces a broadcast that seems to be arriving from a studio abandoned decades ago.",
+                people: nil,
+                imageTags: nil
+            ),
+            seriesTitle: "The Midnight Signal"
+        )
+    }
+}
+#endif

@@ -486,3 +486,67 @@ private enum ContinueWatchingDestinationResolver {
         return nil
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Continue Watching — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let items = [
+        JellyfinItem(
+            id: "episode-1",
+            name: "The Signal",
+            type: "Episode",
+            productionYear: 2026,
+            providerIds: nil,
+            seriesId: "series-1",
+            seriesName: "Northern Lights",
+            seasonId: "season-1",
+            indexNumber: 3,
+            parentIndexNumber: 1,
+            userData: JellyfinUserData(
+                playbackPositionTicks: 1_620_000_000,
+                played: false,
+                isFavorite: false
+            ),
+            runTimeTicks: 3_000_000_000,
+            dateCreated: nil,
+            communityRating: 8.2,
+            overview: nil,
+            people: nil,
+            imageTags: nil
+        ),
+        JellyfinItem(
+            id: "movie-1",
+            name: "The Midnight Signal",
+            type: "Movie",
+            productionYear: 2025,
+            providerIds: ["Tmdb": "550"],
+            seriesId: nil,
+            seriesName: nil,
+            seasonId: nil,
+            indexNumber: nil,
+            parentIndexNumber: nil,
+            userData: JellyfinUserData(
+                playbackPositionTicks: 2_400_000_000,
+                played: false,
+                isFavorite: true
+            ),
+            runTimeTicks: 6_600_000_000,
+            dateCreated: nil,
+            communityRating: 7.8,
+            overview: nil,
+            people: nil,
+            imageTags: nil
+        )
+    ]
+
+    NavigationStack {
+        ContinueWatchingShelf(
+            items: items,
+            jellyfinClient: nil,
+            onPlay: { _ in },
+            onMarkWatched: { _ in }
+        )
+        .padding(.vertical)
+    }
+    .environment(PreviewSupport.notificationCenter)
+}
+#endif

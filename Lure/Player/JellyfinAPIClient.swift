@@ -73,6 +73,35 @@ actor JellyfinAPIClient {
         return item
     }
 
+    /// Local trailer files attached to a Jellyfin library item. These are real
+    /// Jellyfin media items and can be sent through the normal native player.
+    func getLocalTrailers(itemId: String) async throws -> [JellyfinLocalTrailer] {
+        let items: [JellyfinItem] = try await get(
+            "/Users/\(userId)/Items/\(itemId)/LocalTrailers"
+        )
+
+        var seen = Set<String>()
+        return items.compactMap { item in
+            guard let id = item.id?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !id.isEmpty,
+                  seen.insert(id).inserted
+            else { return nil }
+
+            let trimmedName = item.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = if let trimmedName, !trimmedName.isEmpty {
+                trimmedName
+            } else {
+                "Trailer"
+            }
+            let hasPrimaryImage = item.imageTags?["Primary"] != nil
+            return JellyfinLocalTrailer(
+                id: id,
+                title: title,
+                thumbnailURL: hasPrimaryImage ? primaryImageURL(itemId: id, width: 720) : nil
+            )
+        }
+    }
+
     func findItemId(
         serviceUrl: String?,
         tmdbId: Int,

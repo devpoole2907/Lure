@@ -22,3 +22,18 @@ struct OverviewToggleButton: View {
         #endif
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Overview Toggle — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    ZStack {
+        LinearGradient(
+            colors: [.black, .indigo.opacity(0.7)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+
+        OverviewToggleButton(title: "MORE") {}
+    }
+}
+#endif

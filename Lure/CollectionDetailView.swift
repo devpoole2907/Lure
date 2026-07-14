@@ -210,3 +210,30 @@ extension SeerrCollection: Hashable {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Collection Detail — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    let movies = PreviewSupport.sampleItems.compactMap { item -> SeerrMovieResult? in
+        guard case .movie(let movie) = item else { return nil }
+        return movie
+    }
+    let collection = SeerrCollection(
+        id: 10,
+        name: "Essential Cinema Collection",
+        posterPath: nil,
+        backdropPath: nil,
+        overview: "A hand-picked collection of memorable films, gathered together for an easy movie night.",
+        parts: movies
+    )
+
+    NavigationStack {
+        CollectionDetailView(
+            collection: collection,
+            apiClient: PreviewSupport.apiClient
+        )
+    }
+    .environment(PreviewSupport.jellyfinService)
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

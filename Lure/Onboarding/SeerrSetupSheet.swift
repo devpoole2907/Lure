@@ -230,3 +230,10 @@ private struct SeerrConnectionForm: View {
     SeerrSetupSheet(authViewModel: OnboardingPreviewSupport.authViewModel())
         .modelContainer(OnboardingPreviewSupport.modelContainer)
 }
+
+#if DEBUG && os(iOS)
+#Preview("Add Seerr — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    SeerrSetupSheet(authViewModel: OnboardingPreviewSupport.authViewModel())
+        .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif

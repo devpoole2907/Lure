@@ -95,6 +95,24 @@ extension View {
 
 #endif
 
+#if DEBUG && os(iOS)
+#Preview("Platform Compatibility — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Cross-platform navigation title", systemImage: "rectangle.3.group")
+                .font(.headline)
+
+            Text("This panel uses Lure's grouped background color shim.")
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .background(Color.secondaryGroupedBackground, in: RoundedRectangle(cornerRadius: 20))
+        .padding()
+        .lureNavigationTitle("Platform Compatibility")
+    }
+}
+#endif
+
 #if os(macOS)
 
 // MARK: - keyboardType

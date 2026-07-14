@@ -26,3 +26,22 @@ extension View {
         modifier(ErrorAlertModifier(item: item))
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Error Alert — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    @Previewable @State var error: ErrorAlertItem? = ErrorAlertItem(
+        title: "Unable to Connect",
+        message: "Check the server address and try again."
+    )
+
+    NavigationStack {
+        ContentUnavailableView(
+            "Server Unavailable",
+            systemImage: "network.slash",
+            description: Text("Lure couldn't reach your server.")
+        )
+        .navigationTitle("Requests")
+    }
+    .errorAlert(item: $error)
+}
+#endif

@@ -118,6 +118,7 @@ final class PlayerViewModel {
     /// candidate, "Transcode" otherwise. Distinct from "DirectStream", which used to be
     /// reported for both direct cases.
     private var playMethod: String = "DirectStream"
+    private var isTrailerPlayback = false
 
     /// True while the `load()` candidate loop is in flight. AetherEngine sets
     /// `state = .error(...)` *before* throwing on a failed candidate load; without this
@@ -193,10 +194,13 @@ final class PlayerViewModel {
         self.title = title
         self.episodeLabel = episodeLabel
         self.itemId = itemId
+        isTrailerPlayback = mediaType.lowercased() == "trailer"
         errorMessage = nil
         isLoading = true
         playbackEnded = false
         hasStopped = false
+        nextEpisode = nil
+        segments = []
         videoSize = nil
         selectedAudioTrackId = nil
         selectedSubtitleTrackId = nil
@@ -238,7 +242,7 @@ final class PlayerViewModel {
 
             // Read resume position
             let item = try await client.getItem(itemId: self.itemId)
-            let resumePosition = item.resumePositionSeconds
+            let resumePosition = isTrailerPlayback ? 0 : item.resumePositionSeconds
             #if DEBUG
             print("[PlayerViewModel] resume: itemId=\(self.itemId) resumePositionSeconds=\(String(format: "%.1f", resumePosition)) playbackPositionTicks=\(item.userData?.playbackPositionTicks.map(String.init) ?? "nil") played=\(item.userData?.played.map(String.init) ?? "nil")")
             #endif
@@ -497,11 +501,15 @@ final class PlayerViewModel {
             )
             startProgressReporting()
 
-            // Fetch segments for intro skip (best-effort)
-            segments = (try? await client.getMediaSegments(itemId: self.itemId)) ?? []
+            // Trailers always behave as short-form media: no resume, intro markers,
+            // or episodic auto-advance inherited from their parent library item.
+            segments = isTrailerPlayback
+                ? []
+                : (try? await client.getMediaSegments(itemId: self.itemId)) ?? []
 
             // Fetch next episode for series
-            if let seriesId = item.seriesId {
+            nextEpisode = nil
+            if !isTrailerPlayback, let seriesId = item.seriesId {
                 nextEpisode = try? await client.getNextUp(seriesId: seriesId)
             }
 
@@ -962,9 +970,12 @@ final class PlayerViewModel {
         let sess = playSessionId
         let pos = duration > 0 ? duration : currentTime
         let hasNext = nextEpisode != nil
+        let shouldMarkPlayed = !isTrailerPlayback
         Task { [weak self] in
             await client.reportStopped(itemId: item, playSessionId: sess, positionSeconds: pos)
-            try? await client.markPlayed(itemId: item)
+            if shouldMarkPlayed {
+                try? await client.markPlayed(itemId: item)
+            }
             guard let self else { return }
             if hasNext {
                 await self.playNextEpisode()

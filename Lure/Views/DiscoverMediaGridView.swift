@@ -20,12 +20,33 @@ enum ThreeColumnMediaGrid {
         count: columnCount
     )
 
+    /// macOS windows resize, so the column count scales with the container
+    /// (targeting ~190pt posters) instead of pinning to 3 giant columns.
+    /// iOS keeps 3 and tvOS keeps 6 — their widths are effectively fixed.
+    static func columnCount(for containerWidth: CGFloat) -> Int {
+        #if os(macOS)
+        let usable = containerWidth - horizontalPadding * 2
+        guard usable > 0 else { return columnCount }
+        return max(3, Int((usable + columnSpacing) / (190 + columnSpacing)))
+        #else
+        return columnCount
+        #endif
+    }
+
+    static func columns(for containerWidth: CGFloat) -> [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: columnSpacing, alignment: .top),
+            count: columnCount(for: containerWidth)
+        )
+    }
+
     static func posterWidth(for containerWidth: CGFloat) -> CGFloat {
-        max(
+        let count = columnCount(for: containerWidth)
+        return max(
             92,
             floor(
-                (containerWidth - horizontalPadding * 2 - columnSpacing * CGFloat(columnCount - 1))
-                    / CGFloat(columnCount)
+                (containerWidth - horizontalPadding * 2 - columnSpacing * CGFloat(count - 1))
+                    / CGFloat(count)
             )
         )
     }
@@ -53,9 +74,10 @@ struct DiscoverMediaGridView: View {
     var body: some View {
         GeometryReader { proxy in
             let posterWidth = ThreeColumnMediaGrid.posterWidth(for: proxy.size.width)
+            let columnCount = ThreeColumnMediaGrid.columnCount(for: proxy.size.width)
 
             ScrollView {
-                LazyVGrid(columns: ThreeColumnMediaGrid.columns, spacing: ThreeColumnMediaGrid.rowSpacing) {
+                LazyVGrid(columns: ThreeColumnMediaGrid.columns(for: proxy.size.width), spacing: ThreeColumnMediaGrid.rowSpacing) {
                     ForEach(Array(allItems.enumerated()), id: \.offset) { index, item in
                         let destination = MediaDestination(
                             mediaType: item.mediaType,
@@ -83,12 +105,12 @@ struct DiscoverMediaGridView: View {
                                 .buttonStyle(.bordered)
                             }
                             .frame(maxWidth: .infinity)
-                            .gridCellColumns(ThreeColumnMediaGrid.columnCount)
+                            .gridCellColumns(columnCount)
                             .padding(.vertical, 8)
                         } else {
                             ProgressView()
                                 .frame(maxWidth: .infinity)
-                                .gridCellColumns(ThreeColumnMediaGrid.columnCount)
+                                .gridCellColumns(columnCount)
                                 .task { await loadNextPage() }
                         }
                     }
@@ -110,6 +132,11 @@ struct DiscoverMediaGridView: View {
 #endif
         .task {
             hasMore = loadPage != nil && !initialItems.isEmpty
+            #if os(macOS) && DEBUG
+            if ProcessInfo.processInfo.environment["LURE_NAV_PROBE"] == "1" {
+                print("LURE_NAV_PROBE: grid '\(title)' appeared")
+            }
+            #endif
         }
     }
 
@@ -179,3 +206,18 @@ struct DiscoverMediaGridView: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Discover Media Grid — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    NavigationStack {
+        DiscoverMediaGridView(
+            title: "Trending",
+            initialItems: PreviewSupport.sampleItems,
+            apiClient: PreviewSupport.apiClient
+        )
+        .navigationTitle("Trending")
+    }
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.requestsCoordinator)
+}
+#endif

@@ -253,3 +253,10 @@ final class JellyfinSetupFormViewModel {
     JellyfinSetupSheet()
         .environment(JellyfinService())
 }
+
+#if DEBUG && os(iOS)
+#Preview("Add Jellyfin — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    JellyfinSetupSheet()
+        .environment(PreviewSupport.jellyfinService)
+}
+#endif

@@ -151,3 +151,25 @@ struct HeroTitleArtworkView: View {
     }
 }
 #endif
+
+#if DEBUG && os(iOS)
+#Preview("Hero Title Artwork — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    ZStack(alignment: .bottomLeading) {
+        LinearGradient(
+            colors: [.indigo, .black],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+
+        HeroTitleArtworkView(
+            title: "The Midnight Signal",
+            logoURL: nil,
+            maxWidth: 460,
+            maxLogoHeight: 130,
+            horizontalAlignment: .leading
+        )
+        .padding(40)
+    }
+}
+#endif

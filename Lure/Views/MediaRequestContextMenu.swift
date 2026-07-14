@@ -163,3 +163,27 @@ extension SeerrTVDetail {
         } == true
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Media Request Actions — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    VStack(alignment: .leading, spacing: 18) {
+        Text("Request options")
+            .font(.headline)
+
+        MediaRequestContextMenu(
+            mediaType: "movie",
+            tmdbId: 550,
+            title: "Fight Club",
+            mediaInfo: nil,
+            isKnownAvailable: false,
+            apiClient: PreviewSupport.apiClient,
+            notificationCenter: PreviewSupport.notificationCenter,
+            requestsCoordinator: PreviewSupport.requestsCoordinator
+        )
+    }
+    .padding(24)
+    .frame(maxWidth: 360, alignment: .leading)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+    .padding()
+}
+#endif

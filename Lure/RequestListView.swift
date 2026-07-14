@@ -454,3 +454,16 @@ private struct RequestItemContent: View {
         }
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Requests — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    RequestListView(
+        apiClient: PreviewSupport.apiClient,
+        currentUser: PreviewSupport.adminUser
+    )
+    .environment(PreviewSupport.notificationCenter)
+    .environment(PreviewSupport.jellyfinService)
+    .environment(PreviewSupport.requestsCoordinator)
+    .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif

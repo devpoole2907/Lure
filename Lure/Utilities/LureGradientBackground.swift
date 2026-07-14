@@ -26,3 +26,21 @@ extension View {
         background(LureGradientBackground(color: color))
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Lure Gradient Background — iPadOS", traits: .fixedLayout(width: 1024, height: 1366)) {
+    VStack(spacing: 14) {
+        Image(systemName: "film.stack")
+            .font(.system(size: 60, weight: .semibold))
+            .foregroundStyle(.indigo)
+
+        Text("Discover something new")
+            .font(.largeTitle.bold())
+
+        Text("Browse your library and request what to watch next.")
+            .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .lureGradientBackground(.indigo)
+}
+#endif

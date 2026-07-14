@@ -68,3 +68,14 @@ struct LibraryView: View {
         await viewModel.load()
     }
 }
+
+#if DEBUG && os(iOS)
+#Preview("Library — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
+    LibraryView(apiClient: PreviewSupport.apiClient)
+        .environment(PreviewSupport.jellyfinService)
+        .environment(PreviewSupport.playerCoordinator)
+        .environment(PreviewSupport.notificationCenter)
+        .environment(PreviewSupport.requestsCoordinator)
+        .modelContainer(OnboardingPreviewSupport.modelContainer)
+}
+#endif

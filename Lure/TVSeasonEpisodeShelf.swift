@@ -109,9 +109,56 @@ struct TVSeasonEpisodeShelf: View {
         #endif
     }
 
+    @ViewBuilder
     private var seasonPicker: some View {
+        #if os(tvOS)
+        tvSeasonMenu
+        #else
         defaultSeasonPicker
+        #endif
     }
+
+    #if os(tvOS)
+    // Picker(.menu) on tvOS renders the label inside the system focus plate —
+    // a blank white capsule with invisible white text and no chevron. A Menu
+    // with .menuStyle(.button) lets us draw the glass capsule ourselves, same
+    // as the episode cards below.
+    private var tvSeasonMenu: some View {
+        HStack {
+            Menu {
+                ForEach(seasons) { season in
+                    Button {
+                        selectedSeasonNumber = season.seasonNumber
+                    } label: {
+                        if season.seasonNumber == selectedSeasonNumber {
+                            Label(seasonTitle(season), systemImage: "checkmark")
+                        } else {
+                            Text(seasonTitle(season))
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(seasonTitle(selectedSeason))
+                        .font(.callout.weight(.semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24)
+                .frame(height: 52)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            .menuStyle(.button)
+            .buttonStyle(TVHeroActionButtonStyle())
+            .accessibilityLabel("Season")
+            .accessibilityValue(seasonTitle(selectedSeason))
+
+            Spacer()
+        }
+    }
+    #endif
 
     private var defaultSeasonPicker: some View {
         Picker(selection: $selectedSeasonNumber) {
@@ -257,21 +304,30 @@ private struct TVSeasonEpisodeCard: View {
     }
 
     #if os(tvOS)
-    // A Menu with a primary action gives tvOS native Select-versus-long-press
-    // behavior: Select opens details, while holding Select reveals episode actions.
+    /// Value-based push (Select) with a long-press context menu for actions.
+    /// The episode page pushes value-based CastPersonRoutes, so it must itself
+    /// be a value push — presenting it item-based corrupts the stack order.
     private var tvBody: some View {
-        Menu {
-            episodeMenuCommands
-        } label: {
+        NavigationLink(value: episodeRoute) {
             cardVisual
-        } primaryAction: {
-            onOpenEpisodeDetail(jellyfinEpisode)
         }
-        .menuStyle(.button)
         .buttonStyle(TVPosterFocusButtonStyle(scale: 1.04))
+        .contextMenu {
+            episodeMenuCommands
+        }
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Opens episode details. Long-press for playback and more actions.")
         .frame(width: Self.cardWidth, height: Self.cardHeight)
+    }
+
+    private var episodeRoute: EpisodeDetailRoute? {
+        guard let episode = jellyfinEpisode, let itemId = episode.id else { return nil }
+        return EpisodeDetailRoute(
+            itemId: itemId,
+            seriesTitle: show.displayTitle,
+            episodeTitle: episode.name ?? "Episode",
+            episodeLabel: episode.detailedEpisodeLabel ?? episode.episodeLabel
+        )
     }
     #endif
 
@@ -466,6 +522,19 @@ private struct TVSeasonEpisodeCard: View {
 
 #if DEBUG
 #Preview("TV Season Episode Shelf") {
+    NavigationStack {
+        ScrollView {
+            TVSeasonEpisodeShelf(show: .previewShow)
+                .padding()
+        }
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
+    }
+}
+#endif
+
+#if DEBUG && os(iOS)
+#Preview("TV Season Episode Shelf — iPad", traits: .fixedLayout(width: 1024, height: 1366)) {
     NavigationStack {
         ScrollView {
             TVSeasonEpisodeShelf(show: .previewShow)
