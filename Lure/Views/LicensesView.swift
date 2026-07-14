@@ -19,7 +19,7 @@ struct LicensesView: View {
                 url: "https://code.videolan.org/videolan/dav1d"
             )
         }
-        .navigationTitle("Open Source Licenses")
+        .lureNavigationTitle("Open Source Licenses")
 #if os(iOS) || os(visionOS)
         .listStyle(.insetGrouped)
 #endif

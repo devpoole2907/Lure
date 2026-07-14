@@ -36,6 +36,46 @@ func openExternalURL(_ url: URL) {
     #endif
 }
 
+extension View {
+    /// `.navigationTitle` that is blanked on tvOS. tvOS `NavigationStack` renders
+    /// the title as a huge faded scene title floating over the content (ghost
+    /// title), so screens suppress it there and keep normal bar titles elsewhere.
+    @ViewBuilder
+    func lureNavigationTitle(_ title: String) -> some View {
+        #if os(tvOS)
+        self.navigationTitle("")
+        #else
+        self.navigationTitle(title)
+        #endif
+    }
+}
+
+#if os(tvOS)
+/// Shared tvOS focus treatment for poster/card buttons: scales the card with a
+/// drop shadow when focused, WITHOUT the default bordered-button white plate
+/// that would otherwise wrap the whole cell (image + caption).
+struct TVPosterFocusButtonStyle: ButtonStyle {
+    var scale: CGFloat = 1.08
+
+    func makeBody(configuration: Configuration) -> some View {
+        TVPosterFocusBody(configuration: configuration, scale: scale)
+    }
+
+    private struct TVPosterFocusBody: View {
+        let configuration: ButtonStyle.Configuration
+        let scale: CGFloat
+        @Environment(\.isFocused) private var isFocused
+
+        var body: some View {
+            configuration.label
+                .scaleEffect(isFocused ? scale : 1.0)
+                .shadow(color: isFocused ? .black.opacity(0.45) : .clear, radius: 18, y: 8)
+                .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isFocused)
+        }
+    }
+}
+#endif
+
 #if os(macOS) || os(tvOS)
 
 // MARK: - navigationBarTitleDisplayMode

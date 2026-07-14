@@ -38,6 +38,9 @@ struct LureApp: App {
     @State private var jellyfinService: JellyfinService
     @State private var playerCoordinator: PlayerCoordinator
     @State private var watchTogetherCoordinator: WatchTogetherCoordinator
+#if os(macOS)
+    @State private var macSettingsPresenter = MacSettingsPresenter()
+#endif
 
     init() {
         let jellyfinService = JellyfinService()
@@ -67,29 +70,47 @@ struct LureApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if DebugPlaybackHarnessView.isEnabled {
-                DebugPlaybackHarnessView(
-                    jellyfinService: jellyfinService,
-                    playerCoordinator: playerCoordinator,
-                    watchTogetherCoordinator: watchTogetherCoordinator
-                )
-            } else {
+            Group {
+                #if DEBUG
+                if DebugPlaybackHarnessView.isEnabled {
+                    DebugPlaybackHarnessView(
+                        jellyfinService: jellyfinService,
+                        playerCoordinator: playerCoordinator,
+                        watchTogetherCoordinator: watchTogetherCoordinator
+                    )
+                } else {
+                    ContentView(
+                        jellyfinService: jellyfinService,
+                        playerCoordinator: playerCoordinator,
+                        watchTogetherCoordinator: watchTogetherCoordinator
+                    )
+                }
+                #else
                 ContentView(
                     jellyfinService: jellyfinService,
                     playerCoordinator: playerCoordinator,
                     watchTogetherCoordinator: watchTogetherCoordinator
                 )
+                #endif
             }
-            #else
-            ContentView(
-                jellyfinService: jellyfinService,
-                playerCoordinator: playerCoordinator,
-                watchTogetherCoordinator: watchTogetherCoordinator
-            )
-            #endif
+            .lureMainWindowMinimumSize()
+#if os(macOS)
+            .environment(macSettingsPresenter)
+#endif
         }
         .modelContainer(modelContainer)
+        #if os(macOS)
+        .defaultSize(width: 1320, height: 820)
+        .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    macSettingsPresenter.present()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
+        #endif
 
         #if os(macOS)
         WindowGroup("Player", id: PlayerWindowScene.id, for: PlayableMedia.self) { $media in
@@ -105,6 +126,20 @@ struct LureApp: App {
         .modelContainer(modelContainer)
         .defaultSize(width: 1280, height: 720)
         .windowResizability(.contentMinSize)
+        // Borderless video window like the TV app's player: the traffic lights
+        // float over the video instead of sitting in an opaque title bar.
+        .windowStyle(.hiddenTitleBar)
+        #endif
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func lureMainWindowMinimumSize() -> some View {
+        #if os(macOS)
+        self.frame(minWidth: 1080, minHeight: 700)
+        #else
+        self
         #endif
     }
 }
