@@ -1,5 +1,5 @@
 import SwiftUI
-#if DEBUG && os(iOS)
+#if os(macOS) || (DEBUG && os(iOS))
 import SwiftData
 #endif
 
@@ -9,6 +9,13 @@ struct LureTabView: View {
     let onLogout: () -> Void
 
     @Environment(LureRouter.self) private var router
+    #if os(macOS)
+    // Shared across the sidebar's Library section entries so Recently
+    // Added/Movies/TV Shows don't each refetch the whole library.
+    @State private var libraryViewModel: LibraryViewModel?
+    @Environment(\.modelContext) private var modelContext
+    @Environment(JellyfinService.self) private var jellyfinService
+    #endif
 
     var body: some View {
         @Bindable var router = router
@@ -22,12 +29,22 @@ struct LureTabView: View {
                 DiscoverView(apiClient: apiClient)
             }
 
-            Tab("Library", systemImage: "checkmark.circle", value: LureTab.library) {
-                LibraryView(apiClient: apiClient)
-            }
-
             Tab("Requests", systemImage: "arrow.down.circle", value: LureTab.requests) {
                 RequestListView(apiClient: apiClient, currentUser: currentUser)
+            }
+
+            TabSection("Library") {
+                Tab(LibraryCategory.recentlyAdded.title, systemImage: LibraryCategory.recentlyAdded.systemImage, value: LureTab.libraryRecentlyAdded) {
+                    MacLibraryCategoryView(category: .recentlyAdded, apiClient: apiClient, viewModel: libraryViewModel)
+                }
+
+                Tab(LibraryCategory.movies.title, systemImage: LibraryCategory.movies.systemImage, value: LureTab.libraryMovies) {
+                    MacLibraryCategoryView(category: .movies, apiClient: apiClient, viewModel: libraryViewModel)
+                }
+
+                Tab(LibraryCategory.tvShows.title, systemImage: LibraryCategory.tvShows.systemImage, value: LureTab.libraryTVShows) {
+                    MacLibraryCategoryView(category: .tvShows, apiClient: apiClient, viewModel: libraryViewModel)
+                }
             }
             #else
             Tab("Discover", systemImage: "film", value: LureTab.discover) {
@@ -61,15 +78,19 @@ struct LureTabView: View {
             }
             #endif
         }
-        .tabViewStyle(.sidebarAdaptable)
         #if os(macOS)
+        // .sidebarAdaptable is what opts a TabView into the tab-bar/sidebar
+        // dual mode (and its toggle button); only macOS wants that here, to
+        // pair with the sidebar bottom bar below. iPadOS keeps the default
+        // style so its floating tab bar has no way to become a sidebar.
+        .tabViewStyle(.sidebarAdaptable)
         .tabViewSidebarBottomBar {
             MacSidebarProfileButton(currentUser: currentUser) {
                 router.isProfilePresented = true
             }
         }
         .sheet(isPresented: $router.isProfilePresented) {
-            MacUserProfileSheet(
+            UserProfileSheet(
                 apiClient: apiClient,
                 currentUser: currentUser,
                 onLogout: onLogout
@@ -79,6 +100,18 @@ struct LureTabView: View {
         .task {
             await SearchViewModel.preloadBrowseGenres(using: apiClient)
         }
+        #if os(macOS)
+        .task {
+            guard libraryViewModel == nil else { return }
+            let viewModel = LibraryViewModel(
+                apiClient: apiClient,
+                jellyfinService: jellyfinService,
+                modelContext: modelContext
+            )
+            libraryViewModel = viewModel
+            await viewModel.load()
+        }
+        #endif
     }
 
     @ViewBuilder

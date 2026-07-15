@@ -62,27 +62,36 @@ struct DetailPosterHeroView: View {
     }
 
     private var heroImage: some View {
-        CachedRemoteImage(url: resolvedArtworkURL, contentMode: .fill) {
-            ZStack {
-                Rectangle()
-                    .fill(.linearGradient(
-                        colors: [.black, .indigo.opacity(0.45), .black],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(1.2)
-            }
+        // tvOS: progressive two-stage load — the sized variant appears
+        // immediately (usually cached), then TMDB `original` (up to 4K)
+        // crossfades in once decoded.
+        #if os(tvOS)
+        ProgressiveRemoteImage(
+            url: artworkURL,
+            highResURL: ImageURL.originalTMDBImageURL(artworkURL),
+            contentMode: .fill
+        ) {
+            heroImagePlaceholder
         }
+        #else
+        CachedRemoteImage(url: artworkURL, contentMode: .fill) {
+            heroImagePlaceholder
+        }
+        #endif
     }
 
-    private var resolvedArtworkURL: URL? {
-        #if os(tvOS)
-        ImageURL.originalTMDBImageURL(artworkURL)
-        #else
-        artworkURL
-        #endif
+    private var heroImagePlaceholder: some View {
+        ZStack {
+            Rectangle()
+                .fill(.linearGradient(
+                    colors: [.black, .indigo.opacity(0.45), .black],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+            ProgressView()
+                .tint(.white)
+                .scaleEffect(1.2)
+        }
     }
 
     private var heroVisualLayer: some View {
@@ -268,7 +277,7 @@ struct DetailPosterHeroView: View {
 
     private var overviewFont: Font {
         #if os(tvOS)
-        .body
+        .callout
         #else
         .subheadline
         #endif
@@ -406,9 +415,10 @@ struct DetailPosterHeroView: View {
         guard containerWidth > 0 else { return 560 }
         return min(max(containerWidth * 0.46, 430), 620)
         #elseif os(tvOS)
-        // tvOS canvas is 1920×1080; hero fills roughly 72% of screen height
-        guard containerWidth > 0 else { return 760 }
-        return min(max(containerWidth * 0.45, 560), 800)
+        // tvOS canvas is 1920×1080; hero fills ~90% of screen height,
+        // matching the Discover hero carousel.
+        guard containerWidth > 0 else { return 960 }
+        return min(max(containerWidth * 0.552, 720), 1032)
         #else
         horizontalSizeClass == .compact ? 660 : 780
         #endif

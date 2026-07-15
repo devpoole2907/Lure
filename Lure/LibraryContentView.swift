@@ -5,9 +5,7 @@ struct LibraryContentView: View {
     let apiClient: SeerrAPIClient
 
     @Environment(PlayerCoordinator.self) private var playerCoordinator
-    @Environment(InAppNotificationCenter.self) private var notificationCenter
-    @Environment(RequestsCoordinator.self) private var requestsCoordinator
-    @State private var recentGridWidth: CGFloat = 0
+    @Environment(JellyfinService.self) private var jellyfinService
 
     var body: some View {
         if viewModel.isLoading && viewModel.items.isEmpty && viewModel.continueWatching.isEmpty {
@@ -35,9 +33,9 @@ struct LibraryContentView: View {
     private var libraryHome: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                categoryNavLinks
-
-                if !viewModel.continueWatching.isEmpty {
+                // Gated on live credentials, not just cached items, so the
+                // shelf disappears immediately when Jellyfin is signed out.
+                if jellyfinService.hasCredentials, !viewModel.continueWatching.isEmpty {
                     ContinueWatchingShelf(
                         items: viewModel.continueWatching,
                         jellyfinClient: viewModel.jellyfinClient,
@@ -46,127 +44,30 @@ struct LibraryContentView: View {
                     )
                 }
 
-                if !viewModel.recentlyAdded.isEmpty {
-                    recentlyAddedSection
-                }
+                LibraryShelfView(
+                    category: .movies,
+                    items: viewModel.movies,
+                    apiClient: apiClient
+                )
+
+                LibraryShelfView(
+                    category: .tvShows,
+                    items: viewModel.tvShows,
+                    apiClient: apiClient
+                )
+
+                LibraryShelfView(
+                    category: .recentlyAdded,
+                    items: Array(viewModel.recentlyAdded.prefix(20)),
+                    apiClient: apiClient,
+                    headerIsNavigable: false
+                )
             }
             .padding(.vertical, 8)
         }
 #if os(macOS)
         .scrollEdgeEffectStyle(.soft, for: .all)
 #endif
-    }
-
-    // MARK: - Category Nav Links
-
-    private var categoryNavLinks: some View {
-        VStack(spacing: 0) {
-            NavigationLink {
-                MediaCategoryView(title: "Movies", items: viewModel.movies, apiClient: apiClient)
-            } label: {
-                navRowLabel(icon: "film", label: "Movies", color: .pink, count: viewModel.movies.count)
-            }
-
-            Divider().padding(.leading, 58)
-
-            NavigationLink {
-                MediaCategoryView(title: "TV Shows", items: viewModel.tvShows, apiClient: apiClient)
-            } label: {
-                navRowLabel(icon: "tv", label: "TV Shows", color: .blue, count: viewModel.tvShows.count)
-            }
-        }
-        .background(Color.secondaryGroupedBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16)
-    }
-
-    private func navRowLabel(icon: String, label: String, color: Color, count: Int) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(color, in: RoundedRectangle(cornerRadius: 7))
-
-            Text(label)
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            if count > 0 {
-                Text("\(count)")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 52)
-        .contentShape(Rectangle())
-    }
-
-    // MARK: - Recently Added
-
-    private var recentlyAddedSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            NavigationLink {
-                MediaCategoryView(
-                    title: "Recently Added",
-                    items: viewModel.recentlyAdded,
-                    apiClient: apiClient,
-                    initialSortOrder: .added
-                )
-            } label: {
-                HStack(spacing: 6) {
-                    Text("Recently Added")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.primary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .contentShape(Rectangle())
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-
-            let recentItems = Array(viewModel.recentlyAdded.prefix(12))
-            LazyVGrid(
-                columns: ThreeColumnMediaGrid.columns(for: recentGridWidth),
-                spacing: ThreeColumnMediaGrid.rowSpacing
-            ) {
-                ForEach(recentItems) { item in
-                    NavigationLink(value: MediaDestination(
-                        mediaType: item.mediaType,
-                        tmdbId: item.tmdbId,
-                        title: item.title,
-                        posterURL: item.posterURL
-                    )) {
-                        LibraryPosterCell(item: item)
-                    }
-                    #if os(tvOS)
-                    .buttonStyle(TVPosterFocusButtonStyle())
-                    #else
-                    .buttonStyle(.plain)
-                    #endif
-                    .contextMenu {
-                        LibraryItemRequestContextMenu(
-                            item: item,
-                            apiClient: apiClient,
-                            notificationCenter: notificationCenter,
-                            requestsCoordinator: requestsCoordinator
-                        )
-                    }
-                }
-            }
-            .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.width
-            } action: { _, width in
-                recentGridWidth = width
-            }
-        }
     }
 }
 
@@ -175,8 +76,18 @@ struct LibraryContentView: View {
 struct LibraryPosterCell: View {
     let item: LibraryItem
 
+    /// tvOS needs extra clearance so the focused poster's hover-effect
+    /// scale-up doesn't overlap the caption.
+    private var captionSpacing: CGFloat {
+        #if os(tvOS)
+        22
+        #else
+        5
+        #endif
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: captionSpacing) {
             Color.clear
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .overlay {
@@ -190,6 +101,7 @@ struct LibraryPosterCell: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .posterFocusHighlight(cornerRadius: 8)
 
             Text(item.title)
                 .font(.caption2)
@@ -197,6 +109,106 @@ struct LibraryPosterCell: View {
                 .lineLimit(2)
                 .foregroundStyle(.primary)
         }
+    }
+}
+
+// MARK: - Horizontal category shelf (Movies / TV Shows)
+
+/// Discover-style horizontal poster shelf for a library category. The header
+/// pushes the category's full grid (LibraryCategoryGridView) on iOS/macOS;
+/// tvOS keeps a plain header — full-grid browsing there is still TBD.
+struct LibraryShelfView: View {
+    let category: LibraryCategory
+    let items: [LibraryItem]
+    let apiClient: SeerrAPIClient
+    /// Recently Added passes false: its full content lives on the library
+    /// home itself, so its header pushes nothing anywhere.
+    var headerIsNavigable = true
+
+    @Environment(InAppNotificationCenter.self) private var notificationCenter
+    @Environment(RequestsCoordinator.self) private var requestsCoordinator
+
+    #if os(tvOS)
+    private let cardWidth: CGFloat = 260
+    private let cardSpacing: CGFloat = 40
+    #else
+    private let cardWidth: CGFloat = 140
+    private let cardSpacing: CGFloat = 12
+    #endif
+
+    var body: some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                #if os(tvOS)
+                headerLabel(isNavigable: false)
+                #else
+                if headerIsNavigable {
+                    NavigationLink(value: category) {
+                        headerLabel(isNavigable: true)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    headerLabel(isNavigable: false)
+                }
+                #endif
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: cardSpacing) {
+                        ForEach(items) { item in
+                            NavigationLink(value: MediaDestination(
+                                mediaType: item.mediaType,
+                                tmdbId: item.tmdbId,
+                                title: item.title,
+                                posterURL: item.posterURL
+                            )) {
+                                LibraryPosterCell(item: item)
+                                    .frame(width: cardWidth)
+                            }
+                            #if os(tvOS)
+                            .buttonStyle(TVPosterFocusButtonStyle())
+                            #else
+                            .buttonStyle(.plain)
+                            #endif
+                            .contextMenu {
+                                LibraryItemRequestContextMenu(
+                                    item: item,
+                                    apiClient: apiClient,
+                                    notificationCenter: notificationCenter,
+                                    requestsCoordinator: requestsCoordinator
+                                )
+                            }
+                        }
+                    }
+                    .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
+                    #if os(tvOS)
+                    // Vertical headroom so the focus scale-up never clips.
+                    .padding(.vertical, 30)
+                    #endif
+                }
+                #if os(tvOS)
+                .scrollClipDisabled()
+                #endif
+            }
+        }
+    }
+
+    private func headerLabel(isNavigable: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: category.systemImage)
+                .foregroundStyle(.secondary)
+            Text(category.title)
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundStyle(.primary)
+            if isNavigable {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, ThreeColumnMediaGrid.horizontalPadding)
+        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

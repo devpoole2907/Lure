@@ -20,16 +20,19 @@ enum ThreeColumnMediaGrid {
         count: columnCount
     )
 
-    /// macOS windows resize, so the column count scales with the container
-    /// (targeting ~190pt posters) instead of pinning to 3 giant columns.
-    /// iOS keeps 3 and tvOS keeps 6 — their widths are effectively fixed.
+    /// macOS windows resize, and iOS/iPadOS windows can be resized too (Split
+    /// View, Stage Manager, a widened simulator, or whatever a foldable phone
+    /// ends up doing), so the column count scales with the container
+    /// (targeting ~190pt posters) instead of pinning to a fixed count. The
+    /// floor of 3 keeps standard iPhone widths at 3 columns. tvOS keeps a
+    /// fixed 6 — its width is effectively fixed.
     static func columnCount(for containerWidth: CGFloat) -> Int {
-        #if os(macOS)
+        #if os(tvOS)
+        return columnCount
+        #else
         let usable = containerWidth - horizontalPadding * 2
         guard usable > 0 else { return columnCount }
         return max(3, Int((usable + columnSpacing) / (190 + columnSpacing)))
-        #else
-        return columnCount
         #endif
     }
 
@@ -167,6 +170,17 @@ struct DiscoverMediaGridView: View {
     @ViewBuilder
     private func gridLink(for item: SeerrMediaItem, destination: MediaDestination, posterWidth: CGFloat) -> some View {
         let link = NavigationLink(value: destination) {
+            // matchedTransitionSource feeds the iOS/visionOS zoom transition
+            // only; on tvOS it flattens the card into a snapshot container
+            // that strips the hover effect's rounded shape (focused cards
+            // render square-cornered), so it must not wrap cards there.
+            #if os(tvOS)
+            TitleCardView(
+                item: item,
+                posterWidth: posterWidth,
+                posterHeight: posterWidth * 1.5
+            )
+            #else
             if let transitionNamespace {
                 TitleCardView(
                     item: item,
@@ -181,6 +195,7 @@ struct DiscoverMediaGridView: View {
                     posterHeight: posterWidth * 1.5
                 )
             }
+            #endif
         }
         #if os(tvOS)
         .buttonStyle(TVPosterFocusButtonStyle())

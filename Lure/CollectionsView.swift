@@ -76,6 +76,7 @@ struct CollectionsView: View {
     private func collectionCard(_ collection: SeerrCollection, posterWidth: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             PosterImage(url: collection.posterURL, width: posterWidth, height: posterWidth * 1.5, cornerRadius: 12)
+                .posterFocusHighlight(cornerRadius: 12)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(collection.name ?? "Unknown Collection")
@@ -92,9 +93,19 @@ struct CollectionsView: View {
                 }
             }
             .frame(width: posterWidth, alignment: .leading)
-            .padding(.top, 6)
+            .padding(.top, captionTopPadding)
             .padding(.horizontal, 2)
         }
+    }
+
+    /// tvOS needs extra clearance so the focused poster's hover-effect
+    /// scale-up doesn't overlap the caption.
+    private var captionTopPadding: CGFloat {
+        #if os(tvOS)
+        22
+        #else
+        6
+        #endif
     }
 }
 

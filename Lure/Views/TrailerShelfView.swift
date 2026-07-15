@@ -76,7 +76,7 @@ private struct TrailerCard: View {
             cardVisual
         }
         #if os(tvOS)
-        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.06))
+        .buttonStyle(TVPosterFocusButtonStyle())
         #else
         .buttonStyle(.plain)
         #endif
@@ -167,6 +167,7 @@ private struct TrailerCard: View {
             RoundedRectangle(cornerRadius: Self.cornerRadius)
                 .strokeBorder(.white.opacity(0.16), lineWidth: 0.7)
         }
+        .posterFocusHighlight(cornerRadius: Self.cornerRadius)
     }
 
     private var trailerPlaceholder: some View {

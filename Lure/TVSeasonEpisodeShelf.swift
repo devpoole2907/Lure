@@ -311,7 +311,7 @@ private struct TVSeasonEpisodeCard: View {
         NavigationLink(value: episodeRoute) {
             cardVisual
         }
-        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.04))
+        .buttonStyle(TVPosterFocusButtonStyle())
         .contextMenu {
             episodeMenuCommands
         }
@@ -379,6 +379,7 @@ private struct TVSeasonEpisodeCard: View {
             RoundedRectangle(cornerRadius: Self.cornerRadius)
                 .strokeBorder(.white.opacity(0.16), lineWidth: 0.7)
         }
+        .posterFocusHighlight(cornerRadius: Self.cornerRadius)
     }
 
     private var cardText: some View {

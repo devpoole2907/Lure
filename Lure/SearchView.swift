@@ -22,6 +22,7 @@ struct SearchView: View {
     @State private var jellyfinSearchTask: Task<Void, Never>?
     @State private var isJellyfinSearching = false
     @FocusState private var isMacSearchFocused: Bool
+    @FocusState private var isSearchFieldFocused: Bool
 
     @AppStorage("lure.search.recents") private var recentsStorage: String = "[]"
 
@@ -51,6 +52,7 @@ struct SearchView: View {
                     placement: .automatic,
                     prompt: scope == .library ? "Your library" : "Movies, TV shows..."
                 )
+                .searchFocused($isSearchFieldFocused)
         )
         #endif
     }
@@ -118,6 +120,16 @@ struct SearchView: View {
             recordRecent(searchText)
         }
         .onChange(of: scope) { _, newScope in
+            #if os(iOS) || os(visionOS)
+            // Tapping the scope picker resigns the search field's focus,
+            // and on iPadOS's Tab(role: .search) presentation an empty,
+            // unfocused field gets auto-collapsed back to the tab icon
+            // instead of just losing the keyboard. Reassert presentation
+            // and focus so switching scope doesn't kick the user out of
+            // search entirely.
+            isSearchPresented = true
+            isSearchFieldFocused = true
+            #endif
             if newScope == .library {
                 if !jellyfinService.hasCredentials,
                    !libraryItemsLoaded,
@@ -273,19 +285,51 @@ struct SearchView: View {
 
     @ViewBuilder
     private func jellyfinResultRow(_ item: JellyfinItem) -> some View {
-        let mediaType = item.type?.lowercased() == "series" ? "tv" : "movie"
-        if let tmdbId = item.tmdbId {
+        if let libraryItem = libraryItem(for: item) {
             NavigationLink(value: MediaDestination(
-                mediaType: mediaType,
-                tmdbId: tmdbId,
-                title: item.name ?? "",
-                posterURL: nil
+                mediaType: libraryItem.mediaType,
+                tmdbId: libraryItem.tmdbId,
+                title: libraryItem.title,
+                posterURL: libraryItem.posterURL
             )) {
-                jellyfinResultLabel(item)
+                MediaListRow(item: libraryItem)
+            }
+            .contextMenu {
+                LibraryItemRequestContextMenu(
+                    item: libraryItem,
+                    apiClient: apiClient,
+                    notificationCenter: notificationCenter,
+                    requestsCoordinator: requestsCoordinator
+                )
             }
         } else {
+            // Episodes and items without a TMDB provider ID can't be routed
+            // through MediaListRow/MediaDestination; keep the plain label.
             jellyfinResultLabel(item)
         }
+    }
+
+    /// Convert a Jellyfin search result into the same LibraryItem the Seerr
+    /// library path renders, so both scopes share MediaListRow with a poster.
+    /// Mirrors LibraryViewModel.loadFromJellyfin().
+    private func libraryItem(for item: JellyfinItem) -> LibraryItem? {
+        guard let tmdbId = item.tmdbId, let name = item.name, let type = item.type else { return nil }
+        let mediaType: String
+        switch type.lowercased() {
+        case "series": mediaType = "tv"
+        case "movie": mediaType = "movie"
+        default: return nil
+        }
+        return LibraryItem(
+            mediaType: mediaType,
+            tmdbId: tmdbId,
+            title: name,
+            year: item.productionYear.map(String.init),
+            voteAverage: item.communityRating,
+            posterURL: item.id.flatMap { jellyfinService.client?.primaryImageURL(itemId: $0) },
+            isAvailable: true,
+            addedAt: nil
+        )
     }
 
     private func jellyfinResultLabel(_ item: JellyfinItem) -> some View {
@@ -475,10 +519,11 @@ struct SearchView: View {
             GridItem(.flexible(), spacing: 36)
         ]
         #else
-        [
-            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14),
-            GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 14)
-        ]
+        // Adaptive rather than a fixed 2 columns so the tile count scales
+        // with the window: iPhone widths still resolve to 2 columns, while
+        // iPad (full screen, Split View, Stage Manager) gets more columns of
+        // roughly iPhone-sized cards instead of two super-wide ones.
+        [GridItem(.adaptive(minimum: 160, maximum: 260), spacing: 14)]
         #endif
     }
 

@@ -209,7 +209,7 @@ private struct ContinueWatchingCard: View {
         } label: {
             cardContent
         }
-        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.06))
+        .buttonStyle(TVPosterFocusButtonStyle())
         .accessibilityLabel(displayTitle)
         .accessibilityHint("Starts playback. Long-press for more actions.")
         #else
@@ -220,8 +220,36 @@ private struct ContinueWatchingCard: View {
         #endif
     }
 
+    /// tvOS gets extra clearance: the focused card's hover-effect scale grows
+    /// past the frame, and 6pt let the title touch the card's bottom edge.
+    private var captionSpacing: CGFloat {
+        #if os(tvOS)
+        14
+        #else
+        6
+        #endif
+    }
+
+    /// tvOS insets the progress row further from the card edges — the hover
+    /// effect's glass refraction warps content sitting right at the border.
+    private var progressRowHorizontalInset: CGFloat {
+        #if os(tvOS)
+        16
+        #else
+        8
+        #endif
+    }
+
+    private var progressRowBottomInset: CGFloat {
+        #if os(tvOS)
+        12
+        #else
+        6
+        #endif
+    }
+
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: captionSpacing) {
             ZStack(alignment: .bottom) {
                 PosterImage(
                     url: thumbURL,
@@ -253,8 +281,8 @@ private struct ContinueWatchingCard: View {
                         .foregroundStyle(.white)
                         #endif
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 6)
+                    .padding(.horizontal, progressRowHorizontalInset)
+                    .padding(.bottom, progressRowBottomInset)
                     .background(.black.opacity(0.6))
                 }
             }
@@ -264,6 +292,7 @@ private struct ContinueWatchingCard: View {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
             )
+            .posterFocusHighlight(cornerRadius: 10)
 
             Text(displayTitle)
                 .font(.caption.weight(.medium))

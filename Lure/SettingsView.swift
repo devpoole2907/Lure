@@ -1,54 +1,178 @@
 import SwiftUI
 import SwiftData
 
-struct SettingsView: View {
-    let apiClient: SeerrAPIClient
-    let currentUser: SeerrUser
-    let onLogout: () -> Void
+// MARK: - Shared settings sections
+//
+// Settings is organized identically on every platform — Servers (Seerr +
+// Jellyfin), Storage, About — with account details and sign-out living in
+// the profile screen instead. macOS hosts these sections in its paned
+// settings sheet; other platforms stack them in a single pushed list.
 
-    @Environment(\.modelContext) private var modelContext
-    @Query(filter: #Predicate<LureServerProfile> { $0.isActive }) private var activeProfiles: [LureServerProfile]
+private struct SettingsSeerrSection: View {
+    let apiClient: SeerrAPIClient?
+    let currentUser: SeerrUser?
 
     var body: some View {
-        List {
-            Section("Server") {
-                LabeledContent("URL", value: apiClient.baseURL)
-            }
+        Section {
+            LabeledContent("Server", value: apiClient?.baseURL ?? "Not configured")
+            LabeledContent("Signed In As", value: currentUser?.displayName ?? "Not signed in")
+        } header: {
+            Text("Seerr")
+        } footer: {
+            Text("Lure uses Seerr for discovery, requests, approvals, and request history. To connect to a different Seerr server, sign out and run setup again or open a new invite link.")
+        }
+    }
+}
 
-            Section("Account") {
-                LabeledContent("Username", value: currentUser.displayName)
-                if let email = currentUser.email, !email.isEmpty {
-                    LabeledContent("Email", value: email)
-                }
-            }
+private struct SettingsJellyfinSection: View {
+    @Environment(JellyfinService.self) private var jellyfinService
+    @State private var credentials: JellyfinCredentials?
+    #if os(macOS)
+    @State private var showJellyfinSetup = false
+    #endif
 
-            Section("Playback") {
-                NavigationLink {
-                    JellyfinSetupView()
+    var body: some View {
+        Section {
+            LabeledContent("Status", value: credentials == nil ? "Not configured" : "Connected")
+            if let credentials {
+                LabeledContent("Server", value: credentials.serverURL)
+                LabeledContent("Account", value: credentials.displayName)
+            }
+            #if os(macOS)
+            Button(credentials == nil ? "Set Up Jellyfin..." : "Manage Jellyfin...") {
+                showJellyfinSetup = true
+            }
+            #else
+            NavigationLink {
+                JellyfinSetupView()
+            } label: {
+                Label(credentials == nil ? "Set Up Jellyfin" : "Manage Jellyfin", systemImage: "play.tv")
+            }
+            #endif
+        } header: {
+            Text("Jellyfin")
+        } footer: {
+            Text("Jellyfin enables playback, resume progress, quality badges, and favorite syncing for media already in your library.")
+        }
+        .task {
+            credentials = await JellyfinCredentials.load()
+        }
+        #if os(macOS)
+        .sheet(isPresented: $showJellyfinSetup, onDismiss: {
+            Task { credentials = await JellyfinCredentials.load() }
+        }) {
+            NavigationStack {
+                JellyfinSetupView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showJellyfinSetup = false }
+                        }
+                    }
+            }
+            .environment(jellyfinService)
+            .frame(width: 520, height: 520)
+        }
+        #endif
+    }
+}
+
+private struct SettingsStorageSection: View {
+    @State private var cacheSize = ""
+    @State private var isClearingCache = false
+    @State private var cacheMessage: String?
+
+    var body: some View {
+        Section {
+            LabeledContent("Image Cache", value: cacheSize.isEmpty ? "Calculating..." : cacheSize)
+            Button(role: .destructive) {
+                Task { await clearImageCache() }
+            } label: {
+                Label(isClearingCache ? "Clearing..." : "Clear Image Cache", systemImage: "trash")
+            }
+            .disabled(isClearingCache)
+            if let cacheMessage {
+                Text(cacheMessage)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Images")
+        } footer: {
+            Text("Cached artwork makes posters, backdrops, and profile images load faster. Clearing it does not remove account data.")
+        }
+        .task { await refreshCacheSize() }
+    }
+
+    @MainActor
+    private func refreshCacheSize() async {
+        let bytes = await LureImageCache.shared.cacheSizeInBytes()
+        cacheSize = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    @MainActor
+    private func clearImageCache() async {
+        isClearingCache = true
+        cacheMessage = nil
+        await LureImageCache.shared.clear()
+        await refreshCacheSize()
+        cacheMessage = "Image cache cleared."
+        isClearingCache = false
+    }
+}
+
+/// On macOS the licenses open in a sheet driven by the settings window, so
+/// the pane passes `showLicenses`; elsewhere it's nil and a NavigationLink
+/// pushes them.
+private struct SettingsAboutSection: View {
+    var showLicenses: (() -> Void)? = nil
+
+    var body: some View {
+        Section("Application") {
+            LabeledContent("Name", value: "Lure")
+            LabeledContent("Version", value: appVersion)
+            if let buildNumber {
+                LabeledContent("Build", value: buildNumber)
+            }
+        }
+
+        Section("Legal") {
+            if let showLicenses {
+                Button {
+                    showLicenses()
                 } label: {
-                    Label("Jellyfin Playback", systemImage: "play.tv")
+                    Label("Open Source Licenses", systemImage: "doc.text")
                 }
-            }
-
-            Section {
-                Button(role: .destructive) {
-                    onLogout()
-                } label: {
-                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-            }
-
-            Section("About") {
-                LabeledContent("App", value: "Lure")
-                if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
-                    LabeledContent("Version", value: version)
-                }
+            } else {
                 NavigationLink {
                     LicensesView()
                 } label: {
                     Label("Open Source Licenses", systemImage: "doc.text")
                 }
             }
+        }
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+    }
+
+    private var buildNumber: String? {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+    }
+}
+
+// MARK: - iOS/iPadOS/tvOS settings (pushed from the More tab)
+
+struct SettingsView: View {
+    let apiClient: SeerrAPIClient
+    let currentUser: SeerrUser
+    let onLogout: () -> Void
+
+    var body: some View {
+        List {
+            SettingsSeerrSection(apiClient: apiClient, currentUser: currentUser)
+            SettingsJellyfinSection()
+            SettingsStorageSection()
+            SettingsAboutSection()
         }
 #if os(iOS) || os(visionOS)
         .listStyle(.insetGrouped)
@@ -71,6 +195,8 @@ struct SettingsView: View {
 }
 #endif
 
+// MARK: - macOS settings sheet
+
 #if os(macOS)
 @MainActor
 @Observable
@@ -92,7 +218,7 @@ struct MacSettingsSheet: View {
     let onLogout: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selection: MacSettingsPane? = .account
+    @State private var selection: MacSettingsPane? = .servers
     @State private var showLicenses = false
 
     var body: some View {
@@ -104,7 +230,7 @@ struct MacSettingsSheet: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
             selectedPaneContent
-                .navigationTitle((selection ?? .account).title)
+                .navigationTitle((selection ?? .servers).title)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
@@ -131,32 +257,26 @@ struct MacSettingsSheet: View {
 
     @ViewBuilder
     private var selectedPaneContent: some View {
-        switch selection ?? .account {
-        case .account:
-            MacSettingsAccountPane(
-                apiClient: apiClient,
-                currentUser: currentUser,
-                onLogout: {
-                    dismiss()
-                    onLogout()
-                }
-            )
-        case .server:
-            MacSettingsServerPane(apiClient: apiClient, currentUser: currentUser)
-        case .playback:
-            MacSettingsPlaybackPane()
+        switch selection ?? .servers {
+        case .servers:
+            MacSettingsForm {
+                SettingsSeerrSection(apiClient: apiClient, currentUser: currentUser)
+                SettingsJellyfinSection()
+            }
         case .storage:
-            MacSettingsStoragePane()
+            MacSettingsForm {
+                SettingsStorageSection()
+            }
         case .about:
-            MacSettingsAboutPane(showLicenses: { showLicenses = true })
+            MacSettingsForm {
+                SettingsAboutSection(showLicenses: { showLicenses = true })
+            }
         }
     }
 }
 
 private enum MacSettingsPane: String, CaseIterable, Identifiable {
-    case account
-    case server
-    case playback
+    case servers
     case storage
     case about
 
@@ -164,9 +284,7 @@ private enum MacSettingsPane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .account: "Account"
-        case .server: "Server"
-        case .playback: "Playback"
+        case .servers: "Servers"
         case .storage: "Storage"
         case .about: "About"
         }
@@ -174,185 +292,10 @@ private enum MacSettingsPane: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .account: "person.crop.circle"
-        case .server: "server.rack"
-        case .playback: "play.circle"
+        case .servers: "server.rack"
         case .storage: "externaldrive"
         case .about: "info.circle"
         }
-    }
-}
-
-private struct MacSettingsAccountPane: View {
-    let apiClient: SeerrAPIClient?
-    let currentUser: SeerrUser?
-    let onLogout: () -> Void
-
-    var body: some View {
-        MacSettingsForm {
-            Section("Account") {
-                LabeledContent("Name", value: currentUser?.displayName ?? "Not signed in")
-                if let email = currentUser?.email, !email.isEmpty {
-                    LabeledContent("Email", value: email)
-                }
-                LabeledContent("Role", value: currentUser?.canManageRequests == true ? "Request manager" : "User")
-                LabeledContent("Total Requests", value: "\(currentUser?.requestCount ?? 0)")
-            }
-
-            Section {
-                LabeledContent("Seerr Server", value: apiClient?.baseURL ?? "Not configured")
-                Button(role: .destructive, action: onLogout) {
-                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .disabled(currentUser == nil)
-            } header: {
-                Text("Session")
-            } footer: {
-                Text("Signing out returns Lure to setup and clears Jellyfin playback credentials on this device.")
-            }
-        }
-    }
-}
-
-private struct MacSettingsServerPane: View {
-    let apiClient: SeerrAPIClient?
-    let currentUser: SeerrUser?
-
-    var body: some View {
-        MacSettingsForm {
-            Section {
-                LabeledContent("Server", value: apiClient?.baseURL ?? "Not configured")
-                LabeledContent("Signed In As", value: currentUser?.displayName ?? "Not signed in")
-            } header: {
-                Text("Seerr")
-            } footer: {
-                Text("Lure uses Seerr for discovery, requests, approvals, and request history.")
-            }
-
-            Section("Changing Servers") {
-                Text("To connect Lure to a different Seerr server, sign out and run setup again or open a new invite link.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-private struct MacSettingsPlaybackPane: View {
-    @Environment(JellyfinService.self) private var jellyfinService
-    @State private var credentials: JellyfinCredentials?
-    @State private var showJellyfinSetup = false
-
-    var body: some View {
-        MacSettingsForm {
-            Section {
-                LabeledContent("Status", value: credentials == nil ? "Not configured" : "Connected")
-                if let credentials {
-                    LabeledContent("Server", value: credentials.serverURL)
-                    LabeledContent("Account", value: credentials.displayName)
-                }
-                Button(credentials == nil ? "Set Up Jellyfin..." : "Manage Jellyfin...") {
-                    showJellyfinSetup = true
-                }
-            } header: {
-                Text("Jellyfin")
-            } footer: {
-                Text("Jellyfin enables playback, resume progress, quality badges, and favorite syncing for media already in your library.")
-            }
-        }
-        .task {
-            credentials = await JellyfinCredentials.load()
-        }
-        .sheet(isPresented: $showJellyfinSetup, onDismiss: {
-            Task { credentials = await JellyfinCredentials.load() }
-        }) {
-            NavigationStack {
-                JellyfinSetupView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showJellyfinSetup = false }
-                        }
-                    }
-            }
-            .environment(jellyfinService)
-            .frame(width: 520, height: 520)
-        }
-    }
-}
-
-private struct MacSettingsStoragePane: View {
-    @State private var cacheSize = ""
-    @State private var isClearingCache = false
-    @State private var cacheMessage: String?
-
-    var body: some View {
-        MacSettingsForm {
-            Section {
-                LabeledContent("Image Cache", value: cacheSize.isEmpty ? "Calculating..." : cacheSize)
-                Button(role: .destructive) {
-                    Task { await clearImageCache() }
-                } label: {
-                    Label(isClearingCache ? "Clearing..." : "Clear Image Cache", systemImage: "trash")
-                }
-                .disabled(isClearingCache)
-                if let cacheMessage {
-                    Text(cacheMessage)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Images")
-            } footer: {
-                Text("Cached artwork makes posters, backdrops, and profile images load faster. Clearing it does not remove account data.")
-            }
-        }
-        .task { await refreshCacheSize() }
-    }
-
-    @MainActor
-    private func refreshCacheSize() async {
-        let bytes = await LureImageCache.shared.cacheSizeInBytes()
-        cacheSize = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-    }
-
-    @MainActor
-    private func clearImageCache() async {
-        isClearingCache = true
-        cacheMessage = nil
-        await LureImageCache.shared.clear()
-        await refreshCacheSize()
-        cacheMessage = "Image cache cleared."
-        isClearingCache = false
-    }
-}
-
-private struct MacSettingsAboutPane: View {
-    let showLicenses: () -> Void
-
-    var body: some View {
-        MacSettingsForm {
-            Section("Application") {
-                LabeledContent("Name", value: "Lure")
-                LabeledContent("Version", value: appVersion)
-                if let buildNumber {
-                    LabeledContent("Build", value: buildNumber)
-                }
-            }
-
-            Section("Legal") {
-                Button {
-                    showLicenses()
-                } label: {
-                    Label("Open Source Licenses", systemImage: "doc.text")
-                }
-            }
-        }
-    }
-
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
-    }
-
-    private var buildNumber: String? {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String
     }
 }
 

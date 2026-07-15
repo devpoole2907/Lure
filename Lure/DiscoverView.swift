@@ -6,6 +6,8 @@ struct DiscoverView: View {
     @State private var heroActiveIndex = 0
     @State private var heroScrollTargetID: String?
     @State private var heroVerticalOffset: CGFloat = 0
+    @State private var isHeroCarouselVisible = true
+    @State private var heroActiveImageURL: URL?
     @Namespace private var navigationTransitionNamespace
     @Environment(InAppNotificationCenter.self) private var notificationCenter
     @Environment(JellyfinService.self) private var jellyfinService
@@ -136,6 +138,28 @@ struct DiscoverView: View {
         }
     }
 
+    private func activeHeroBackdropURL(vm: DiscoverViewModel) -> URL? {
+        let heroes = DiscoverHeroCarouselView.heroItems(from: vm.featuredItems)
+        guard !heroes.isEmpty else { return nil }
+        let index = min(max(heroActiveIndex, 0), heroes.count - 1)
+        return DiscoverHeroCarouselView.ambientBackdropURL(for: heroes[index])
+    }
+
+    /// Same blur treatment as `artBackground(url:)` in MovieDetailView/
+    /// TVDetailView, but loaded through AmbientBackdropImage: unlike
+    /// AsyncImage it keeps the previous image up until the next one is
+    /// decoded, so the background doesn't pulse to a placeholder every time
+    /// the carousel advances.
+    private func artBackground(url: URL?) -> some View {
+        AmbientBackdropImage(url: url)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(1.4)
+            .blur(radius: 60)
+            .saturation(1.6)
+            .overlay(Color.black.opacity(0.55))
+            .ignoresSafeArea()
+    }
+
     @ViewBuilder
     private func discoverContent(vm: DiscoverViewModel) -> some View {
         if vm.isLoading && vm.trending.isEmpty {
@@ -146,16 +170,31 @@ struct DiscoverView: View {
             }
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
+                // The carousel must stay outside the LazyVStack: when the
+                // lazy container reclaimed it off-screen, the recreated
+                // ScrollView snapped to item 0 and clobbered the saved
+                // scroll position before it could be restored. A plain
+                // VStack keeps it alive (its 8 images are preloaded anyway)
+                // so its position is frozen while scrolled away; the
+                // sections below keep their laziness.
+                VStack(alignment: .leading, spacing: 24) {
                     DiscoverHeroCarouselView(
                         items: vm.featuredItems,
                         activeIndex: $heroActiveIndex,
                         scrollTargetID: $heroScrollTargetID,
                         transitionNamespace: navigationTransitionNamespace,
                         verticalOffset: heroVerticalOffset,
-                        isActive: router.discoverPath.isEmpty
+                        isActive: router.discoverPath.isEmpty && isHeroCarouselVisible,
+                        onActiveImageChange: { heroActiveImageURL = $0 }
                     )
-                    if !vm.continueWatching.isEmpty {
+                    .onScrollVisibilityChange(threshold: 0.05) { visible in
+                        isHeroCarouselVisible = visible
+                    }
+
+                    LazyVStack(alignment: .leading, spacing: 24) {
+                    // Gated on live credentials, not just cached items, so the
+                    // shelf disappears immediately when Jellyfin is signed out.
+                    if jellyfinService.hasCredentials, !vm.continueWatching.isEmpty {
                         ContinueWatchingShelf(
                             items: vm.continueWatching,
                             jellyfinClient: vm.jellyfinClient,
@@ -211,6 +250,7 @@ struct DiscoverView: View {
                     if !vm.collections.isEmpty {
                         collectionSlider(vm.collections)
                     }
+                    }
                 }
                 .padding(.bottom)
             }
@@ -226,6 +266,12 @@ struct DiscoverView: View {
             } action: { _, newValue in
                 heroVerticalOffset = max(-newValue, 0)
             }
+            // Same ambient treatment as the detail views: the active hero
+            // item's artwork, blurred behind the entire page, paired with a
+            // forced dark scheme so the sections below read correctly on it.
+            // The hero's masked bottom edge phases into this backdrop.
+            .background { artBackground(url: heroActiveImageURL ?? activeHeroBackdropURL(vm: vm)) }
+            .environment(\.colorScheme, .dark)
         }
     }
 
@@ -382,6 +428,7 @@ struct DiscoverView: View {
                 height: collectionPosterHeight,
                 cornerRadius: collectionPosterWidth * 0.086
             )
+            .posterFocusHighlight(cornerRadius: collectionPosterWidth * 0.086)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(collection.name ?? "Unknown Collection")
@@ -402,8 +449,65 @@ struct DiscoverView: View {
                 }
             }
             .frame(width: collectionPosterWidth, alignment: .leading)
-            .padding(.top, 6)
+            .padding(.top, collectionCaptionTopPadding)
             .padding(.horizontal, 2)
+        }
+    }
+
+    /// tvOS needs extra clearance so the focused poster's hover-effect
+    /// scale-up doesn't overlap the caption.
+    private var collectionCaptionTopPadding: CGFloat {
+        #if os(tvOS)
+        22
+        #else
+        6
+        #endif
+    }
+}
+
+/// Backing image for the ambient blurred page background. Holds onto the
+/// previously decoded image while the next URL loads, so URL changes (the
+/// carousel advancing) crossfade image-to-image instead of dipping through
+/// a placeholder the way AsyncImage does.
+private struct AmbientBackdropImage: View {
+    let url: URL?
+
+    #if canImport(UIKit)
+    @State private var image: UIImage?
+    #else
+    @State private var image: NSImage?
+    #endif
+
+    var body: some View {
+        Group {
+            if let image {
+                #if canImport(UIKit)
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                #else
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                #endif
+            } else {
+                Rectangle().fill(Color.indigo.opacity(0.4))
+            }
+        }
+        .task(id: url) {
+            guard let url,
+                  let data = try? await LureImageCache.shared.imageData(for: url) else { return }
+            let decoded = await Task.detached(priority: .userInitiated) {
+                #if canImport(UIKit)
+                UIImage(data: data)
+                #else
+                NSImage(data: data)
+                #endif
+            }.value
+            guard let decoded, !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                image = decoded
+            }
         }
     }
 }

@@ -320,12 +320,21 @@ actor JellyfinAPIClient {
         return components?.url
     }
 
-    func getNextUp(seriesId: String) async throws -> JellyfinItem? {
+    /// The episode that follows `currentEpisodeId` in series order. Not
+    /// /Shows/NextUp — that endpoint is watch-history based (first unwatched
+    /// episode of the series), so finishing S1E3 with nothing marked played
+    /// would suggest S1E1. "Up next" during playback means adjacency.
+    func getEpisodeAfter(seriesId: String, currentEpisodeId: String) async throws -> JellyfinItem? {
         let response: JellyfinNextUpResponse = try await get(
-            "/Shows/NextUp",
-            params: ["UserId": userId, "SeriesId": seriesId, "Limit": "1", "Fields": "UserData"]
+            "/Shows/\(seriesId)/Episodes",
+            params: [
+                "UserId": userId,
+                "StartItemId": currentEpisodeId,
+                "Limit": "2",
+                "Fields": "UserData"
+            ]
         )
-        return response.items?.first
+        return response.items?.first(where: { $0.id != currentEpisodeId })
     }
 
     func markPlayed(itemId: String) async throws {

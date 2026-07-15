@@ -24,6 +24,7 @@ struct TitleCardView: View {
             }
             .frame(width: posterWidth, height: posterHeight)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .posterFocusHighlight(cornerRadius: cornerRadius)
 
             captionBlock
         }
@@ -65,8 +66,18 @@ struct TitleCardView: View {
             .foregroundStyle(.secondary)
         }
         .frame(width: posterWidth, alignment: .leading)
-        .padding(.top, 6)
+        .padding(.top, captionTopPadding)
         .padding(.horizontal, 2)
+    }
+
+    /// tvOS needs extra clearance: the focused poster's hover-effect scale
+    /// grows past its frame and overlapped the caption at 6pt.
+    private var captionTopPadding: CGFloat {
+        #if os(tvOS)
+        22
+        #else
+        6
+        #endif
     }
 }
 

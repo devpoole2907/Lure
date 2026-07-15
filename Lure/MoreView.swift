@@ -43,7 +43,7 @@ struct MoreView: View {
             .navigationDestination(for: MoreDestination.self) { destination in
                 switch destination {
                 case .profile:
-                    UserProfileView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
+                    UserProfileSheet(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)
                         .moreDestinationTitleStyle()
                 case .settings:
                     SettingsView(apiClient: apiClient, currentUser: currentUser, onLogout: onLogout)

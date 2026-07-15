@@ -26,7 +26,7 @@ struct CastShelfView: View {
                         NavigationLink(value: item.destination) {
                             CastShelfCell(item: item)
                         }
-                        .buttonStyle(TVPosterFocusButtonStyle(scale: 1.08))
+                        .buttonStyle(TVPosterFocusButtonStyle())
                         #else
                         if onSelect != nil {
                             Button {

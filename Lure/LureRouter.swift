@@ -9,6 +9,11 @@ enum LureTab: Hashable, Codable, Sendable {
     case profile
     case settings
     case more
+    // macOS sidebar "Library" section entries (Apple TV app style). Other
+    // platforms keep the single .library tab for now.
+    case libraryRecentlyAdded
+    case libraryMovies
+    case libraryTVShows
 }
 
 /// App-level navigation state.
@@ -23,6 +28,9 @@ final class LureRouter {
     var discoverPath = NavigationPath()
     var searchPath = NavigationPath()
     var libraryPath = NavigationPath()
+    var libraryRecentlyAddedPath = NavigationPath()
+    var libraryMoviesPath = NavigationPath()
+    var libraryTVShowsPath = NavigationPath()
     var requestsPath = NavigationPath()
     var morePath: [MoreDestination] = []
     var isProfilePresented = false
@@ -42,6 +50,9 @@ final class LureRouter {
         discoverPath = NavigationPath()
         searchPath = NavigationPath()
         libraryPath = NavigationPath()
+        libraryRecentlyAddedPath = NavigationPath()
+        libraryMoviesPath = NavigationPath()
+        libraryTVShowsPath = NavigationPath()
         requestsPath = NavigationPath()
         morePath = []
         isProfilePresented = false
@@ -57,6 +68,12 @@ final class LureRouter {
             searchPath.append(destination)
         case .library:
             libraryPath.append(destination)
+        case .libraryRecentlyAdded:
+            libraryRecentlyAddedPath.append(destination)
+        case .libraryMovies:
+            libraryMoviesPath.append(destination)
+        case .libraryTVShows:
+            libraryTVShowsPath.append(destination)
         case .requests:
             requestsPath.append(destination)
         case .profile, .settings, .more:
@@ -93,8 +110,15 @@ final class LureRouter {
             selectedTab = .search
             searchPath = NavigationPath()
         case "library":
+            #if os(macOS)
+            // macOS has no single Library tab — the sidebar Library section's
+            // first entry is the equivalent landing spot.
+            selectedTab = .libraryRecentlyAdded
+            libraryRecentlyAddedPath = NavigationPath()
+            #else
             selectedTab = .library
             libraryPath = NavigationPath()
+            #endif
         case "requests":
             selectedTab = .requests
             requestsPath = NavigationPath()

@@ -51,30 +51,49 @@ extension View {
 }
 
 #if os(tvOS)
-/// Shared tvOS focus treatment for poster/card buttons: scales the card with a
-/// drop shadow when focused, WITHOUT the default bordered-button white plate
-/// that would otherwise wrap the whole cell (image + caption).
+/// Shared tvOS style for poster/card buttons: a plain pass-through that only
+/// exists to suppress the default bordered-button white plate around the
+/// whole cell (image + caption). The focus visuals come from
+/// `posterFocusHighlight()` applied to the ARTWORK inside the label — putting
+/// the system highlight on the whole label sheens the caption text and draws
+/// a border around the full cell rect.
 struct TVPosterFocusButtonStyle: ButtonStyle {
-    var scale: CGFloat = 1.08
-
     func makeBody(configuration: Configuration) -> some View {
-        TVPosterFocusBody(configuration: configuration, scale: scale)
-    }
-
-    private struct TVPosterFocusBody: View {
-        let configuration: ButtonStyle.Configuration
-        let scale: CGFloat
-        @Environment(\.isFocused) private var isFocused
-
-        var body: some View {
-            configuration.label
-                .scaleEffect(isFocused ? scale : 1.0)
-                .shadow(color: isFocused ? .black.opacity(0.45) : .clear, radius: 18, y: 8)
-                .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isFocused)
-        }
+        configuration.label
     }
 }
 #endif
+
+extension View {
+    /// The system highlight hover effect on tvOS — native focus scale, drop
+    /// shadow, specular shimmer, and the parallax tilt that tracks Siri
+    /// Remote touch-surface rubbing. No-op on other platforms. Apply to a
+    /// card's artwork only, never the caption block; the effect activates
+    /// when the enclosing focusable (the Button) gains focus.
+    ///
+    /// The shape must match the artwork's clip shape: the effect draws its
+    /// lift/shine using its own hover shape, which defaults to a plain
+    /// rectangle — leaving flat corners around a rounded poster.
+    @ViewBuilder
+    func posterFocusHighlight(cornerRadius: CGFloat) -> some View {
+        posterFocusHighlight(shape: RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    @ViewBuilder
+    func posterFocusHighlight(shape: some Shape) -> some View {
+        #if os(tvOS)
+        // Both kinds on purpose: tvOS's highlight derives its shape from the
+        // plain (.interaction) content shape — the .hoverEffect kind alone
+        // leaves the focused rendering square-cornered.
+        self
+            .contentShape(shape)
+            .contentShape(.hoverEffect, shape)
+            .hoverEffect(.highlight)
+        #else
+        self
+        #endif
+    }
+}
 
 #if os(macOS) || os(tvOS)
 

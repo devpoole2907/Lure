@@ -54,12 +54,20 @@ struct MediaSliderCellControl: View {
 
     @ViewBuilder
     private var card: some View {
+        // matchedTransitionSource feeds the iOS/visionOS zoom transition
+        // only; on tvOS it flattens the card into a snapshot container that
+        // strips the hover effect's rounded shape (focused cards render
+        // square-cornered), so it must not wrap cards there.
+        #if os(tvOS)
+        TitleCardView(item: item)
+        #else
         if let transitionNamespace {
             TitleCardView(item: item)
                 .matchedTransitionSource(id: destination, in: transitionNamespace)
         } else {
             TitleCardView(item: item)
         }
+        #endif
     }
 
     private func select() {

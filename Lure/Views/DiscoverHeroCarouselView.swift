@@ -7,6 +7,10 @@ struct DiscoverHeroCarouselView: View {
     var transitionNamespace: Namespace.ID? = nil
     var verticalOffset: CGFloat = 0
     var isActive: Bool = true
+    /// Reports the exact image URL the active panel is displaying (including
+    /// async artwork upgrades) so the host can mirror it — DiscoverView's
+    /// ambient blurred background must always match the visible hero.
+    var onActiveImageChange: ((URL?) -> Void)? = nil
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -18,12 +22,34 @@ struct DiscoverHeroCarouselView: View {
     @State private var heroFavoriteStates: [String: Bool] = [:]
     @State private var heroFavoriteItemIDs: [String: String] = [:]
     @State private var heroFavoriteActionsInFlight: Set<String> = []
+    /// Item ids currently showing the transient expanded "Added" pill.
+    @State private var heroAddedConfirmationItemIDs: Set<String> = []
     @State private var autoAdvanceResetToken = 0
     #if os(tvOS)
     @FocusState private var heroFocus: HeroFocusTarget?
     #endif
     private var heroItems: [SeerrMediaItem] {
+        Self.heroItems(from: items)
+    }
+
+    /// Shared with DiscoverView so it can resolve the active hero item (for
+    /// its ambient blurred background) using the same filtering the carousel
+    /// itself paginates with.
+    static func heroItems(from items: [SeerrMediaItem]) -> [SeerrMediaItem] {
         Array(items.filter { $0.mediaType == "movie" || $0.mediaType == "tv" }.prefix(8))
+    }
+
+    /// Artwork URL for the ambient blurred page background behind Discover.
+    /// Only a first-frame fallback — once the carousel appears it reports the
+    /// exact displayed URL through `onActiveImageChange`.
+    static func ambientBackdropURL(for item: SeerrMediaItem) -> URL? {
+        backdropURL(for: item) ?? item.posterURL
+    }
+
+    /// The image URL the active panel is currently displaying, tracking both
+    /// paging and async artwork resolution.
+    private var activeHeroImageURL: URL? {
+        heroItems[safe: activeIndex].flatMap { heroImageURL(for: $0) }
     }
 
     #if os(tvOS)
@@ -105,6 +131,9 @@ struct DiscoverHeroCarouselView: View {
                 containerWidth = width
             }
             .onAppear { restoreScrollPosition() }
+            .onChange(of: activeHeroImageURL, initial: true) { _, newValue in
+                onActiveImageChange?(newValue)
+            }
             .onChange(of: isActive) { _, nowActive in
                 if nowActive { restoreScrollPosition() }
             }
@@ -129,12 +158,20 @@ struct DiscoverHeroCarouselView: View {
 
     @ViewBuilder
     private func heroPanel(for item: SeerrMediaItem, destination: MediaDestination) -> some View {
+        // matchedTransitionSource feeds the iOS/visionOS zoom transition
+        // only; on tvOS it flattens the panel into a snapshot container that
+        // strips descendant hover effects' shapes (the hero action buttons'
+        // capsule shine), so it must not wrap the panel there.
+        #if os(tvOS)
+        panelContent(for: item, destination: destination)
+        #else
         if let transitionNamespace {
             panelContent(for: item, destination: destination)
                 .matchedTransitionSource(id: destination, in: transitionNamespace)
         } else {
             panelContent(for: item, destination: destination)
         }
+        #endif
     }
 
     private func panelContent(for item: SeerrMediaItem, destination: MediaDestination) -> some View {
@@ -142,30 +179,23 @@ struct DiscoverHeroCarouselView: View {
             let size = proxy.size
 
             ZStack(alignment: .bottom) {
-                #if os(macOS)
+                #if os(tvOS)
+                // tvOS navigates via remote focus on the Details button, so
+                // the masked layer isn't wrapped in a NavigationLink.
+                heroImageLayer(for: item, size: size)
+                #else
+                // macOS and iOS/iPadOS can tap the hero image itself to open
+                // the detail view; tvOS navigates via remote focus on the
+                // Details button instead. The masked layer fades the hero's
+                // bottom into DiscoverView's ambient blurred background,
+                // exactly like the detail views' hero treatment.
                 NavigationLink(value: destination) {
-                    heroImage(for: item)
-                        .frame(width: size.width, height: size.height)
-                        .clipped()
+                    heroImageLayer(for: item, size: size)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open \(item.title)")
-                #else
-                heroImage(for: item)
-                    .frame(width: size.width, height: size.height)
-                    .clipped()
                 #endif
-
-                LinearGradient(
-                    colors: [
-                        .clear,
-                        .black.opacity(0.28),
-                        .black.opacity(0.78)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .allowsHitTesting(false)
 
                 bottomContent(for: item, destination: destination)
             }
@@ -181,10 +211,71 @@ struct DiscoverHeroCarouselView: View {
     }
 
     private func heroImage(for item: SeerrMediaItem) -> some View {
+        #if os(tvOS)
+        // Progressive: sized variant first (usually cached), TMDB original
+        // (up to 4K) crossfades in when decoded — the 1920pt canvas on a 4K
+        // panel makes the sized variant visibly soft.
+        ProgressiveRemoteImage(
+            url: heroImageURL(for: item),
+            highResURL: heroImageHighResURL(for: item),
+            contentMode: .fill
+        ) {
+            heroPlaceholder(for: item)
+        }
+        #else
         CachedRemoteImage(url: heroImageURL(for: item), contentMode: .fill) {
             heroPlaceholder(for: item)
         }
+        #endif
     }
+
+    /// Sharp hero image plus its readability gradient, masked together so the
+    /// bottom edge fades to clear and reveals the blurred `heroBackdrop`
+    /// behind it instead of ending in a hard cut. 1:1 with
+    /// DetailPosterHeroView's `heroVisualLayer` (same gradient stops, same
+    /// mask) — the gradient must live inside the mask, or its dark bottom
+    /// would paint over the fade and hide the blend entirely.
+    private func heroImageLayer(for item: SeerrMediaItem, size: CGSize) -> some View {
+        ZStack {
+            heroImage(for: item)
+                .frame(width: size.width, height: size.height)
+                .clipped()
+
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: .black.opacity(0.20), location: 0.45),
+                    .init(color: .black.opacity(0.65), location: 0.72),
+                    .init(color: .black.opacity(0.88), location: 0.88),
+                    .init(color: .black.opacity(0.72), location: 0.96),
+                    .init(color: .clear, location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .mask(
+            // Eased fade rather than the detail views' flat-then-linear ramp:
+            // the abrupt slope change at the fade's start read as a visible
+            // horizontal bar across the hero. These stops approximate a
+            // smoothstep from 0.68 to 1.0.
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0.0),
+                    .init(color: .black, location: 0.62),
+                    .init(color: .black.opacity(0.90), location: 0.72),
+                    .init(color: .black.opacity(0.72), location: 0.80),
+                    .init(color: .black.opacity(0.50), location: 0.87),
+                    .init(color: .black.opacity(0.30), location: 0.925),
+                    .init(color: .black.opacity(0.14), location: 0.965),
+                    .init(color: .clear, location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
 
     private func heroPlaceholder(for item: SeerrMediaItem) -> some View {
         ZStack {
@@ -219,6 +310,7 @@ struct DiscoverHeroCarouselView: View {
         let isFavoriteEnabled = isHeroFavoriteEnabled(item)
 
         return VStack(alignment: heroContentAlignment, spacing: 10) {
+            #if os(tvOS)
             HeroTitleArtworkView(
                 title: item.title,
                 logoURL: artworkByItemID[item.id]?.logoURL,
@@ -227,6 +319,23 @@ struct DiscoverHeroCarouselView: View {
                 horizontalAlignment: heroContentAlignment
             )
             .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
+            #else
+            // Same tap-to-navigate treatment as the hero image itself; tvOS
+            // navigates via remote focus on the Details button instead.
+            NavigationLink(value: destination) {
+                HeroTitleArtworkView(
+                    title: item.title,
+                    logoURL: artworkByItemID[item.id]?.logoURL,
+                    maxWidth: heroTitleMaxWidth,
+                    maxLogoHeight: heroLogoMaxHeight,
+                    horizontalAlignment: heroContentAlignment
+                )
+                .frame(maxWidth: .infinity, alignment: heroFrameAlignment)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(item.title)")
+            #endif
 
             heroMetadata(for: item)
 
@@ -245,7 +354,7 @@ struct DiscoverHeroCarouselView: View {
             #if os(tvOS)
             if let synopsis = synopsis(for: item) {
                 Text(synopsis)
-                    .font(.body.weight(.medium))
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.white.opacity(0.78))
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
@@ -285,26 +394,41 @@ struct DiscoverHeroCarouselView: View {
                     #if os(tvOS)
                     TVHeroCircleIconLabel(
                         systemImage: isMarked ? "checkmark" : "plus",
-                        isHighlighted: isMarked
+                        isHighlighted: isMarked,
+                        expandedText: heroAddedConfirmationItemIDs.contains(item.id) ? "Added" : nil
                     )
                     #else
-                    Image(systemName: isMarked ? "checkmark" : "plus")
-                        .font(heroSecondaryButtonIconFont)
-                        .foregroundStyle(.white)
-                        .frame(width: heroSecondaryButtonSize, height: heroSecondaryButtonSize)
-                        .background {
-                            Circle()
-                                .fill(isMarked ? Color.green : Color.clear)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isMarked)
+                    // A Capsule renders as a circle at rest (width == height)
+                    // and stretches into a pill while the transient "Added"
+                    // confirmation is showing, then springs back.
+                    let isConfirmingAdd = heroAddedConfirmationItemIDs.contains(item.id)
+                    HStack(spacing: 6) {
+                        Image(systemName: isMarked ? "checkmark" : "plus")
+                            .font(heroSecondaryButtonIconFont)
+                        if isConfirmingAdd {
+                            Text("Added")
+                                .font(heroButtonFont)
+                                .fixedSize()
+                                .transition(.opacity.combined(with: .move(edge: .leading)))
                         }
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay {
-                            Circle()
-                                .strokeBorder(isMarked ? .white.opacity(0.55) : .white.opacity(0.18), lineWidth: 0.8)
-                        }
-                        .scaleEffect(isMarked ? 1.04 : 1)
-                        .contentTransition(.symbolEffect(.replace))
-                        .symbolEffect(.bounce, value: isMarked)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, isConfirmingAdd ? 18 : 0)
+                    .frame(minWidth: heroSecondaryButtonSize)
+                    .frame(height: heroSecondaryButtonSize)
+                    .background {
+                        Capsule()
+                            .fill(isMarked ? Color.green : Color.clear)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isMarked)
+                    }
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(isMarked ? .white.opacity(0.55) : .white.opacity(0.18), lineWidth: 0.8)
+                    }
+                    .scaleEffect(isMarked ? 1.04 : 1)
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: isMarked)
                     #endif
                 }
                 #if os(tvOS)
@@ -312,12 +436,13 @@ struct DiscoverHeroCarouselView: View {
                 .focused($heroFocus, equals: .favorite(item.id))
                 #else
                 .buttonStyle(.plain)
-                .contentShape(Circle())
+                .contentShape(Capsule())
                 #endif
                 .disabled(!isActive || heroFavoriteActionsInFlight.contains(item.id))
                 .opacity(isFavoriteEnabled || isMarked ? 1 : 0.72)
                 .accessibilityLabel(isMarked ? "Remove from Favorites" : "Add to Favorites")
                 .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isMarked)
+                .animation(.spring(response: 0.38, dampingFraction: 0.78), value: heroAddedConfirmationItemIDs)
 
                 #if os(tvOS)
                 Button {
@@ -434,11 +559,15 @@ struct DiscoverHeroCarouselView: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
                     heroFavoriteStates[item.id] = newValue
                 }
-                notificationCenter.show(LureBannerItem(
-                    title: newValue ? "Added to Favorites" : "Removed from Favorites",
-                    message: item.title,
-                    style: newValue ? .success : .info
-                ))
+                // Confirmation lives in the button itself: it stretches into
+                // an "Added" pill and springs back, instead of a banner.
+                // (The button stays disabled via the in-flight set while the
+                // pill is up, which also debounces double-taps.)
+                if newValue {
+                    heroAddedConfirmationItemIDs.insert(item.id)
+                    try? await Task.sleep(for: .seconds(1.4))
+                    heroAddedConfirmationItemIDs.remove(item.id)
+                }
             } catch {
                 notificationCenter.show(LureBannerItem(
                     title: "Favorites Update Failed",
@@ -550,45 +679,45 @@ struct DiscoverHeroCarouselView: View {
         return itemID
     }
 
-    private func backdropURL(for item: SeerrMediaItem) -> URL? {
+    private static func backdropURL(for item: SeerrMediaItem) -> URL? {
         switch item {
         case .movie(let movie):
-            #if os(tvOS)
-            ImageURL.backdrop(movie.backdropPath, size: .original)
-            #else
             movie.backdropURL
-            #endif
         case .tv(let show):
-            #if os(tvOS)
-            ImageURL.backdrop(show.backdropPath, size: .original)
-            #else
             show.backdropURL
-            #endif
         case .person:
             nil
         }
     }
 
+    /// The fast, sized variant. On tvOS the hero renders progressively:
+    /// this loads first, then `heroImageHighResURL` (TMDB original, up to
+    /// 4K) crossfades in over it.
     private func heroImageURL(for item: SeerrMediaItem) -> URL? {
-        let url = artworkByItemID[item.id]?.backdropURL
-            ?? backdropURL(for: item)
+        artworkByItemID[item.id]?.backdropURL
+            ?? Self.backdropURL(for: item)
             ?? item.posterURL
-        #if os(tvOS)
-        // The TV hero fills the whole 1920pt canvas — always fetch TMDB art at
-        // original size, whichever source it resolved from.
-        return ImageURL.originalTMDBImageURL(url)
-        #else
-        return url
-        #endif
     }
 
+    #if os(tvOS)
+    private func heroImageHighResURL(for item: SeerrMediaItem) -> URL? {
+        ImageURL.originalTMDBImageURL(heroImageURL(for: item))
+    }
+    #endif
+
     private func preloadHeroImages() async {
-        let urls = heroItems.flatMap { item in
-            [
+        let urls = heroItems.flatMap { item -> [URL] in
+            var itemURLs = [
                 heroImageURL(for: item),
                 artworkByItemID[item.id]?.logoURL,
                 item.posterURL
-            ].compactMap(\.self)
+            ]
+            #if os(tvOS)
+            // Warm the 4K originals too so the progressive upgrade usually
+            // lands before the panel is even looked at.
+            itemURLs.append(heroImageHighResURL(for: item))
+            #endif
+            return itemURLs.compactMap(\.self)
         }
         await withTaskGroup(of: Void.self) { group in
             for url in urls {
@@ -608,7 +737,7 @@ struct DiscoverHeroCarouselView: View {
                 let id = item.id
                 let mediaType = item.mediaType
                 let tmdbId = item.tmdbId
-                let fallbackBackdropURL = backdropURL(for: item)
+                let fallbackBackdropURL = Self.backdropURL(for: item)
                 let fallbackPosterURL = item.posterURL
 
                 group.addTask {
@@ -754,11 +883,25 @@ struct DiscoverHeroCarouselView: View {
         guard containerWidth > 0 else { return 540 }
         return min(max(containerWidth * 0.48, 420), 640)
         #elseif os(tvOS)
-        // tvOS canvas is 1920×1080; hero fills ~75% of screen height
-        guard containerWidth > 0 else { return 800 }
-        return min(max(containerWidth * 0.46, 600), 860)
+        // tvOS canvas is 1920×1080; hero fills ~90% of screen height
+        guard containerWidth > 0 else { return 960 }
+        return min(max(containerWidth * 0.552, 720), 1032)
         #else
-        horizontalSizeClass == .compact ? 610 : 740
+        // iPhone windows are always narrow, so the hero stays effectively
+        // fixed. iPad (and visionOS) windows can be resized well below their
+        // full-screen width via Split View or Stage Manager, so scale the
+        // hero down with the container instead of letting a height tuned for
+        // a full-screen iPad swallow a crushed one. Keyed on device idiom
+        // rather than horizontalSizeClass, since the size class boundary
+        // itself shifts as the window is resized and would otherwise leave
+        // a range of shrunk-but-not-tiny widths where nothing scales down.
+        guard containerWidth > 0 else {
+            return horizontalSizeClass == .compact ? 610 : 740
+        }
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return min(610, max(320, containerWidth * 1.65))
+        }
+        return min(740, max(320, containerWidth))
         #endif
     }
 
@@ -943,7 +1086,7 @@ private struct HeroCarouselStaticPreview: View {
                 .foregroundStyle(.white.opacity(0.82))
 
                 Text("A ticking-time-bomb insomniac and a slippery soap salesman channel primal male aggression into a shocking new form of therapy.")
-                    .font(.body.weight(.medium))
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.white.opacity(0.78))
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)

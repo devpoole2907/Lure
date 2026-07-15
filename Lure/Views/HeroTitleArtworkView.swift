@@ -44,6 +44,11 @@ struct HeroTitleArtworkView: View {
                     maxHeight: maxLogoHeight * 0.9
                 )
                 .frame(maxWidth: .infinity, alignment: frameAlignment)
+                // Visual-only 10% reduction: scaleEffect leaves the layout
+                // frame (and everything positioned around it) untouched, and
+                // unlike a maxHeight tweak it also shrinks wide logos that
+                // are width-constrained rather than height-constrained.
+                .scaleEffect(0.9, anchor: isLeading ? .bottomLeading : .bottom)
                 .shadow(color: .black.opacity(0.45), radius: 14, y: 5)
                 .accessibilityLabel(title)
             } else {

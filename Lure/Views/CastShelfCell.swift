@@ -6,21 +6,24 @@ struct CastShelfCell: View {
     var body: some View {
         Group {
         #if os(tvOS)
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             portrait
 
-            Text(item.name)
-                .font(.body.weight(.semibold))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(width: 180, height: 58, alignment: .top)
+            // The labels size naturally so a one-line name doesn't leave a
+            // reserved-height gap above the role; the outer fixed frame keeps
+            // cells uniform when a name wraps to two lines.
+            VStack(spacing: 2) {
+                Text(item.name)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(2)
 
-            Text(item.role ?? "")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(width: 180, height: 54, alignment: .top)
+                Text(item.role ?? "")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .multilineTextAlignment(.center)
+            .frame(width: 180, alignment: .top)
         }
         .frame(width: 180, height: 280, alignment: .top)
         #else
@@ -69,6 +72,7 @@ struct CastShelfCell: View {
         .frame(width: 56, height: 56)
         #endif
         .clipShape(Circle())
+        .posterFocusHighlight(shape: Circle())
     }
 
     private var accessibilityLabel: String {

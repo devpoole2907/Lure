@@ -510,7 +510,7 @@ final class PlayerViewModel {
             // Fetch next episode for series
             nextEpisode = nil
             if !isTrailerPlayback, let seriesId = item.seriesId {
-                nextEpisode = try? await client.getNextUp(seriesId: seriesId)
+                nextEpisode = try? await client.getEpisodeAfter(seriesId: seriesId, currentEpisodeId: self.itemId)
             }
 
         } catch {
@@ -1182,6 +1182,12 @@ final class PlayerViewModel {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
                 if self.nextEpisodeCountdown <= 1 {
+                    // Detach before advancing: playNextEpisode() calls
+                    // stopCountdown(), and cancelling the task that is
+                    // currently *running* playNextEpisode propagates into
+                    // stop()/load()'s URLSession calls, failing the next
+                    // episode's startup with URLError.cancelled.
+                    self.countdownTask = nil
                     await self.playNextEpisode()
                     return
                 }

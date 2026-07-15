@@ -24,6 +24,16 @@ struct LibraryView: View {
             #else
             .navigationTitle("Library")
             #endif
+            .navigationDestination(for: LibraryCategory.self) { category in
+                if let viewModel {
+                    LibraryCategoryGridView(
+                        title: category.title,
+                        items: category.items(from: viewModel),
+                        apiClient: apiClient,
+                        isLoading: viewModel.isLoading
+                    )
+                }
+            }
             .navigationDestination(for: MediaDestination.self) { destination in
                 switch destination.mediaType {
                 case "movie":
